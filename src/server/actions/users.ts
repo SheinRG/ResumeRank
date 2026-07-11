@@ -72,7 +72,7 @@ export async function updateUserRoleAction(
       metadata: { from: target.role, to: role },
     });
 
-    revalidatePath("/team");
+    revalidatePath("/settings/team");
 
     return actionOk(user);
   });
@@ -113,7 +113,7 @@ export async function updateProfileAction(
       summary: "updated their profile",
     });
 
-    revalidatePath("/team");
+    revalidatePath("/settings/team");
     revalidatePath("/settings");
 
     return actionOk(user);
