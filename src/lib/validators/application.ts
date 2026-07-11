@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { stageSchema } from "./enums";
+import { optionalText } from "./helpers";
 
 export const applicationCreateSchema = z.object({
   jobId: z.string().min(1, "Pick a job"),
@@ -20,11 +21,6 @@ export const scorecardSchema = z.object({
     .int("Rating must be a whole number")
     .min(1, "Rating is 1 to 5")
     .max(5, "Rating is 1 to 5"),
-  notes: z
-    .string()
-    .trim()
-    .max(2_000, "Notes must be at most 2,000 characters")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+  notes: optionalText(2_000, "Notes must be at most 2,000 characters"),
 });
 export type ScorecardInput = z.infer<typeof scorecardSchema>;

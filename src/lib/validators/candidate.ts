@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { candidateSourceSchema } from "./enums";
 import { emailSchema } from "./auth";
+import { optionalText } from "./helpers";
 
 export const MIN_RESUME_LENGTH = 200;
 
@@ -11,12 +12,7 @@ export const candidateCreateSchema = z.object({
     .min(2, "Name must be at least 2 characters")
     .max(80, "Name must be at most 80 characters"),
   email: emailSchema,
-  headline: z
-    .string()
-    .trim()
-    .max(120, "Headline must be at most 120 characters")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+  headline: optionalText(120, "Headline must be at most 120 characters"),
   source: candidateSourceSchema,
   resumeText: z
     .string()

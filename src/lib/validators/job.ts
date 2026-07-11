@@ -4,6 +4,7 @@ import {
   jobStatusSchema,
   requirementWeightSchema,
 } from "./enums";
+import { optionalText } from "./helpers";
 
 export const jobRequirementInputSchema = z.object({
   id: z.string().optional(),
@@ -27,12 +28,7 @@ export const jobCreateSchema = z.object({
     .trim()
     .min(30, "Description must be at least 30 characters")
     .max(10_000, "Description must be at most 10,000 characters"),
-  location: z
-    .string()
-    .trim()
-    .max(120, "Location must be at most 120 characters")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+  location: optionalText(120, "Location must be at most 120 characters"),
   employmentType: employmentTypeSchema,
   status: jobStatusSchema,
   requirements: z
