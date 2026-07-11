@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum RequirementWeight {
+  MUST
+  NICE
+}
+
+enum CandidateSource {
+  MANUAL
+  REFERRAL
+  JOB_BOARD
+  OUTREACH
+  OTHER
+}
+
+enum Stage {
+  NEW
+  SCREENING
+  SHORTLISTED
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+enum Verdict {
+  STRONG
+  PARTIAL
+  MISSING
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  role          Role      @default(MEMBER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  jobsCreated         Job[]                @relation("JobCreatedBy")
+  candidatesCreated   Candidate[]          @relation("CandidateCreatedBy")
+  applicationsCreated Application[]        @relation("ApplicationCreatedBy")
+  scorecards          Scorecard[]
+  activities          ActivityLog[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Job {
+  id             String         @id @default(cuid())
+  title          String
+  description    String
+  location       String?
+  employmentType EmploymentType @default(FULL_TIME)
+  status         JobStatus      @default(OPEN)
+  createdById    String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  createdBy    User             @relation("JobCreatedBy", fields: [createdById], references: [id])
+  requirements JobRequirement[]
+  applications Application[]
+
+  @@index([status, createdAt(sort: Desc), id])
+  @@index([title])
+}
+
+model JobRequirement {
+  id        String            @id @default(cuid())
+  jobId     String
+  label     String
+  weight    RequirementWeight @default(MUST)
+  order     Int               @default(0)
+  createdAt DateTime          @default(now())
+
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evaluations Evaluation[]
+
+  @@index([jobId, order])
+}
+
+model Candidate {
+  id          String          @id @default(cuid())
+  name        String
+  email       String          @unique
+  headline    String?
+  source      CandidateSource @default(MANUAL)
+  resumeText  String
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  createdBy    User          @relation("CandidateCreatedBy", fields: [createdById], references: [id])
+  applications Application[]
+
+  @@index([name])
+  @@index([createdAt(sort: Desc), id])
+}
+
+model Application {
+  id          String    @id @default(cuid())
+  jobId       String
+  candidateId String
+  stage       Stage     @default(NEW)
+  aiScore     Int?
+  aiSummary   String?
+  scoredAt    DateTime?
+  deletedAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("ApplicationCreatedBy", fields: [createdById], references: [id])
+  evaluations Evaluation[]
+  scorecards  Scorecard[]
+
+  @@unique([jobId, candidateId])
+  @@index([jobId, deletedAt, stage, aiScore(sort: Desc)])
+  @@index([candidateId])
+  @@index([stage, createdAt(sort: Desc), id])
+}
+
+model Evaluation {
+  id            String            @id @default(cuid())
+  applicationId String
+  requirementId String?
+  criterion     String
+  weight        RequirementWeight @default(MUST)
+  verdict       Verdict
+  evidence      String?
+  note          String
+  createdAt     DateTime          @default(now())
+
+  application Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  requirement JobRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId])
+}
+
+model Scorecard {
+  id            String   @id @default(cuid())
+  applicationId String
+  reviewerId    String
+  rating        Int
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  reviewer    User        @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, reviewerId])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  entityType String
+  entityId   String
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id])
+}

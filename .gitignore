@@ -30,8 +30,16 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (commit .env.example only)
 .env*
+!.env.example
+
+# generated
+/src/generated/
+
+# playwright
+/test-results/
+/playwright-report/
 
 # vercel
 .vercel
