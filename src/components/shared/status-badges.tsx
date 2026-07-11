@@ -1,4 +1,9 @@
-import type { JobStatus, Stage, Verdict } from "@/generated/prisma/enums";
+import type {
+  CandidateSource,
+  JobStatus,
+  Stage,
+  Verdict,
+} from "@/generated/prisma/enums";
 import { cn } from "@/lib/utils";
 
 const badgeBase =
@@ -92,6 +97,34 @@ export function JobStatusBadge({
   return (
     <span className={cn(badgeBase, JOB_STATUS_CLASSES[status], className)}>
       {JOB_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+export const CANDIDATE_SOURCE_LABELS: Record<CandidateSource, string> = {
+  MANUAL: "Manual",
+  REFERRAL: "Referral",
+  JOB_BOARD: "Job board",
+  OUTREACH: "Outreach",
+  OTHER: "Other",
+};
+
+export function CandidateSourceBadge({
+  source,
+  className,
+}: {
+  source: CandidateSource;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        badgeBase,
+        "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+        className,
+      )}
+    >
+      {CANDIDATE_SOURCE_LABELS[source]}
     </span>
   );
 }
