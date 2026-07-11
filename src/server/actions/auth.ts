@@ -116,6 +116,15 @@ export async function logoutAction(): Promise<void> {
   await signOut({ redirectTo: "/login" });
 }
 
+function safeRedirectTarget(next: string | undefined): string {
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  return "/dashboard";
+}
+
+export async function signInWithGoogleAction(next?: string): Promise<void> {
+  await signIn("google", { redirectTo: safeRedirectTarget(next) });
+}
+
 export async function verifyEmailAction(
   email: string,
   token: string,

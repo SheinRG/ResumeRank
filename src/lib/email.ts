@@ -47,7 +47,7 @@ export async function sendVerificationEmail(
   to: string,
   token: string,
 ): Promise<void> {
-  const url = `${env().NEXT_PUBLIC_APP_URL}/verify?email=${encodeURIComponent(to)}&token=${encodeURIComponent(token)}`;
+  const url = `${env().NEXT_PUBLIC_APP_URL}/verify-email?email=${encodeURIComponent(to)}&token=${encodeURIComponent(token)}`;
   await send({
     to,
     subject: "Verify your email — ResumeRank",
