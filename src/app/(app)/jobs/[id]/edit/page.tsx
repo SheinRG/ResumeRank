@@ -14,7 +14,7 @@ type EditJobPageProps = {
 export async function generateMetadata({ params }: EditJobPageProps): Promise<Metadata> {
   const { id } = await params;
   const job = await getJob(id);
-  return { title: job ? `Edit ${job.title} · ResumeRank` : "Edit job · ResumeRank" };
+  return { title: job ? `Edit ${job.title}` : "Edit job" };
 }
 
 export default async function EditJobPage({ params }: EditJobPageProps) {

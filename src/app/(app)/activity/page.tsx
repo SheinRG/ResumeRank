@@ -22,7 +22,7 @@ import { ActivityPagination } from "@/components/activity/activity-pagination";
 import { formatDate, formatRelative, initials } from "@/lib/format";
 import { listActivity, type ActivityEntityType } from "@/server/queries/activity";
 
-export const metadata: Metadata = { title: "Activity · ResumeRank" };
+export const metadata: Metadata = { title: "Activity" };
 
 const ENTITY_VALUES = ["all", "job", "candidate", "application", "user"] as const;
 const searchParamsSchema = z.object({

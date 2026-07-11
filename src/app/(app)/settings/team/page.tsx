@@ -11,7 +11,7 @@ import { TeamTable } from "@/components/settings/team-table";
 import { canAdmin, requireUser } from "@/lib/auth/guards";
 import { listTeam } from "@/server/queries/users";
 
-export const metadata: Metadata = { title: "Team · Settings · ResumeRank" };
+export const metadata: Metadata = { title: "Team · Settings" };
 
 export default async function SettingsTeamPage() {
   const user = await requireUser();

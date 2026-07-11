@@ -11,7 +11,7 @@ import {
 import { FadeIn } from "@/components/motion";
 
 export const metadata: Metadata = {
-  title: "Create account — ResumeRank",
+  title: "Create account",
 };
 
 function RegisterPage() {

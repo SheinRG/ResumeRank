@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { CandidateForm } from "@/components/candidates/candidate-form";
 
-export const metadata: Metadata = { title: "New candidate · ResumeRank" };
+export const metadata: Metadata = { title: "New candidate" };
 
 export default function NewCandidatePage() {
   return (

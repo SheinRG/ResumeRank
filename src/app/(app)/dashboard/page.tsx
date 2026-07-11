@@ -16,7 +16,7 @@ import { ScoreDistributionChart } from "@/components/dashboard/score-distributio
 import { ApplicationsOverTimeChart } from "@/components/dashboard/applications-over-time-chart";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 
-export const metadata: Metadata = { title: "Dashboard · ResumeRank" };
+export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const data = await getDashboardData();

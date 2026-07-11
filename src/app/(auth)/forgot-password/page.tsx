@@ -11,7 +11,7 @@ import {
 import { FadeIn } from "@/components/motion";
 
 export const metadata: Metadata = {
-  title: "Forgot password — ResumeRank",
+  title: "Forgot password",
 };
 
 function ForgotPasswordPage() {

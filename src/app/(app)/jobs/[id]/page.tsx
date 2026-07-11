@@ -43,7 +43,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const job = await getJob(id);
-  return { title: job ? `${job.title} · ResumeRank` : "Job · ResumeRank" };
+  return { title: job ? `${job.title}` : "Job" };
 }
 
 export default async function JobDetailPage({ params, searchParams }: JobDetailPageProps) {

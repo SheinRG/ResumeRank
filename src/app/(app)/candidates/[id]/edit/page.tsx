@@ -14,7 +14,7 @@ export async function generateMetadata({
   const { id } = await params;
   const candidate = await getCandidate(id);
   return {
-    title: candidate ? `Edit ${candidate.name} · ResumeRank` : "Edit candidate · ResumeRank",
+    title: candidate ? `Edit ${candidate.name}` : "Edit candidate",
   };
 }
 

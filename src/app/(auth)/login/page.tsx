@@ -12,7 +12,7 @@ import { FadeIn } from "@/components/motion";
 import { isGoogleAuthEnabled } from "@/lib/env";
 
 export const metadata: Metadata = {
-  title: "Log in — ResumeRank",
+  title: "Log in",
 };
 
 function safeNext(next: string | undefined): string {

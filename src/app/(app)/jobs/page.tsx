@@ -23,7 +23,7 @@ import { canWrite, requireUser } from "@/lib/auth/guards";
 import { jobListParamsSchema } from "@/lib/validators/search";
 import { listJobs } from "@/server/queries/jobs";
 
-export const metadata: Metadata = { title: "Jobs · ResumeRank" };
+export const metadata: Metadata = { title: "Jobs" };
 
 export default async function JobsPage({
   searchParams,

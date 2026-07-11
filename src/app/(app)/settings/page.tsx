@@ -11,7 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { requireUser } from "@/lib/auth/guards";
 
-export const metadata: Metadata = { title: "Profile · Settings · ResumeRank" };
+export const metadata: Metadata = { title: "Profile · Settings" };
 
 export default async function SettingsProfilePage() {
   const user = await requireUser();

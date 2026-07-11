@@ -24,8 +24,8 @@ export async function generateMetadata({
   const application = await getApplication(id);
   return {
     title: application
-      ? `${application.candidate.name} — ${application.job.title} · ResumeRank`
-      : "Application · ResumeRank",
+      ? `${application.candidate.name} — ${application.job.title}`
+      : "Application",
   };
 }
 

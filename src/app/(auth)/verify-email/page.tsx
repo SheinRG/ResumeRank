@@ -11,7 +11,7 @@ import {
 import { FadeIn } from "@/components/motion";
 
 export const metadata: Metadata = {
-  title: "Verify email — ResumeRank",
+  title: "Verify email",
 };
 
 type VerifyEmailPageProps = {

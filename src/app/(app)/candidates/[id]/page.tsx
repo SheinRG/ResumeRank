@@ -32,7 +32,7 @@ export async function generateMetadata({
   const { id } = await params;
   const candidate = await getCandidate(id);
   return {
-    title: candidate ? `${candidate.name} · Candidates · ResumeRank` : "Candidate · ResumeRank",
+    title: candidate ? `${candidate.name} · Candidates` : "Candidate",
   };
 }
 

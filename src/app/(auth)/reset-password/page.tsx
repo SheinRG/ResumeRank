@@ -11,7 +11,7 @@ import {
 import { FadeIn } from "@/components/motion";
 
 export const metadata: Metadata = {
-  title: "Reset password — ResumeRank",
+  title: "Reset password",
 };
 
 type ResetPasswordPageProps = {

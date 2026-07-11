@@ -22,7 +22,7 @@ import { canWrite, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@/lib/validators/search";
 import { listCandidates } from "@/server/queries/candidates";
 
-export const metadata: Metadata = { title: "Candidates · ResumeRank" };
+export const metadata: Metadata = { title: "Candidates" };
 
 function buildExportHref(params: CandidateListParams): string {
   const query = new URLSearchParams();
