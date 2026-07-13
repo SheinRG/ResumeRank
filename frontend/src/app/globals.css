@@ -1,0 +1,153 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * ResumeRank design language: a two-tone ink + lime system.
+ * Light is the signed-in app surface (warm cream, white cards, near-black ink
+ * for primary actions, lime as the highlight accent). Dark elevates the same
+ * language onto the near-black marketing palette.
+ */
+:root {
+  --background: #f6f4ee;
+  --foreground: #161a21;
+  --card: #ffffff;
+  --card-foreground: #161a21;
+  --popover: #ffffff;
+  --popover-foreground: #161a21;
+  --primary: #161a21;
+  --primary-foreground: #f6f4ee;
+  --secondary: #fbfaf6;
+  --secondary-foreground: #161a21;
+  --muted: #efece3;
+  --muted-foreground: #59606c;
+  --accent: #c6f24e;
+  --accent-foreground: #0a0d14;
+  --destructive: #be123c;
+  --destructive-foreground: #ffffff;
+  --border: rgba(22, 26, 33, 0.08);
+  --input: rgba(22, 26, 33, 0.12);
+  --ring: #5a8a1e;
+  --radius: 0.5rem;
+
+  --verdict-strong: #15803d;
+  --verdict-partial: #b45309;
+  --verdict-missing: #be123c;
+
+  --stage-new: #9ba1ac;
+  --stage-screening: #5e7cff;
+  --stage-shortlisted: #c6a11e;
+  --stage-interview: #5a8a1e;
+  --stage-offer: #0ea5a0;
+  --stage-hired: #15803d;
+  --stage-rejected: #be123c;
+}
+
+.dark {
+  --background: #0a0d14;
+  --foreground: #f2f3f5;
+  --card: #12161f;
+  --card-foreground: #f2f3f5;
+  --popover: #12161f;
+  --popover-foreground: #f2f3f5;
+  --primary: #c6f24e;
+  --primary-foreground: #0a0d14;
+  --secondary: #161b24;
+  --secondary-foreground: #f2f3f5;
+  --muted: #161b24;
+  --muted-foreground: #9aa1ad;
+  --accent: #c6f24e;
+  --accent-foreground: #0a0d14;
+  --destructive: #f43f5e;
+  --destructive-foreground: #0a0d14;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #c6f24e;
+
+  --verdict-strong: #4ade80;
+  --verdict-partial: #fbbf24;
+  --verdict-missing: #fb7185;
+
+  --stage-new: #9ba1ac;
+  --stage-screening: #8098ff;
+  --stage-shortlisted: #e0be3a;
+  --stage-interview: #8fcb3a;
+  --stage-offer: #2dd4bf;
+  --stage-hired: #4ade80;
+  --stage-rejected: #fb7185;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-verdict-strong: var(--verdict-strong);
+  --color-verdict-partial: var(--verdict-partial);
+  --color-verdict-missing: var(--verdict-missing);
+  --color-stage-new: var(--stage-new);
+  --color-stage-screening: var(--stage-screening);
+  --color-stage-shortlisted: var(--stage-shortlisted);
+  --color-stage-interview: var(--stage-interview);
+  --color-stage-offer: var(--stage-offer);
+  --color-stage-hired: var(--stage-hired);
+  --color-stage-rejected: var(--stage-rejected);
+
+  /* Fixed brand palette for the art-directed marketing surface (theme-independent). */
+  --color-brand-night: #0a0d14;
+  --color-brand-panel: #12161f;
+  --color-brand-cream: #f6f4ee;
+  --color-brand-ink: #161a21;
+  --color-brand-lime: #c6f24e;
+  --color-brand-muted: #9aa1ad;
+  --color-brand-faint: #6e7684;
+  --color-brand-ink-muted: #59606c;
+  --color-brand-ink-faint: #9ba1ac;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+
+  --font-sans: var(--font-instrument-sans), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-display: var(--font-space-grotesk), var(--font-instrument-sans), sans-serif;
+  --font-display-app: var(--font-fredoka), var(--font-instrument-sans), sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
