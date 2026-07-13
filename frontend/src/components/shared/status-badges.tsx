@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import type {
   CandidateSource,
   JobStatus,
@@ -7,7 +9,18 @@ import type {
 import { cn } from "@/lib/utils";
 
 const badgeBase =
-  "inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium";
+  "inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-mono text-[10px] tracking-[0.05em] uppercase";
+
+// Tint a chip from a single design token: solid text, a faint border, and a
+// barely-there fill — the redesign's chip language, driven entirely by the
+// stage/verdict color tokens so light and dark both stay in system.
+function chip(token: string): CSSProperties {
+  return {
+    color: `var(${token})`,
+    borderColor: `color-mix(in srgb, var(${token}) 32%, transparent)`,
+    backgroundColor: `color-mix(in srgb, var(${token}) 9%, transparent)`,
+  };
+}
 
 export const STAGE_LABELS: Record<Stage, string> = {
   NEW: "New",
@@ -19,17 +32,14 @@ export const STAGE_LABELS: Record<Stage, string> = {
   REJECTED: "Rejected",
 };
 
-const STAGE_CLASSES: Record<Stage, string> = {
-  NEW: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  SCREENING: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  SHORTLISTED:
-    "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
-  INTERVIEW:
-    "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  OFFER: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  HIRED:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  REJECTED: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+const STAGE_TOKENS: Record<Stage, string> = {
+  NEW: "--stage-new",
+  SCREENING: "--stage-screening",
+  SHORTLISTED: "--stage-shortlisted",
+  INTERVIEW: "--stage-interview",
+  OFFER: "--stage-offer",
+  HIRED: "--stage-hired",
+  REJECTED: "--stage-rejected",
 };
 
 export function StageBadge({
@@ -40,7 +50,7 @@ export function StageBadge({
   className?: string;
 }) {
   return (
-    <span className={cn(badgeBase, STAGE_CLASSES[stage], className)}>
+    <span className={cn(badgeBase, className)} style={chip(STAGE_TOKENS[stage])}>
       {STAGE_LABELS[stage]}
     </span>
   );
@@ -52,11 +62,10 @@ export const VERDICT_LABELS: Record<Verdict, string> = {
   MISSING: "Missing",
 };
 
-const VERDICT_CLASSES: Record<Verdict, string> = {
-  STRONG:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  PARTIAL: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  MISSING: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+const VERDICT_TOKENS: Record<Verdict, string> = {
+  STRONG: "--verdict-strong",
+  PARTIAL: "--verdict-partial",
+  MISSING: "--verdict-missing",
 };
 
 export function VerdictBadge({
@@ -67,7 +76,10 @@ export function VerdictBadge({
   className?: string;
 }) {
   return (
-    <span className={cn(badgeBase, VERDICT_CLASSES[verdict], className)}>
+    <span
+      className={cn(badgeBase, className)}
+      style={chip(VERDICT_TOKENS[verdict])}
+    >
       {VERDICT_LABELS[verdict]}
     </span>
   );
@@ -80,11 +92,11 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   ARCHIVED: "Archived",
 };
 
-const JOB_STATUS_CLASSES: Record<JobStatus, string> = {
-  DRAFT: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  OPEN: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  CLOSED: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  ARCHIVED: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+const JOB_STATUS_TOKENS: Record<JobStatus, string> = {
+  DRAFT: "--stage-new",
+  OPEN: "--stage-hired",
+  CLOSED: "--stage-shortlisted",
+  ARCHIVED: "--stage-new",
 };
 
 export function JobStatusBadge({
@@ -95,7 +107,10 @@ export function JobStatusBadge({
   className?: string;
 }) {
   return (
-    <span className={cn(badgeBase, JOB_STATUS_CLASSES[status], className)}>
+    <span
+      className={cn(badgeBase, className)}
+      style={chip(JOB_STATUS_TOKENS[status])}
+    >
       {JOB_STATUS_LABELS[status]}
     </span>
   );
@@ -120,7 +135,7 @@ export function CandidateSourceBadge({
     <span
       className={cn(
         badgeBase,
-        "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+        "border-border text-muted-foreground",
         className,
       )}
     >
@@ -130,13 +145,9 @@ export function CandidateSourceBadge({
 }
 
 function scoreTone(score: number): string {
-  if (score >= 70) {
-    return "text-emerald-600 dark:text-emerald-400";
-  }
-  if (score >= 40) {
-    return "text-amber-600 dark:text-amber-400";
-  }
-  return "text-rose-600 dark:text-rose-400";
+  if (score >= 70) return "text-verdict-strong";
+  if (score >= 40) return "text-verdict-partial";
+  return "text-verdict-missing";
 }
 
 export function ScorePill({
@@ -158,7 +169,7 @@ export function ScorePill({
   return (
     <span
       className={cn(
-        "text-sm font-semibold tabular-nums",
+        "font-display-app text-base font-semibold tabular-nums",
         scoreTone(score),
         className,
       )}
