@@ -15,8 +15,9 @@ test("recruiter signs in and reaches a job's ranked applicant pipeline", async (
 }) => {
   await page.goto("/login");
 
-  await page.getByLabel("Email").fill("demo@resumerank.app");
-  await page.getByLabel("Password").fill("demo1234");
+  // exact: true so "Password" doesn't also match the "Show password" toggle.
+  await page.getByLabel("Email", { exact: true }).fill("demo@resumerank.app");
+  await page.getByLabel("Password", { exact: true }).fill("demo1234");
   await page.getByRole("button", { name: "Log in" }).click();
 
   // The layout guard resolves the session against the DB and renders the shell.
