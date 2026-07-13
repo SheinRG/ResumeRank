@@ -2,10 +2,12 @@ import { siteUrl } from "@/lib/site";
 
 import { FAQ_ITEMS } from "./_components/faq-data";
 import { Faq } from "./_components/faq";
-import { FeaturesGrid } from "./_components/features-grid";
 import { FinalCta } from "./_components/final-cta";
 import { Hero } from "./_components/hero";
 import { HowItWorks } from "./_components/how-it-works";
+import { LandingMotion } from "./_components/landing-motion";
+import { Marquee } from "./_components/marquee";
+import { Testimonials } from "./_components/testimonials";
 import { ValueProps } from "./_components/value-props";
 
 function jsonLd() {
@@ -55,11 +57,14 @@ export default function MarketingHomePage() {
       ))}
 
       <Hero />
+      <Marquee />
       <ValueProps />
-      <FeaturesGrid />
       <HowItWorks />
+      <Testimonials />
       <Faq />
       <FinalCta />
+
+      <LandingMotion />
     </>
   );
 }

@@ -110,6 +110,17 @@
   --color-stage-hired: var(--stage-hired);
   --color-stage-rejected: var(--stage-rejected);
 
+  /* Fixed brand palette for the art-directed marketing surface (theme-independent). */
+  --color-brand-night: #0a0d14;
+  --color-brand-panel: #12161f;
+  --color-brand-cream: #f6f4ee;
+  --color-brand-ink: #161a21;
+  --color-brand-lime: #c6f24e;
+  --color-brand-muted: #9aa1ad;
+  --color-brand-faint: #6e7684;
+  --color-brand-ink-muted: #59606c;
+  --color-brand-ink-faint: #9ba1ac;
+
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 4px);

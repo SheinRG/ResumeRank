@@ -4,35 +4,42 @@ export function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div className="flex flex-col gap-1">
-          <span className="text-sm font-semibold tracking-tight text-foreground">
+    <footer className="bg-brand-night px-6 pt-[110px] text-brand-cream">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-5 border-t border-white/[0.08] py-9 pb-11">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="flex size-[22px] items-center justify-center rounded-md bg-brand-lime font-display text-xs font-bold text-brand-night">
+            R
+          </span>
+          <span className="font-display text-[15px] font-semibold">
             ResumeRank
           </span>
-          <p className="text-sm text-muted-foreground">
-            Evidence-based AI resume screening for recruiters.
-          </p>
+          <span className="ml-2 text-[12.5px] text-[#5b6270]">
+            © {year} · Explainable AI screening
+          </span>
         </div>
-
-        <nav aria-label="Footer" className="flex items-center gap-6">
+        <nav
+          aria-label="Footer"
+          className="flex gap-[26px] text-[13.5px] text-[#8a91a0]"
+        >
+          <a href="#why" className="transition-colors hover:text-brand-cream">
+            Why
+          </a>
+          <a href="#faq" className="transition-colors hover:text-brand-cream">
+            FAQ
+          </a>
           <Link
             href="/login"
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="transition-colors hover:text-brand-cream"
           >
             Sign in
           </Link>
           <Link
             href="/register"
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="transition-colors hover:text-brand-cream"
           >
             Get started
           </Link>
         </nav>
-
-        <p className="text-sm text-muted-foreground">
-          © {year} ResumeRank
-        </p>
       </div>
     </footer>
   );
