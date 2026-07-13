@@ -18,13 +18,13 @@ import type { Stage } from "@resumerank/core/validators/enums";
 import type { FunnelStagePoint } from "@/server/queries/dashboard";
 
 const STAGE_FILLS: Record<Stage, string> = {
-  NEW: "#71717a",
-  SCREENING: "#0ea5e9",
-  SHORTLISTED: "#6366f1",
-  INTERVIEW: "#8b5cf6",
-  OFFER: "#f59e0b",
-  HIRED: "#10b981",
-  REJECTED: "#f43f5e",
+  NEW: "var(--stage-new)",
+  SCREENING: "var(--stage-screening)",
+  SHORTLISTED: "var(--stage-shortlisted)",
+  INTERVIEW: "var(--stage-interview)",
+  OFFER: "var(--stage-offer)",
+  HIRED: "var(--stage-hired)",
+  REJECTED: "var(--stage-rejected)",
 };
 
 function FunnelTooltip({ active, payload }: TooltipContentProps) {
