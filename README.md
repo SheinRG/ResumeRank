@@ -33,20 +33,38 @@ the call.
 
 ## Tech stack
 
-Next.js 16.2 (App Router, Turbopack) · React 19 · TypeScript (strict) ·
-Tailwind CSS 4 · Prisma 7 (driver adapter, Postgres) · Auth.js v5 (JWT
-sessions, Google OAuth) · Groq (LLM scoring) · Zod 4 · Vitest · Playwright ·
-framer-motion · recharts.
+Next.js 16.2 (App Router, Turbopack) · React 19 · TypeScript (strict) · npm
+workspaces (backend / frontend) · Tailwind CSS 4 · Prisma 7 (driver adapter,
+Postgres) · Auth.js v5 (JWT sessions, Google OAuth) · Groq (LLM scoring) ·
+Zod 4 · Vitest · Playwright · framer-motion · GSAP + Lenis (marketing motion) ·
+recharts.
+
+## Project layout
+
+An npm-workspaces monorepo:
+
+- **`backend/`** (`@resumerank/core`) — framework-agnostic domain: Prisma
+  schema / migrations / generated client / seed, the `db` and `env` singletons,
+  Zod validators, the scoring engine, auth helpers, email, rate limiting, the
+  activity log, and shared types. No Next.js imports; ships raw TypeScript that
+  Turbopack transpiles.
+- **`frontend/`** — the Next.js App Router app: routes, UI, server actions and
+  queries, the Auth.js config and guards, and the marketing site. Imports the
+  backend as `@resumerank/core/*`.
+
+Run every command from the repo root — the root scripts fan out to the right
+workspace, and a single root `.env` feeds both.
 
 ## Quick start
 
 ```bash
 git clone <this-repo>
 cd resumerank
-npm install
+npm install   # installs both workspaces and generates the Prisma client
 
-# Local Postgres via Docker (port 5433 — see AGENTS.md)
-docker run --name resumerank-db -e POSTGRES_PASSWORD=postgres \
+# Local Postgres via Docker (port 5433). POSTGRES_DB must match DATABASE_URL.
+docker run --name resumerank-pg \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=resumerank \
   -p 5433:5432 -d postgres:16
 
 cp .env.example .env
@@ -68,8 +86,8 @@ applications yourself, add a free `GROQ_API_KEY` (see the env table below).
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill in the values you need. Full contract
-and defaults live in `src/lib/env.ts`.
+Copy `.env.example` to `.env` (at the repo root — it feeds both workspaces).
+Full contract and defaults live in `backend/src/env.ts`.
 
 | Variable              | Required                    | Purpose                                                                              |
 | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
@@ -105,12 +123,16 @@ and defaults live in `src/lib/env.ts`.
 
 ## Testing
 
-- **Unit** (`tests/unit`, Vitest): scoring math, LLM response parsing/
-  reconciliation, validators, and the rate limiter — pure logic with no
-  database or network dependency.
-- **End-to-end** (`tests/e2e`, Playwright): drives the running app against
-  `http://localhost:3105`. `npm run test:e2e` boots the dev server on that
-  port automatically if one isn't already running.
+- **Unit** (`backend/tests/unit`, Vitest): scoring math, LLM response parsing /
+  reconciliation, validators, role capabilities, and the rate limiter — pure
+  logic with no database or network dependency. `npm run test`.
+- **End-to-end** (`frontend/tests/e2e`, Playwright): the golden path — sign in,
+  reach the dashboard, and open a job's ranked applicant pipeline — against
+  `http://localhost:3105`. Requires a **seeded** database (`npm run db:seed`).
+  `npm run test:e2e` reuses an already-running server, otherwise it boots one.
+  If the Turbopack dev server is flaky (seen on some Windows setups), serve a
+  production build first — `npm run build && npm run start -- -p 3105` — then
+  re-run `npm run test:e2e`.
 
 ## Deployment
 

@@ -117,7 +117,8 @@
   --color-brand-ink: #161a21;
   --color-brand-lime: #c6f24e;
   --color-brand-muted: #9aa1ad;
-  --color-brand-faint: #6e7684;
+  /* Lightened from the mock's #6e7684 to clear WCAG AA (4.5:1) on the night bg. */
+  --color-brand-faint: #7c8494;
   --color-brand-ink-muted: #59606c;
   --color-brand-ink-faint: #9ba1ac;
 

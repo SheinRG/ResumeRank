@@ -1,6 +1,12 @@
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
+import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
 import type { Role } from "@resumerank/core/validators/enums";
+
+// Re-exported so UI affordances can keep importing capability checks from the
+// guard module; the pure predicates live in the backend package where they are
+// unit-tested.
+export { canAdmin, canWrite };
 
 /** Raised by guards; the action runner converts it into a typed ActionResult. */
 export class GateError extends Error {}
@@ -12,17 +18,6 @@ export interface CurrentUser {
   role: Role;
   emailVerified: Date | null;
   image: string | null;
-}
-
-const WRITE_ROLES: readonly Role[] = ["OWNER", "ADMIN", "MEMBER"];
-const ADMIN_ROLES: readonly Role[] = ["OWNER", "ADMIN"];
-
-export function canWrite(role: Role): boolean {
-  return WRITE_ROLES.includes(role);
-}
-
-export function canAdmin(role: Role): boolean {
-  return ADMIN_ROLES.includes(role);
 }
 
 /**

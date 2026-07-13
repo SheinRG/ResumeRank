@@ -6,6 +6,19 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Restructured into an npm-workspaces monorepo: framework-agnostic domain code (Prisma, validators, scoring, auth helpers, email, rate limiting, activity log) moved to a `@resumerank/core` package under `backend/`; the Next.js app lives in `frontend/` and imports it by name. Server actions, Auth.js, and RSC are unchanged.
+- Adopted a two-tone "ink + lime" design system as the source of truth: warm cream / near-black surfaces, semantic verdict and pipeline-stage color tokens, and a new type system (Instrument Sans, Space Grotesk, Fredoka, JetBrains Mono).
+- Rebuilt the marketing landing page with GSAP + Lenis scroll choreography (split-word reveals, parallax, a pinned three-step demo, marquee, magnetic buttons), gated on `prefers-reduced-motion`.
+- Restyled the signed-in shell: dark sidebar, Fredoka headings, mono uppercase table headers and status chips, pill buttons, and larger card radii.
+
+### Added
+
+- Sliding lime nav indicator: follows hover across the landing nav (resting on the primary CTA) and travels to the active section in the app sidebar.
+- Backend unit tests for role capabilities (write/admin) alongside the existing scoring, parsing, validator, and rate-limit suites.
+- Playwright golden-path E2E: sign in → dashboard → a job's ranked applicant pipeline.
+
 ## [1.0.0] - 2026-07-11
 
 ### Added
