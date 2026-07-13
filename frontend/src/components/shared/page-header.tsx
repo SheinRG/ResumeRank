@@ -23,7 +23,7 @@ function PageHeader({
       )}
     >
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-display-app text-[27px] font-semibold tracking-tight text-foreground">
           {title}
         </h1>
         {description ? (

@@ -30,11 +30,13 @@ function StatCard({
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn("py-5", className)}>
-      <CardContent className="flex items-start justify-between gap-4 px-5">
+    <Card className={cn("gap-1.5 rounded-2xl py-6", className)}>
+      <CardContent className="flex items-start justify-between gap-4 px-6">
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tracking-tight text-foreground">
+          <p className="font-mono text-[10.5px] tracking-[0.08em] text-muted-foreground uppercase">
+            {label}
+          </p>
+          <p className="font-display-app text-[34px] leading-none font-semibold tabular-nums text-foreground">
             {value}
           </p>
           {delta ? (
@@ -44,7 +46,7 @@ function StatCard({
           ) : null}
         </div>
         {Icon ? (
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-foreground">
             <Icon className="size-5" aria-hidden="true" />
           </div>
         ) : null}

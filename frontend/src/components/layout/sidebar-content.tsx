@@ -12,15 +12,27 @@ export function SidebarContent({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-6 py-6">
+    <div className="flex h-full flex-col gap-6 bg-brand-night py-6 text-brand-cream">
       <Link
         href="/dashboard"
         onClick={onNavigate}
-        className="px-6 text-lg font-semibold tracking-tight text-foreground"
+        className="flex items-center gap-2.5 px-6"
       >
-        ResumeRank
+        <span className="flex size-7 items-center justify-center rounded-[9px] bg-brand-lime font-display-app text-[15px] font-semibold text-brand-night">
+          R
+        </span>
+        <span className="font-display-app text-[17px] font-medium tracking-[0.01em]">
+          ResumeRank
+        </span>
       </Link>
-      <SidebarNav onNavigate={onNavigate} />
+
+      <div className="flex flex-col gap-2.5">
+        <span className="px-6 font-mono text-[10px] tracking-[0.1em] text-white/30">
+          WORKSPACE
+        </span>
+        <SidebarNav onNavigate={onNavigate} />
+      </div>
+
       <div className="mt-auto px-3">
         <UserMenu user={user} onNavigate={onNavigate} />
       </div>

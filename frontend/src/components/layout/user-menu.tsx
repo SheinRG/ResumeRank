@@ -4,7 +4,6 @@ import Link from "next/link";
 import { LogOut, User as UserIcon } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -39,19 +38,21 @@ export function UserMenu({
         <Button
           type="button"
           variant="ghost"
-          className="h-auto w-full items-center justify-start gap-3 px-2 py-2 text-left"
+          className="h-auto w-full items-center justify-start gap-3 rounded-xl border-t border-white/[0.07] px-2 py-2.5 text-left text-brand-cream hover:bg-white/5 hover:text-brand-cream"
         >
-          <Avatar className="size-9">
+          <Avatar className="size-[34px]">
             {user.image ? <AvatarImage src={user.image} alt="" /> : null}
-            <AvatarFallback>{initials(user.name)}</AvatarFallback>
+            <AvatarFallback className="bg-brand-lime/15 text-xs font-semibold text-brand-lime">
+              {initials(user.name)}
+            </AvatarFallback>
           </Avatar>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-sm font-medium text-foreground">
+            <span className="truncate text-[13px] font-semibold text-brand-cream">
               {user.name}
             </span>
-            <Badge variant="outline" className="w-fit text-[10px]">
+            <span className="truncate text-[11px] text-brand-muted">
               {ROLE_LABELS[user.role]}
-            </Badge>
+            </span>
           </span>
         </Button>
       </DropdownMenuTrigger>

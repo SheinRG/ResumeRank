@@ -30,7 +30,10 @@ export function MobileNav({ user }: { user: CurrentUser }) {
           <Menu className="size-5" aria-hidden="true" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-72 sm:max-w-xs">
+      <SheetContent
+        side="left"
+        className="w-72 border-white/10 bg-brand-night p-0 text-brand-cream sm:max-w-xs"
+      >
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         <SheetDescription className="sr-only">
           Main navigation and account menu
