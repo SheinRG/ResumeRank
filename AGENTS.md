@@ -8,6 +8,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ResumeRank is an applicant-tracking + AI resume-screening tool. Recruiters create Jobs with structured requirements, add Candidates (pasted resume text), and score each Application with an LLM that returns a per-requirement verdict (STRONG/PARTIAL/MISSING) with quoted evidence — explainable scoring is the differentiator. See `docs/plan.md` for milestones and acceptance criteria.
 
+## Monorepo layout (npm workspaces)
+
+Two workspaces at the repo root:
+- **`backend/`** — the `@resumerank/core` package. Framework-agnostic domain code with **no Next.js imports**: Prisma (schema/migrations/generated client/seed), the `db` singleton, `env`, Zod `validators`, the `scoring` engine, `auth/{password,tokens}`, `email`, `rate-limit`, `activity`, and shared `types`. Internal imports are **relative**; it ships raw TypeScript and Turbopack transpiles it (`transpilePackages`).
+- **`frontend/`** — the Next.js app. Routes, UI, and the Next-bound glue: `server/actions` + `server/queries` (both enforce auth via guards, so they stay here), `run-action`, the Auth.js config + `guards` (they call `auth()`), `proxy`, and `lib/{format,site,utils}`.
+
+Backend modules are imported by name: `@resumerank/core/db`, `@resumerank/core/validators/job`, `@resumerank/core/scoring/engine`, etc. Frontend-internal modules keep the `@/*` alias. A single root `.env` feeds both workspaces (loaded via dotenv in `frontend/next.config.ts` and `backend/prisma.config.ts`).
+
 ## Version gotchas — read before writing code
 
 **Next.js 16.2 (App Router, Turbopack default).** Breaking changes vs. training data — full docs in `node_modules/next/dist/docs/`:
@@ -15,11 +23,11 @@ ResumeRank is an applicant-tracking + AI resume-screening tool. Recruiters creat
 - `src/proxy.ts` replaces `middleware.ts` (exists already; export named `proxy`, Node runtime).
 - `next lint` is gone — run `npm run lint` (eslint flat config).
 
-**Prisma 7.8.** Client is generated to `src/generated/prisma` (gitignored) — import `PrismaClient`/types from `@/generated/prisma/client`, enums from `@/generated/prisma/enums`. Never import `@prisma/client` directly. Connection config lives in `prisma.config.ts`; the client uses the `@prisma/adapter-pg` driver adapter (see `src/lib/db.ts` — always use the `db` singleton).
+**Prisma 7.8.** Client is generated to `backend/src/generated/prisma` (gitignored) — import `PrismaClient`/types from `@resumerank/core/generated/prisma/client`, enums from `@resumerank/core/generated/prisma/enums`. Never import `@prisma/client` directly. Connection config lives in `backend/prisma.config.ts`; the client uses the `@prisma/adapter-pg` driver adapter (see `backend/src/db.ts` — always use the `db` singleton).
 
-**Auth.js v5 beta (next-auth@beta).** `auth()`, `signIn`, `signOut`, `handlers` come from `@/lib/auth`. JWT session strategy. Session gives `user.id` and `user.role` for UI affordances only — authorization always re-checks the DB via guards.
+**Auth.js v5 beta (next-auth@beta).** `auth()`, `signIn`, `signOut`, `handlers` come from `@/lib/auth` (frontend). JWT session strategy. Session gives `user.id` and `user.role` for UI affordances only — authorization always re-checks the DB via guards.
 
-**Zod 4** and **Tailwind CSS 4** (CSS-first config via `@theme` in `src/app/globals.css` — there is no tailwind.config file). **framer-motion 12**, **recharts 3**, **lucide-react**.
+**Zod 4** and **Tailwind CSS 4** (CSS-first config via `@theme` in `frontend/src/app/globals.css` — there is no tailwind.config file). **framer-motion 12** (signed-in app) and **GSAP 3 + Lenis** (marketing page only), **recharts 3**, **lucide-react**.
 
 ## Hard rules (the build is graded on these)
 
@@ -27,10 +35,10 @@ ResumeRank is an applicant-tracking + AI resume-screening tool. Recruiters creat
 - No TODO comments, no commented-out code, no dead files, no AI-attribution text anywhere.
 - Comments explain *why*, never *what*; most code should need none.
 - Every async view resolves to one of: loading (skeletons matching final layout), empty (with a CTA), error (named fix + retry), success. No blank flashes, no white screens.
-- Validate with the shared Zod schemas from `@/lib/validators` on BOTH the client form and inside the server action. Never write a second ad-hoc validation.
-- Every mutation: goes through a server action in `src/server/actions/`, starts with a guard (`requireWriter()` / `requireAdmin()` from `@/lib/auth/guards`), verifies row-level ownership where relevant, returns `ActionResult<T>` via `runAction()` (`@/server/run-action`), returns the mutated record, and logs to the activity log (`logActivity` in `@/server/activity`).
+- Validate with the shared Zod schemas from `@resumerank/core/validators` on BOTH the client form and inside the server action. Never write a second ad-hoc validation.
+- Every mutation: goes through a server action in `frontend/src/server/actions/`, starts with a guard (`requireWriter()` / `requireAdmin()` from `@/lib/auth/guards`), verifies row-level ownership where relevant, returns `ActionResult<T>` via `runAction()` (`@/server/run-action`), returns the mutated record, and logs to the activity log (`logActivity` from `@resumerank/core/activity`).
 - Never trust a client-sent role or id claim; guards re-fetch the user from the DB.
-- Secrets only via `env()` from `@/lib/env` (server-only). Nothing secret behind `NEXT_PUBLIC_`.
+- Secrets only via `env()` from `@resumerank/core/env` (server-only). Nothing secret behind `NEXT_PUBLIC_`.
 
 ## Design system
 
@@ -45,11 +53,13 @@ ResumeRank is an applicant-tracking + AI resume-screening tool. Recruiters creat
 
 ## Commands
 
-- `npm run typecheck` · `npm run lint` · `npm run test` (vitest) · `npm run build`
+Run from the repo root; the root scripts fan out to the right workspace.
+- `npm run typecheck` (both workspaces) · `npm run lint` (frontend) · `npm run test` (backend vitest) · `npm run build` (generates the Prisma client, then builds the frontend).
 - Dev server: `npm run dev -- -p 3005` (port 3000 is taken by another local project).
-- Local DB: Postgres in Docker on port 5433 (see `.env`); `npm run db:migrate`, `npm run db:seed`. Demo login: `demo@resumerank.app` / `demo1234`.
+- Local DB: Postgres in Docker on port 5433 (see `.env`); `npm run db:migrate`, `npm run db:seed` (proxied to the backend workspace). Demo login: `demo@resumerank.app` / `demo1234`.
+- Backend unit tests live in `backend/tests/unit`; frontend e2e (`npm run test:e2e`) uses Playwright.
 
 ## Structure
 
-- `src/app/(marketing)` public pages · `src/app/(auth)` login/register/verify/reset · `src/app/(app)` the signed-in product (sidebar shell)
-- `src/components/ui` primitives · `src/components/<feature>` feature components · `src/server/actions` mutations · `src/server/queries` reads · `src/lib` shared logic · `tests/` unit + e2e
+- **frontend** — `frontend/src/app/(marketing)` public pages · `frontend/src/app/(auth)` login/register/verify/reset · `frontend/src/app/(app)` the signed-in product (sidebar shell). `frontend/src/components/ui` primitives · `frontend/src/components/<feature>` feature components · `frontend/src/server/actions` mutations · `frontend/src/server/queries` reads · `frontend/src/lib` Next-bound shared logic.
+- **backend** — `backend/src/{validators,scoring,auth,types}`, `backend/src/{db,env,email,rate-limit,activity}.ts`, `backend/prisma/` (schema, migrations, seed). Consumed as `@resumerank/core/*`.
