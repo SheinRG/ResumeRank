@@ -42,14 +42,16 @@ Backend modules are imported by name: `@resumerank/core/db`, `@resumerank/core/v
 
 ## Design system
 
-- Spacing on the 4/8px scale only (Tailwind default steps). Type scale: 12/14/16/20/24/32/48. Body 16px lh-1.5.
-- Radius: 8px default, 6px inputs, 12px cards/modals (`--radius` token).
-- One accent (indigo), zinc neutrals, 3 grays max per surface. WCAG AA contrast (4.5:1 body, 3:1 large/UI).
-- Dark mode via `next-themes` class strategy — design it, don't invert it (elevate surfaces with lighter zinc, desaturate accent).
-- UI primitives live in `src/components/ui/` (shadcn-style: cva + Radix + `cn()` from `@/lib/utils`). Reuse them; never restyle one-off.
-- Motion: framer-motion only on state change, 150–250ms ease-out, honor `useReducedMotion`. Shared wrappers in `src/components/motion.tsx`.
-- Focus ring: 2px accent outline, 2px offset, `:focus-visible` only. Tap targets ≥44px. Keyboard operable everywhere; Cmd/Ctrl+K opens the command palette.
-- Status color language: verdict STRONG=emerald, PARTIAL=amber, MISSING=rose. Stages: NEW=zinc, SCREENING=sky, SHORTLISTED=indigo, INTERVIEW=violet, OFFER=amber, HIRED=emerald, REJECTED=rose.
+A two-tone **ink + lime** language. All tokens live in `frontend/src/app/globals.css` (`@theme`); style with the semantic utilities (`bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`, `bg-primary`, `text-accent`, `border-border`) — never hardcode a hex in a component.
+
+- **Palette.** Warm cream surface (`#F6F4EE`) with white cards in light; near-black (`#0A0D14`) with `#12161F` cards in dark. Ink (`#161A21`) is the primary action color; lime (`#C6F24E`) is the single accent/highlight. Spacing stays on the 4/8px scale. WCAG AA contrast (4.5:1 body, 3:1 large/UI).
+- **Type.** Body **Instrument Sans** 16px/1.5. Display is **Space Grotesk** on marketing (`font-display`) and **Fredoka** in the signed-in app (`font-display-app`). **JetBrains Mono** (`font-mono`) for labels, scores, IDs, and metadata. Type scale 12/14/16/20/24/32/48.
+- **Radius.** Cards/modals `rounded-2xl`–`rounded-[20px]`, inputs `rounded-lg`, primary actions are pills (`rounded-full`). `--radius` token = 8px base.
+- **Dark mode** via `next-themes` class strategy — design it, don't invert it (elevate surfaces, brighten the accent, don't just flip lightness).
+- **UI primitives** live in `frontend/src/components/ui/` (shadcn-style: cva + Radix + `cn()` from `@/lib/utils`). Reuse them; never restyle one-off.
+- **Motion.** framer-motion in the app (150–250ms ease-out, on state change, honor `useReducedMotion`; shared wrappers in `frontend/src/components/motion.tsx`). The marketing page uses **GSAP + Lenis** for scroll choreography (parallax, split-word reveals, pinned demo, magnetic buttons) — all gated on `prefers-reduced-motion`.
+- **Focus ring:** 2px `--ring` outline, 2px offset, `:focus-visible` only. Tap targets ≥44px. Keyboard operable everywhere; Cmd/Ctrl+K opens the command palette.
+- **Status color language** (semantic tokens): verdict `verdict-strong` (emerald), `verdict-partial` (amber), `verdict-missing` (rose). Stages `stage-{new,screening,shortlisted,interview,offer,hired,rejected}` = zinc / blue / gold / lime-green / teal / emerald / rose.
 
 ## Commands
 

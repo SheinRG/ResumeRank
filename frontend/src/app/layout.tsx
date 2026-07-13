@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Instrument_Sans,
+  JetBrains_Mono,
+  Space_Grotesk,
+  Fredoka,
+} from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -7,14 +12,30 @@ import { siteUrl } from "@/lib/site";
 
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Body copy across the whole product.
+const instrumentSans = Instrument_Sans({
+  variable: "--font-instrument-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Metadata, labels, scores — the monospace voice.
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+});
+
+// Display face for the marketing surface.
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
+// Display face for the signed-in app.
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const DESCRIPTION =
@@ -55,7 +76,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      className={`${instrumentSans.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${fredoka.variable} h-full`}
     >
       <body className="flex min-h-full flex-col antialiased">
         <ThemeProvider>
