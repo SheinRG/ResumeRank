@@ -36,11 +36,13 @@ export function ValueProps() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-x-7 gap-y-9 px-1.5 pt-2.5 pb-[26px]">
+        <div
+          data-reveal-stagger
+          className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-x-7 gap-y-9 px-1.5 pt-2.5 pb-[26px]"
+        >
           {PROPS.map((p) => (
             <div
               key={p.n}
-              data-reveal
               className={`flex flex-col gap-4 rounded-md border border-black/[0.06] bg-white p-8 shadow-[0_1px_1px_rgba(22,26,33,0.05),0_8px_10px_-4px_rgba(22,26,33,0.12),0_20px_34px_-8px_rgba(22,26,33,0.16)] transition-[transform,box-shadow] duration-300 ease-out ${p.rotate} hover:-translate-y-1.5 hover:rotate-0`}
             >
               <span className="font-mono text-[13px] text-[#9ba1ac]">{p.n}</span>

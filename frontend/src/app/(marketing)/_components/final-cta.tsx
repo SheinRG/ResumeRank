@@ -30,13 +30,25 @@ export function FinalCta() {
         </p>
         <Link
           href="/register"
-          data-magnetic
           data-reveal
-          className="inline-flex items-center gap-2.5 rounded-full bg-brand-lime px-[34px] py-[17px] text-[17px] font-semibold text-brand-night transition-transform hover:scale-[0.96]"
+          aria-label="Get started free"
+          className="group inline-flex rounded-full"
         >
-          Get started free
-          <span className="font-display" aria-hidden>
-            →
+          <span className="relative flex items-center justify-center overflow-hidden rounded-full bg-brand-lime px-[34px] py-[17px] text-[17px] font-semibold text-brand-night transition-transform duration-[450ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+            <span
+              aria-hidden
+              className="flex items-center gap-2.5 whitespace-nowrap transition-transform duration-[650ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-x-[150%] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+            >
+              Get started free
+              <span className="font-display">→</span>
+            </span>
+            <span
+              aria-hidden
+              className="absolute inset-0 flex -translate-x-[150%] items-center justify-center gap-2.5 whitespace-nowrap transition-transform duration-[650ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-x-0 motion-reduce:hidden"
+            >
+              Go for it
+              <span className="font-display">→</span>
+            </span>
           </span>
         </Link>
       </div>
