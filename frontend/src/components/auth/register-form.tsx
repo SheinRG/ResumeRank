@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Loader2, MailCheck, UserPlus } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -10,43 +10,24 @@ import { ResendVerificationForm } from "@/components/auth/resend-verification-fo
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
 import { Input } from "@/components/ui/input";
+import { useActionForm } from "@/components/shared/use-action-form";
 import { registerSchema } from "@resumerank/core/validators/auth";
 import { registerAction } from "@/server/actions/auth";
-import type { ActionResult } from "@resumerank/core/types/action";
-
-type FieldErrors = Partial<Record<"name" | "email" | "password", string[]>>;
 
 function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const { fieldErrors, formError, isPending, submit } = useActionForm({
+    schema: registerSchema,
+    action: registerAction,
+    onSuccess: (data) => setRegisteredEmail(data.email),
+  });
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
-    setFormError(null);
-
-    const parsed = registerSchema.safeParse({ name, email, password });
-    if (!parsed.success) {
-      setFieldErrors(parsed.error.flatten().fieldErrors);
-      return;
-    }
-    setFieldErrors({});
-
-    startTransition(async () => {
-      const result: ActionResult<{ email: string }> = await registerAction(
-        parsed.data,
-      );
-      if (!result.ok) {
-        setFieldErrors(result.fieldErrors ?? {});
-        setFormError(result.error);
-        return;
-      }
-      setRegisteredEmail(result.data.email);
-    });
+    submit({ name, email, password });
   }
 
   if (registeredEmail) {

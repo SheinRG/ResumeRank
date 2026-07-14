@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, LogIn } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { GoogleSignInButton } from "@/components/auth/google-signin-button";
@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { useActionForm } from "@/components/shared/use-action-form";
 import { loginSchema } from "@resumerank/core/validators/auth";
 import { loginAction } from "@/server/actions/auth";
-import type { ActionResult } from "@resumerank/core/types/action";
 
 type LoginFormProps = {
   next: string;
@@ -25,32 +25,15 @@ function LoginForm({ next, googleEnabled }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<"email" | "password", string[]>>
-  >({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const { fieldErrors, formError, isPending, submit } = useActionForm({
+    schema: loginSchema,
+    action: loginAction,
+    onSuccess: () => router.push(next),
+  });
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
-    setFormError(null);
-
-    const parsed = loginSchema.safeParse({ email, password });
-    if (!parsed.success) {
-      setFieldErrors(parsed.error.flatten().fieldErrors);
-      return;
-    }
-    setFieldErrors({});
-
-    startTransition(async () => {
-      const result: ActionResult<undefined> = await loginAction(parsed.data);
-      if (!result.ok) {
-        setFieldErrors(result.fieldErrors ?? {});
-        setFormError(result.error);
-        return;
-      }
-      router.push(next);
-    });
+    submit({ email, password });
   }
 
   return (
