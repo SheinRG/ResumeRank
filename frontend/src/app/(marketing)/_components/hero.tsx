@@ -1,6 +1,19 @@
 import Link from "next/link";
 
+import { RotatingText } from "@/components/ui/rotating-text";
+
 const STATS = ["60s to shortlist", "2× weight on must-haves", "0 black boxes"];
+
+// Payoff words that all complete "Every score comes with ___" and reinforce
+// the explainable-scoring promise. Kept descender-free so the reveal's
+// overflow-clip never trims a letter.
+const ROTATING_WORDS = [
+  "evidence.",
+  "the exact line.",
+  "a citation.",
+  "the reason.",
+  "the source.",
+];
 
 export function Hero() {
   return (
@@ -40,13 +53,30 @@ export function Hero() {
         }}
       />
 
-      <div className="relative mx-auto flex w-full max-w-[840px] flex-col items-center gap-[30px] text-center">
+      <div
+        data-parallax="-0.06"
+        className="relative mx-auto flex w-full max-w-[840px] flex-col items-center gap-[30px] text-center"
+      >
         <h1
-          data-split
-          className="font-display text-[clamp(44px,6vw,80px)] leading-[1.04] font-bold tracking-[-0.03em] text-brand-cream"
+          data-reveal
+          className="font-display text-[clamp(44px,6vw,80px)] leading-[1.2] font-bold tracking-[-0.03em] text-brand-cream"
         >
           Every score comes with{" "}
-          <span className="text-brand-lime">evidence.</span>
+          <span className="inline-block align-bottom">
+            <RotatingText
+              texts={ROTATING_WORDS}
+              mainClassName="justify-center overflow-hidden rounded-2xl bg-brand-lime px-4 py-0.5 text-brand-night"
+              splitLevelClassName="overflow-hidden pb-1"
+              animatePresenceMode="popLayout"
+              staggerFrom="last"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "-120%" }}
+              staggerDuration={0.025}
+              transition={{ type: "spring", damping: 30, stiffness: 400 }}
+              rotationInterval={2200}
+            />
+          </span>
         </h1>
         <p
           data-reveal
@@ -59,12 +89,24 @@ export function Hero() {
         <div data-reveal>
           <Link
             href="/register"
-            data-magnetic
-            className="inline-flex items-center justify-center gap-2.5 rounded-full bg-brand-lime px-[30px] py-4 text-base font-semibold text-brand-night transition-transform hover:scale-[0.96]"
+            aria-label="Start scoring free"
+            className="group inline-flex rounded-full"
           >
-            Start scoring free
-            <span className="font-display" aria-hidden>
-              →
+            <span className="relative flex items-center justify-center overflow-hidden rounded-full bg-brand-lime px-[30px] py-4 text-base font-semibold text-brand-night transition-transform duration-[450ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-[0.94] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+              <span
+                aria-hidden
+                className="flex items-center gap-2.5 whitespace-nowrap transition-transform duration-[650ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-x-[150%] motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+              >
+                Start scoring free
+                <span className="font-display">→</span>
+              </span>
+              <span
+                aria-hidden
+                className="absolute inset-0 flex -translate-x-[150%] items-center justify-center gap-2.5 whitespace-nowrap transition-transform duration-[650ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-x-0 motion-reduce:hidden"
+              >
+                Go for it
+                <span className="font-display">→</span>
+              </span>
             </span>
           </Link>
         </div>

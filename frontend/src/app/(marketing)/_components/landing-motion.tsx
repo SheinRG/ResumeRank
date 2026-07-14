@@ -11,8 +11,8 @@ import Lenis from "lenis";
  *
  * Behaviours are wired by data-attribute so the markup stays declarative:
  * `data-split` (word-by-word headline reveal), `data-reveal` (fade/rise on
- * enter), `data-parallax` (speed-weighted drift), `data-marquee-track`,
- * `data-magnetic`, and the `data-demo-*` pinned walkthrough.
+ * enter), `data-parallax` (speed-weighted drift), `data-marquee-track`, and
+ * the `data-demo-*` pinned walkthrough.
  */
 export function LandingMotion() {
   useEffect(() => {
@@ -106,22 +106,46 @@ export function LandingMotion() {
       }
     });
 
-    // Rise-and-fade reveals; content stays visible until its reveal plays.
-    document.querySelectorAll<HTMLElement>("[data-reveal]").forEach((el) => {
-      onceVisible(el, () => {
-        gsap.fromTo(
-          el,
-          { y: 26, autoAlpha: 0 },
-          {
-            y: 0,
-            autoAlpha: 1,
-            duration: 0.85,
-            ease: "power3.out",
-            clearProps: "opacity,visibility,transform",
-          },
-        );
+    // Rise-and-fade reveals: content lifts from below through a soft blur as it
+    // enters. `data-reveal-stagger` cascades a container's direct children
+    // instead of moving the whole block at once. Content stays fully visible
+    // until its reveal plays, so nothing is hidden without JS.
+    const revealIn = (target: gsap.TweenTarget, stagger: boolean) => {
+      gsap.fromTo(
+        target,
+        { y: 56, autoAlpha: 0, filter: "blur(12px)" },
+        {
+          y: 0,
+          autoAlpha: 1,
+          filter: "blur(0px)",
+          duration: 1.05,
+          ease: "power3.out",
+          stagger: stagger ? 0.12 : 0,
+          clearProps: "filter,opacity,visibility,transform",
+        },
+      );
+    };
+
+    const grouped = new Set<Element>();
+    document
+      .querySelectorAll<HTMLElement>("[data-reveal-stagger]")
+      .forEach((el) => {
+        const items = [...el.children];
+        items.forEach((child) => grouped.add(child));
+        onceVisible(el, () => revealIn(items, true));
       });
+
+    document.querySelectorAll<HTMLElement>("[data-reveal]").forEach((el) => {
+      if (grouped.has(el)) return;
+      onceVisible(el, () => revealIn(el, false));
     });
+
+    // Slim scroll-progress indicator riding the top edge of the viewport.
+    const progress = document.createElement("div");
+    progress.style.cssText =
+      "position:fixed;top:0;left:0;height:2px;width:0;z-index:60;pointer-events:none;background:var(--color-brand-lime);box-shadow:0 0 12px rgba(198,242,78,0.55)";
+    document.body.appendChild(progress);
+    cleanups.push(() => progress.remove());
 
     // Parallax + pinned-demo progress, driven by a scrollY poll (scroll events
     // are unreliable under smooth-scroll libraries).
@@ -173,6 +197,8 @@ export function LandingMotion() {
     let lastY = -1;
     const update = () => {
       const vh = window.innerHeight;
+      const max = document.documentElement.scrollHeight - vh;
+      progress.style.width = max > 0 ? `${(window.scrollY / max) * 100}%` : "0";
       for (const item of parallax) {
         const parent = item.el.parentElement;
         if (!parent) continue;
@@ -215,27 +241,6 @@ export function LandingMotion() {
       });
       cleanups.push(() => tween.kill());
     }
-
-    // Magnetic buttons.
-    document.querySelectorAll<HTMLElement>("[data-magnetic]").forEach((el) => {
-      const move = (e: MouseEvent) => {
-        const r = el.getBoundingClientRect();
-        gsap.to(el, {
-          x: (e.clientX - r.left - r.width / 2) * 0.25,
-          y: (e.clientY - r.top - r.height / 2) * 0.35,
-          duration: 0.4,
-          ease: "power3.out",
-        });
-      };
-      const leave = () =>
-        gsap.to(el, { x: 0, y: 0, duration: 0.6, ease: "elastic.out(1,0.45)" });
-      el.addEventListener("mousemove", move);
-      el.addEventListener("mouseleave", leave);
-      cleanups.push(() => {
-        el.removeEventListener("mousemove", move);
-        el.removeEventListener("mouseleave", leave);
-      });
-    });
 
     return () => {
       cancelAnimationFrame(rafId);
