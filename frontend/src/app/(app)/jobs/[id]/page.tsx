@@ -19,7 +19,7 @@ import { AddCandidateDialog } from "@/components/jobs/add-candidate-dialog";
 import { ApplicantsTable } from "@/components/jobs/applicants-table";
 import { ApplicantsToolbar } from "@/components/jobs/applicants-toolbar";
 import { JobActionsMenu } from "@/components/jobs/job-actions-menu";
-import { PaginationControl } from "@/components/jobs/pagination-control";
+import { PaginationControl } from "@/components/shared/pagination-control";
 import {
   EMPLOYMENT_TYPE_LABELS,
   REQUIREMENT_WEIGHT_LABELS,

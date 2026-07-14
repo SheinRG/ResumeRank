@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
-/** Prev/Next pager that mirrors `page` into the URL. Shared by the jobs list and the applicants table. */
+/** Prev/Next pager that mirrors `page` into the URL. Shared by the jobs, candidates, and applicants lists. */
 export function PaginationControl({
   page,
   pageCount,

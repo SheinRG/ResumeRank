@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CandidateToolbar } from "@/components/candidates/candidate-toolbar";
-import { CandidatePagination } from "@/components/candidates/candidate-pagination";
+import { PaginationControl } from "@/components/shared/pagination-control";
 import { formatDate } from "@/lib/format";
 import { canWrite, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@resumerank/core/validators/search";
@@ -153,7 +153,7 @@ export default async function CandidatesPage({
                   ))}
                 </TableBody>
               </Table>
-              <CandidatePagination page={result.page} pageCount={result.pageCount} />
+              <PaginationControl page={result.page} pageCount={result.pageCount} />
             </>
           )}
         </CardContent>

@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { JobsToolbar } from "@/components/jobs/jobs-toolbar";
-import { PaginationControl } from "@/components/jobs/pagination-control";
+import { PaginationControl } from "@/components/shared/pagination-control";
 import { EMPLOYMENT_TYPE_LABELS } from "@/components/jobs/labels";
 import { formatDate } from "@/lib/format";
 import { canWrite, requireUser } from "@/lib/auth/guards";
