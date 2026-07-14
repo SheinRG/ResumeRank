@@ -81,18 +81,12 @@ function bucketByWeek(dates: Date[], weekStarts: Date[]): WeekPoint[] {
   });
 }
 
-function bucketScores(scores: number[]): ScoreBucket[] {
-  const buckets = Array.from({ length: SCORE_BUCKET_COUNT }, (_, i) => {
-    const lower = i * SCORE_BUCKET_WIDTH;
-    const upper = i === SCORE_BUCKET_COUNT - 1 ? 100 : lower + SCORE_BUCKET_WIDTH - 1;
-    return { bucket: `${lower}–${upper}`, count: 0 };
-  });
-  for (const score of scores) {
-    const index = Math.min(SCORE_BUCKET_COUNT - 1, Math.floor(score / SCORE_BUCKET_WIDTH));
-    const bucket = buckets[index];
-    if (bucket) bucket.count += 1;
-  }
-  return buckets;
+// Human label for score-histogram bucket `index` (0-based). Counts are filled
+// from a SQL GROUP BY so the full (unbounded) scored set never enters memory.
+function scoreBucketLabel(index: number): string {
+  const lower = index * SCORE_BUCKET_WIDTH;
+  const upper = index === SCORE_BUCKET_COUNT - 1 ? 100 : lower + SCORE_BUCKET_WIDTH - 1;
+  return `${lower}–${upper}`;
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
@@ -107,7 +101,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     activeApplications,
     scoreAggregate,
     stageGroups,
-    scoredApplications,
+    scoreBucketRows,
     recentInRange,
     recentActivity,
   ] = await Promise.all([
@@ -125,10 +119,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       where: { deletedAt: null },
       _count: { _all: true },
     }),
-    db.application.findMany({
-      where: { deletedAt: null, aiScore: { not: null } },
-      select: { aiScore: true },
-    }),
+    db.$queryRaw<Array<{ bucket: number; count: number }>>`
+      SELECT LEAST(${SCORE_BUCKET_COUNT}, floor("aiScore"::numeric / ${SCORE_BUCKET_WIDTH}) + 1)::int AS bucket,
+             count(*)::int AS count
+      FROM "Application"
+      WHERE "deletedAt" IS NULL AND "aiScore" IS NOT NULL
+      GROUP BY bucket
+    `,
     db.application.findMany({
       where: { deletedAt: null, createdAt: { gte: earliestWeekStart } },
       select: { createdAt: true },
@@ -148,10 +145,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     count: countByStage.get(stage) ?? 0,
   }));
 
-  const scoreDistribution = bucketScores(
-    scoredApplications
-      .map((a) => a.aiScore)
-      .filter((score): score is number => score !== null),
+  const countByBucket = new Map(scoreBucketRows.map((r) => [r.bucket, r.count]));
+  const scoreDistribution: ScoreBucket[] = Array.from(
+    { length: SCORE_BUCKET_COUNT },
+    (_, i) => ({ bucket: scoreBucketLabel(i), count: countByBucket.get(i + 1) ?? 0 }),
   );
 
   const applicationsOverTime = bucketByWeek(
