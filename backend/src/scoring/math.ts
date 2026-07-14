@@ -31,9 +31,3 @@ export function computeScore(evaluations: ScorableEvaluation[]): number {
   }
   return Math.round((earned / possible) * 100);
 }
-
-export function scoreTone(score: number): "strong" | "medium" | "weak" {
-  if (score >= 75) return "strong";
-  if (score >= 50) return "medium";
-  return "weak";
-}

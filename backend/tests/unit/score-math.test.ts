@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeScore, scoreTone } from "../../src/scoring/math";
+import { computeScore } from "../../src/scoring/math";
 
 describe("computeScore", () => {
   it("returns 0 for an empty evaluation set", () => {
@@ -54,16 +54,5 @@ describe("computeScore", () => {
         { weight: "MUST", verdict: "PARTIAL" },
       ]),
     ).toBe(83);
-  });
-});
-
-describe("scoreTone", () => {
-  it("maps score bands to tones", () => {
-    expect(scoreTone(90)).toBe("strong");
-    expect(scoreTone(75)).toBe("strong");
-    expect(scoreTone(74)).toBe("medium");
-    expect(scoreTone(50)).toBe("medium");
-    expect(scoreTone(49)).toBe("weak");
-    expect(scoreTone(0)).toBe("weak");
   });
 });
