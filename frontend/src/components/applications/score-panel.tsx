@@ -8,21 +8,12 @@ import type { EvaluationItem } from "@/server/queries/applications";
 
 function ringClasses(score: number): { stroke: string; text: string } {
   if (score >= 70) {
-    return {
-      stroke: "stroke-emerald-500 dark:stroke-emerald-400",
-      text: "text-emerald-600 dark:text-emerald-400",
-    };
+    return { stroke: "stroke-verdict-strong", text: "text-verdict-strong" };
   }
   if (score >= 40) {
-    return {
-      stroke: "stroke-amber-500 dark:stroke-amber-400",
-      text: "text-amber-600 dark:text-amber-400",
-    };
+    return { stroke: "stroke-verdict-partial", text: "text-verdict-partial" };
   }
-  return {
-    stroke: "stroke-rose-500 dark:stroke-rose-400",
-    text: "text-rose-600 dark:text-rose-400",
-  };
+  return { stroke: "stroke-verdict-missing", text: "text-verdict-missing" };
 }
 
 function ScoreRing({ score }: { score: number }) {
@@ -64,9 +55,9 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 const TALLY_CLASSES = {
-  strong: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  partial: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  missing: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  strong: "border border-verdict-strong/30 bg-verdict-strong/10 text-verdict-strong",
+  partial: "border border-verdict-partial/30 bg-verdict-partial/10 text-verdict-partial",
+  missing: "border border-verdict-missing/30 bg-verdict-missing/10 text-verdict-missing",
 } as const;
 
 function TallyChip({

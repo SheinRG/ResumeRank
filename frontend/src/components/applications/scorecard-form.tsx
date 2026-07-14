@@ -11,8 +11,8 @@ import { FormField } from "@/components/shared/form-field";
 import { cn } from "@/lib/utils";
 import { scorecardSchema } from "@resumerank/core/validators/application";
 import { upsertScorecardAction } from "@/server/actions/scorecards";
+import { FILLED_STAR_CLASS, STAR_POSITIONS } from "./stars";
 
-const STAR_POSITIONS = [1, 2, 3, 4, 5] as const;
 const RATING_LABELS: Record<number, string> = {
   1: "1 — Poor fit",
   2: "2 — Weak",
@@ -86,9 +86,7 @@ export function ScorecardForm({
                 aria-hidden="true"
                 className={cn(
                   "size-6 transition-colors",
-                  position <= rating
-                    ? "fill-amber-400 text-amber-400 dark:fill-amber-500 dark:text-amber-500"
-                    : "text-muted-foreground",
+                  position <= rating ? FILLED_STAR_CLASS : "text-muted-foreground",
                 )}
               />
             </label>

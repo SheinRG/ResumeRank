@@ -1,8 +1,7 @@
 import { Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-
-const STAR_POSITIONS = [1, 2, 3, 4, 5] as const;
+import { FILLED_STAR_CLASS, STAR_POSITIONS } from "./stars";
 
 export function StarDisplay({ rating, className }: { rating: number; className?: string }) {
   return (
@@ -17,9 +16,7 @@ export function StarDisplay({ rating, className }: { rating: number; className?:
           aria-hidden="true"
           className={cn(
             "size-4",
-            position <= rating
-              ? "fill-amber-400 text-amber-400 dark:fill-amber-500 dark:text-amber-500"
-              : "text-border",
+            position <= rating ? FILLED_STAR_CLASS : "text-border",
           )}
         />
       ))}
