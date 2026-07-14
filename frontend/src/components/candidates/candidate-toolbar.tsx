@@ -1,10 +1,5 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -13,6 +8,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CANDIDATE_SOURCE_LABELS } from "@/components/shared/status-badges";
+import { ToolbarSearch, ToolbarShell } from "@/components/shared/toolbar";
+import { useListFilters } from "@/components/shared/use-list-filters";
 import { CANDIDATE_SOURCES } from "@resumerank/core/validators/enums";
 import type { CandidateSource } from "@resumerank/core/validators/enums";
 
@@ -21,17 +18,6 @@ const SORT_OPTIONS = [
   { value: "oldest", label: "Oldest first" },
   { value: "name", label: "Name A–Z" },
 ] as const;
-
-const SEARCH_DEBOUNCE_MS = 300;
-const SEARCH_INPUT_ID = "candidate-search";
-
-function searchInputIsFocused(): boolean {
-  return (
-    typeof document !== "undefined" &&
-    document.activeElement instanceof HTMLElement &&
-    document.activeElement.id === SEARCH_INPUT_ID
-  );
-}
 
 export function CandidateToolbar({
   q,
@@ -42,77 +28,19 @@ export function CandidateToolbar({
   source: CandidateSource | undefined;
   sort: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [value, setValue] = useState(q);
-  const [prevQ, setPrevQ] = useState(q);
-
-  // Sync from the URL (back button, shared link) — but never clobber the
-  // field while the user is typing in it.
-  if (prevQ !== q) {
-    setPrevQ(q);
-    if (!searchInputIsFocused()) {
-      setValue(q);
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  function replaceWith(params: URLSearchParams) {
-    params.delete("page");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
-  }
-
-  function handleSearchChange(next: string) {
-    setValue(next);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next.trim()) {
-        params.set("q", next.trim());
-      } else {
-        params.delete("q");
-      }
-      replaceWith(params);
-    }, SEARCH_DEBOUNCE_MS);
-  }
-
-  function updateParam(key: string, next: string | undefined) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next) {
-      params.set(key, next);
-    } else {
-      params.delete(key);
-    }
-    replaceWith(params);
-  }
+  const { search, setSearch, setParam } = useListFilters(q);
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="relative flex-1 sm:max-w-xs">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          id={SEARCH_INPUT_ID}
-          value={value}
-          onChange={(event) => handleSearchChange(event.target.value)}
-          placeholder="Search name or email…"
-          className="pl-9"
-          aria-label="Search candidates"
-        />
-      </div>
+    <ToolbarShell>
+      <ToolbarSearch
+        value={search}
+        onChange={setSearch}
+        placeholder="Search name or email…"
+        label="Search candidates"
+      />
       <Select
         value={source ?? "all"}
-        onValueChange={(next) => updateParam("source", next === "all" ? undefined : next)}
+        onValueChange={(value) => setParam("source", value, "all")}
       >
         <SelectTrigger size="sm" className="w-40" aria-label="Filter by source">
           <SelectValue />
@@ -126,10 +54,7 @@ export function CandidateToolbar({
           ))}
         </SelectContent>
       </Select>
-      <Select
-        value={sort}
-        onValueChange={(next) => updateParam("sort", next === "newest" ? undefined : next)}
-      >
+      <Select value={sort} onValueChange={(value) => setParam("sort", value, "newest")}>
         <SelectTrigger size="sm" className="w-36" aria-label="Sort candidates">
           <SelectValue />
         </SelectTrigger>
@@ -141,6 +66,6 @@ export function CandidateToolbar({
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </ToolbarShell>
   );
 }

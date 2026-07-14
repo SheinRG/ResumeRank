@@ -1,10 +1,5 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -13,6 +8,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { JOB_STATUS_LABELS } from "@/components/shared/status-badges";
+import { ToolbarSearch, ToolbarShell } from "@/components/shared/toolbar";
+import { useListFilters } from "@/components/shared/use-list-filters";
 import type { JobListParams } from "@resumerank/core/validators/search";
 import type { JobStatus } from "@resumerank/core/validators/enums";
 
@@ -39,70 +36,19 @@ export function JobsToolbar({
   status?: JobStatus;
   sort: JobListParams["sort"];
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [search, setSearch] = useState(q);
-  // Tracks the last value this component pushed, so URL changes we caused
-  // don't clobber text the user typed while navigation was in flight.
-  const lastPushed = useRef(q);
-
-  useEffect(() => {
-    if (q !== lastPushed.current) {
-      lastPushed.current = q;
-      setSearch(q);
-    }
-  }, [q]);
-
-  useEffect(() => {
-    const trimmed = search.trim();
-    if (trimmed === q) return;
-    const handle = setTimeout(() => {
-      lastPushed.current = trimmed;
-      const params = new URLSearchParams(searchParams.toString());
-      if (trimmed) {
-        params.set("q", trimmed);
-      } else {
-        params.delete("q");
-      }
-      params.delete("page");
-      const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname);
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [search, q, searchParams, pathname, router]);
-
-  function updateParam(key: string, value: string, sentinel: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value === sentinel) {
-      params.delete(key);
-    } else {
-      params.set(key, value);
-    }
-    params.delete("page");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
-  }
+  const { search, setSearch, setParam } = useListFilters(q);
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="relative flex-1 sm:max-w-xs">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          type="search"
-          placeholder="Search jobs by title…"
-          className="pl-9"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          aria-label="Search jobs by title"
-        />
-      </div>
+    <ToolbarShell>
+      <ToolbarSearch
+        value={search}
+        onChange={setSearch}
+        placeholder="Search jobs by title…"
+        label="Search jobs by title"
+      />
       <Select
         value={status ?? "all"}
-        onValueChange={(value) => updateParam("status", value, "all")}
+        onValueChange={(value) => setParam("status", value, "all")}
       >
         <SelectTrigger size="sm" className="w-40" aria-label="Filter by status">
           <SelectValue />
@@ -115,10 +61,7 @@ export function JobsToolbar({
           ))}
         </SelectContent>
       </Select>
-      <Select
-        value={sort}
-        onValueChange={(value) => updateParam("sort", value, "newest")}
-      >
+      <Select value={sort} onValueChange={(value) => setParam("sort", value, "newest")}>
         <SelectTrigger size="sm" className="w-40" aria-label="Sort jobs">
           <SelectValue />
         </SelectTrigger>
@@ -130,6 +73,6 @@ export function JobsToolbar({
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </ToolbarShell>
   );
 }
