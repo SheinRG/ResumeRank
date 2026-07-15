@@ -35,6 +35,13 @@ const nextConfig: NextConfig = {
   // Pin the monorepo root so file tracing spans backend + frontend and does not
   // latch onto an unrelated lockfile higher up the filesystem.
   turbopack: { root: resolve(process.cwd(), "..") },
+  experimental: {
+    // Persist Turbopack's compile graph to .next between dev restarts, and cut
+    // per-route first-visit compiles by only bundling named imports actually
+    // used from these export-heavy packages.
+    turbopackFileSystemCacheForDev: true,
+    optimizePackageImports: ["framer-motion", "gsap"],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
