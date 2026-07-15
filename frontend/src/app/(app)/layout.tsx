@@ -3,8 +3,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { GateError, requireUser, type CurrentUser } from "@/lib/auth/guards";
-import { AppSidebar } from "@/components/layout/app-sidebar";
-import { TopBar } from "@/components/layout/top-bar";
+import { AppShell } from "@/components/layout/app-shell";
 import { VerifyBanner } from "@/components/layout/verify-banner";
 
 async function loadCurrentUser(): Promise<CurrentUser> {
@@ -32,16 +31,14 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <AppSidebar user={user} />
-      <div className="flex min-h-screen flex-col md:pl-60">
-        <TopBar user={user} />
+      <AppShell user={user}>
         {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
         <main className="flex-1">
           <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
             {children}
           </div>
         </main>
-      </div>
+      </AppShell>
     </div>
   );
 }

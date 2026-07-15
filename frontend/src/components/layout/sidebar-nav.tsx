@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav-items";
 
@@ -13,7 +14,13 @@ function isActive(pathname: string, href: string): boolean {
 
 type Rect = { x: number; y: number; w: number; h: number };
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarNav({
+  onNavigate,
+  collapsed = false,
+}: {
+  onNavigate?: () => void;
+  collapsed?: boolean;
+}) {
   const pathname = usePathname();
   const activeIndex = NAV_ITEMS.findIndex((item) => isActive(pathname, item.href));
 
@@ -32,7 +39,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
 
   useLayoutEffect(() => {
     measure(activeIndex);
-  }, [activeIndex, measure]);
+  }, [activeIndex, measure, collapsed]);
 
   useEffect(() => {
     const onResize = () => measure(activeIndex);
@@ -40,8 +47,19 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     return () => window.removeEventListener("resize", onResize);
   }, [activeIndex, measure]);
 
+  useEffect(() => {
+    // Sidebar width animates over 300ms; re-measure once the collapse
+    // transition settles so the highlight lands on the final item box.
+    const timeout = setTimeout(() => measure(activeIndex), 300);
+    return () => clearTimeout(timeout);
+  }, [collapsed, activeIndex, measure]);
+
   return (
-    <nav ref={navRef} aria-label="Primary" className="relative flex flex-col gap-1 px-3">
+    <nav
+      ref={navRef}
+      aria-label="Primary"
+      className={cn("relative flex flex-col gap-1", collapsed ? "items-center px-2" : "px-3")}
+    >
       <span
         aria-hidden
         className="pointer-events-none absolute top-0 left-0 rounded-xl bg-brand-lime transition-[transform,width,height,opacity] duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
@@ -59,9 +77,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       {NAV_ITEMS.map((item, i) => {
         const active = i === activeIndex;
         const Icon = item.icon;
-        return (
+        const link = (
           <Link
-            key={item.href}
             href={item.href}
             ref={(el) => {
               itemRefs.current[i] = el;
@@ -69,15 +86,23 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative z-10 flex h-10 items-center gap-3 rounded-xl px-3 text-sm transition-colors duration-300",
+              "relative z-10 flex h-10 items-center rounded-xl text-sm transition-colors duration-300",
+              collapsed ? "w-10 justify-center" : "w-full gap-3 px-3",
               active
                 ? "font-semibold text-brand-night"
                 : "font-medium text-brand-cream/65 hover:text-brand-cream",
             )}
           >
-            <Icon className="size-4" aria-hidden="true" />
-            {item.label}
+            <Icon className="size-4 shrink-0" aria-hidden="true" />
+            {!collapsed ? item.label : null}
           </Link>
+        );
+
+        return (
+          <Tooltip key={item.href}>
+            <TooltipTrigger asChild>{link}</TooltipTrigger>
+            {collapsed ? <TooltipContent side="right">{item.label}</TooltipContent> : null}
+          </Tooltip>
         );
       })}
     </nav>
