@@ -6,13 +6,18 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const TABS = [
   { value: "profile", href: "/settings", label: "Profile" },
+  { value: "account", href: "/settings/account", label: "Account" },
   { value: "team", href: "/settings/team", label: "Team" },
 ] as const;
 
 export function SettingsNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const active = pathname.startsWith("/settings/team") ? "team" : "profile";
+  const active = pathname.startsWith("/settings/team")
+    ? "team"
+    : pathname.startsWith("/settings/account")
+      ? "account"
+      : "profile";
 
   function handleChange(value: string) {
     const tab = TABS.find((item) => item.value === value);

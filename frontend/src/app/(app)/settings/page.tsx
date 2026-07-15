@@ -24,7 +24,11 @@ export default async function SettingsProfilePage() {
           <CardDescription>Update your display name.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ProfileForm name={user.name} email={user.email} />
+          <ProfileForm
+            name={user.name}
+            email={user.email}
+            image={user.image}
+          />
         </CardContent>
       </Card>
       <Card>
