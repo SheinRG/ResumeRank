@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { initials } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import type { CurrentUser } from "@/lib/auth/guards";
 
@@ -28,9 +29,11 @@ const ROLE_LABELS: Record<CurrentUser["role"], string> = {
 export function UserMenu({
   user,
   onNavigate,
+  collapsed = false,
 }: {
   user: CurrentUser;
   onNavigate?: () => void;
+  collapsed?: boolean;
 }) {
   return (
     <DropdownMenu>
@@ -38,7 +41,10 @@ export function UserMenu({
         <Button
           type="button"
           variant="ghost"
-          className="h-auto w-full items-center justify-start gap-3 rounded-xl border-t border-white/[0.07] px-2 py-2.5 text-left text-brand-cream hover:bg-white/5 hover:text-brand-cream"
+          className={cn(
+            "h-auto w-full items-center rounded-xl border-t border-white/[0.07] text-brand-cream hover:bg-white/5 hover:text-brand-cream",
+            collapsed ? "justify-center px-0 py-2.5" : "justify-start gap-3 px-2 py-2.5 text-left",
+          )}
         >
           <Avatar className="size-[34px]">
             {user.image ? <AvatarImage src={user.image} alt="" /> : null}
@@ -46,17 +52,19 @@ export function UserMenu({
               {initials(user.name)}
             </AvatarFallback>
           </Avatar>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate text-[13px] font-semibold text-brand-cream">
-              {user.name}
+          {!collapsed ? (
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="truncate text-[13px] font-semibold text-brand-cream">
+                {user.name}
+              </span>
+              <span className="truncate text-[11px] text-brand-muted">
+                {ROLE_LABELS[user.role]}
+              </span>
             </span>
-            <span className="truncate text-[11px] text-brand-muted">
-              {ROLE_LABELS[user.role]}
-            </span>
-          </span>
+          ) : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-56">
+      <DropdownMenuContent align="end" side={collapsed ? "right" : "top"} className="w-56">
         <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
           {user.email}
         </DropdownMenuLabel>
