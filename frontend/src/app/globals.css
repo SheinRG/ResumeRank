@@ -130,7 +130,7 @@
   --font-sans: var(--font-instrument-sans), system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --font-display: var(--font-space-grotesk), var(--font-instrument-sans), sans-serif;
-  --font-display-app: var(--font-fredoka), var(--font-instrument-sans), sans-serif;
+  --font-display-app: var(--font-montserrat), var(--font-instrument-sans), sans-serif;
 }
 
 @layer base {

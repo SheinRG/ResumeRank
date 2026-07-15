@@ -7,15 +7,19 @@ const SCORE_BUCKET_WIDTH = 10;
 const SCORE_BUCKET_COUNT = 10;
 const HISTORY_WEEKS = 8;
 const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+const RECENT_WINDOW_MS = MS_PER_WEEK;
 const ACTIVE_STAGES: readonly Stage[] = STAGES.filter(
   (stage) => stage !== "HIRED" && stage !== "REJECTED",
 );
 
 export interface DashboardStats {
   openJobs: number;
+  totalJobs: number;
   totalCandidates: number;
+  newCandidates: number;
   activeApplications: number;
   averageScore: number | null;
+  scoredApplications: number;
 }
 
 export interface FunnelStagePoint {
@@ -94,10 +98,13 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const weekStarts = lastNWeekStarts(HISTORY_WEEKS);
   const earliestWeekStart = weekStarts[0];
+  const recentSince = new Date(Date.now() - RECENT_WINDOW_MS);
 
   const [
     openJobs,
+    totalJobs,
     totalCandidates,
+    newCandidates,
     activeApplications,
     scoreAggregate,
     stageGroups,
@@ -106,13 +113,16 @@ export async function getDashboardData(): Promise<DashboardData> {
     recentActivity,
   ] = await Promise.all([
     db.job.count({ where: { status: "OPEN" } }),
+    db.job.count(),
     db.candidate.count(),
+    db.candidate.count({ where: { createdAt: { gte: recentSince } } }),
     db.application.count({
       where: { deletedAt: null, stage: { in: [...ACTIVE_STAGES] } },
     }),
     db.application.aggregate({
       where: { deletedAt: null, aiScore: { not: null } },
       _avg: { aiScore: true },
+      _count: { aiScore: true },
     }),
     db.application.groupBy({
       by: ["stage"],
@@ -159,10 +169,13 @@ export async function getDashboardData(): Promise<DashboardData> {
   return {
     stats: {
       openJobs,
+      totalJobs,
       totalCandidates,
+      newCandidates,
       activeApplications,
       averageScore:
         scoreAggregate._avg.aiScore == null ? null : Math.round(scoreAggregate._avg.aiScore),
+      scoredApplications: scoreAggregate._count.aiScore,
     },
     funnel,
     scoreDistribution,

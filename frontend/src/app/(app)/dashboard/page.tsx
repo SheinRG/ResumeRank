@@ -20,6 +20,8 @@ export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
+  const { stats } = data;
+  const totalApplications = data.funnel.reduce((sum, point) => sum + point.count, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -29,16 +31,37 @@ export default async function DashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Open jobs" value={data.stats.openJobs} icon={Briefcase} />
-        <StatCard label="Candidates" value={data.stats.totalCandidates} icon={Users} />
+        <StatCard
+          label="Open jobs"
+          value={stats.openJobs}
+          delta={`${stats.totalJobs} total`}
+          icon={Briefcase}
+        />
+        <StatCard
+          label="Candidates"
+          value={stats.totalCandidates}
+          delta={
+            stats.newCandidates > 0
+              ? `+${stats.newCandidates} this week`
+              : "no new this week"
+          }
+          deltaTone={stats.newCandidates > 0 ? "positive" : "neutral"}
+          icon={Users}
+        />
         <StatCard
           label="In pipeline"
-          value={data.stats.activeApplications}
+          value={stats.activeApplications}
+          delta={`${totalApplications} all-time`}
           icon={ClipboardList}
         />
         <StatCard
           label="Average score"
-          value={data.stats.averageScore ?? "—"}
+          value={stats.averageScore ?? "—"}
+          delta={
+            stats.scoredApplications > 0
+              ? `across ${stats.scoredApplications} scored`
+              : "none scored yet"
+          }
           icon={Star}
         />
       </div>
@@ -59,7 +82,10 @@ export default async function DashboardPage() {
             <CardDescription>AI scores across scored applications</CardDescription>
           </CardHeader>
           <CardContent>
-            <ScoreDistributionChart data={data.scoreDistribution} />
+            <ScoreDistributionChart
+              data={data.scoreDistribution}
+              averageScore={stats.averageScore}
+            />
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">

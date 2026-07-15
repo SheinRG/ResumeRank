@@ -45,7 +45,7 @@ Backend modules are imported by name: `@resumerank/core/db`, `@resumerank/core/v
 A two-tone **ink + lime** language. All tokens live in `frontend/src/app/globals.css` (`@theme`); style with the semantic utilities (`bg-background`, `bg-card`, `text-foreground`, `text-muted-foreground`, `bg-primary`, `text-accent`, `border-border`) — never hardcode a hex in a component.
 
 - **Palette.** Warm cream surface (`#F6F4EE`) with white cards in light; near-black (`#0A0D14`) with `#12161F` cards in dark. Ink (`#161A21`) is the primary action color; lime (`#C6F24E`) is the single accent/highlight. Spacing stays on the 4/8px scale. WCAG AA contrast (4.5:1 body, 3:1 large/UI).
-- **Type.** Body **Instrument Sans** 16px/1.5. Display is **Space Grotesk** on marketing (`font-display`) and **Fredoka** in the signed-in app (`font-display-app`). **JetBrains Mono** (`font-mono`) for labels, scores, IDs, and metadata. Type scale 12/14/16/20/24/32/48.
+- **Type.** Body **Instrument Sans** 16px/1.5. Display is **Space Grotesk** on marketing (`font-display`) and **Montserrat** in the signed-in app (`font-display-app`). **JetBrains Mono** (`font-mono`) for labels, scores, IDs, and metadata. Type scale 12/14/16/20/24/32/48.
 - **Radius.** Cards/modals `rounded-2xl`–`rounded-[20px]`, inputs `rounded-lg`, primary actions are pills (`rounded-full`). `--radius` token = 8px base.
 - **Dark mode** via `next-themes` class strategy — design it, don't invert it (elevate surfaces, brighten the accent, don't just flip lightness).
 - **UI primitives** live in `frontend/src/components/ui/` (shadcn-style: cva + Radix + `cn()` from `@/lib/utils`). Reuse them; never restyle one-off.

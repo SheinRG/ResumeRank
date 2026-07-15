@@ -3,7 +3,7 @@ import {
   Instrument_Sans,
   JetBrains_Mono,
   Space_Grotesk,
-  Fredoka,
+  Montserrat,
 } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
@@ -32,10 +32,10 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 // Display face for the signed-in app.
-const fredoka = Fredoka({
-  variable: "--font-fredoka",
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500", "600", "700"],
 });
 
 const DESCRIPTION =
@@ -76,7 +76,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${instrumentSans.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${fredoka.variable} h-full`}
+      className={`${instrumentSans.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${montserrat.variable} h-full`}
     >
       <body className="flex min-h-full flex-col antialiased">
         <ThemeProvider>
