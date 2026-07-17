@@ -895,20 +895,25 @@ const applications: SeedApplication[] = [
 async function main(): Promise<void> {
   console.log("Seeding ResumeRank demo workspace…");
 
-  await db.$transaction([
-    db.activityLog.deleteMany(),
-    db.scorecard.deleteMany(),
-    db.evaluation.deleteMany(),
-    db.application.deleteMany(),
-    db.jobRequirement.deleteMany(),
-    db.candidate.deleteMany(),
-    db.job.deleteMany(),
-    db.passwordResetToken.deleteMany(),
-    db.session.deleteMany(),
-    db.account.deleteMany(),
-    db.verificationToken.deleteMany(),
-    db.user.deleteMany(),
-  ]);
+  await db.$transaction(
+    [
+      db.activityLog.deleteMany(),
+      db.scorecard.deleteMany(),
+      db.evaluation.deleteMany(),
+      db.application.deleteMany(),
+      db.jobRequirement.deleteMany(),
+      db.candidate.deleteMany(),
+      db.job.deleteMany(),
+      db.passwordResetToken.deleteMany(),
+      db.session.deleteMany(),
+      db.account.deleteMany(),
+      db.verificationToken.deleteMany(),
+      db.user.deleteMany(),
+    ],
+    // A remote (Neon) database has round-trip latency that can exceed the
+    // 2s default wait to acquire a connection and start the batch.
+    { maxWait: 15000, timeout: 30000 },
+  );
 
   const passwordHash = await bcrypt.hash("demo1234", 12);
 
