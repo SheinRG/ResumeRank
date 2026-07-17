@@ -21,7 +21,9 @@ export default async function SettingsProfilePage() {
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>
-          <CardDescription>Update your display name.</CardDescription>
+          <CardDescription>
+            Update your photo and display name.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ProfileForm

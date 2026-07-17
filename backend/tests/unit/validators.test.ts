@@ -6,6 +6,7 @@ import {
   llmScoringResultSchema,
   registerSchema,
   scorecardSchema,
+  updateProfileSchema,
 } from "../../src/validators";
 
 describe("registerSchema", () => {
@@ -26,6 +27,37 @@ describe("registerSchema", () => {
       password: "short",
     });
     expect(out.success).toBe(false);
+  });
+});
+
+describe("updateProfileSchema", () => {
+  const image = (value: string) =>
+    updateProfileSchema.safeParse({ name: "Raghav", image: value }).success;
+
+  it("accepts an uploaded picture as a base64 data URL", () => {
+    expect(image("data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0=")).toBe(true);
+    expect(image("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==")).toBe(true);
+  });
+
+  it("accepts an https link and an empty string that clears the avatar", () => {
+    expect(image("https://lh3.googleusercontent.com/a/x")).toBe(true);
+    expect(image("")).toBe(true);
+  });
+
+  it("rejects data URLs that aren't base64 raster images", () => {
+    expect(image("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")).toBe(false);
+    expect(image("data:text/html;base64,PGgxPmhpPC9oMT4=")).toBe(false);
+    expect(image("data:image/webp,not-base64")).toBe(false);
+  });
+
+  it("rejects plaintext http, other schemes, and oversized payloads", () => {
+    expect(image("http://example.com/a.png")).toBe(false);
+    expect(image("javascript:alert(1)")).toBe(false);
+    expect(image(`data:image/webp;base64,${"A".repeat(150_000)}`)).toBe(false);
+  });
+
+  it("saves a name on its own", () => {
+    expect(updateProfileSchema.safeParse({ name: "Raghav" }).success).toBe(true);
   });
 });
 
