@@ -82,8 +82,8 @@ export function Hero() {
           data-reveal
           className="max-w-[560px] text-lg leading-relaxed text-brand-muted"
         >
-          Paste a resume, get a weighted 0–100 score, and see the exact line
-          that earned every verdict — strong, partial, or missing. Shortlist in
+          Paste a resume, get a weighted 0 to 100 score, and see the exact line
+          that earned every verdict, strong, partial, or missing. Shortlist in
           60 seconds without trusting a black box.
         </p>
         <div data-reveal>
