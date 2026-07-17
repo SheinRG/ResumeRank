@@ -13,6 +13,10 @@ const envSchema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
   RESEND_API_KEY: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default("ResumeRank <onboarding@resend.dev>"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
 });

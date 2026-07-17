@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { createTransport, type Transporter } from "nodemailer";
 import { env } from "./env";
 
 interface Email {
@@ -8,21 +9,27 @@ interface Email {
   actionUrl: string;
 }
 
-/**
- * Sends via Resend when configured; otherwise logs the action link to the
- * server console so local development never blocks on an email provider.
- */
-async function send(email: Email): Promise<void> {
-  const { RESEND_API_KEY, EMAIL_FROM } = env();
-  if (!RESEND_API_KEY) {
-    console.info(
-      `[email:dev] to=${email.to} subject="${email.subject}"\n[email:dev] link: ${email.actionUrl}`,
-    );
-    return;
-  }
-  const resend = new Resend(RESEND_API_KEY);
-  const { error } = await resend.emails.send({
-    from: EMAIL_FROM,
+// Connections are pooled across sends; the transport config comes from the
+// frozen env, so one instance serves the process.
+let transporter: Transporter | null = null;
+
+function smtpTransport(): Transporter {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD } = env();
+  transporter ??= createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    // 465 is implicit TLS; everything else negotiates STARTTLS, which we
+    // require rather than allow — these credentials must never cross in clear.
+    secure: SMTP_PORT === 465,
+    requireTLS: SMTP_PORT !== 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+  });
+  return transporter;
+}
+
+async function sendViaResend(email: Email, apiKey: string): Promise<void> {
+  const { error } = await new Resend(apiKey).emails.send({
+    from: env().EMAIL_FROM,
     to: email.to,
     subject: email.subject,
     html: email.html,
@@ -30,6 +37,44 @@ async function send(email: Email): Promise<void> {
   if (error) {
     throw new Error(`Email delivery failed: ${error.message}`);
   }
+}
+
+async function sendViaSmtp(email: Email): Promise<void> {
+  try {
+    await smtpTransport().sendMail({
+      from: env().EMAIL_FROM,
+      to: email.to,
+      subject: email.subject,
+      html: email.html,
+    });
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`Email delivery failed: ${reason}`);
+  }
+}
+
+/**
+ * Delivery is chosen by what's configured, so no code changes between a laptop
+ * and production. Resend leads because a verified domain is the only way to
+ * reach arbitrary recipients with good deliverability; SMTP is the escape hatch
+ * for anyone without a domain (a Gmail app password reaches real inboxes); and
+ * with neither, the action link goes to the server console so local development
+ * never blocks on an email provider.
+ */
+async function send(email: Email): Promise<void> {
+  const { RESEND_API_KEY, SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = env();
+
+  if (RESEND_API_KEY) {
+    await sendViaResend(email, RESEND_API_KEY);
+    return;
+  }
+  if (SMTP_HOST && SMTP_USER && SMTP_PASSWORD) {
+    await sendViaSmtp(email);
+    return;
+  }
+  console.info(
+    `[email:dev] to=${email.to} subject="${email.subject}"\n[email:dev] link: ${email.actionUrl}`,
+  );
 }
 
 function emailShell(heading: string, body: string, cta: string, url: string): string {
