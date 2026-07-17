@@ -52,6 +52,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.role = user.role;
       }
+      // An uploaded avatar is an inlined data URL, which would chunk the session
+      // cookie across several kilobytes of every request header. Nothing reads
+      // the picture from the session — each consumer re-fetches the user row.
+      delete token.picture;
       return token;
     },
     session({ session, token }) {
