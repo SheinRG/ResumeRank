@@ -5,6 +5,7 @@ import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn, signOut } from "@/lib/auth";
 import { hashPassword } from "@resumerank/core/auth/password";
+import { generateCompanySlug } from "@resumerank/core/company";
 import {
   consumePasswordResetToken,
   consumeVerificationToken,
@@ -16,9 +17,9 @@ import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
 import {
   forgotPasswordSchema,
   loginSchema,
-  registerSchema,
   resetPasswordSchema,
 } from "@resumerank/core/validators/auth";
+import { registerCompanySchema } from "@resumerank/core/validators/company";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
@@ -36,14 +37,14 @@ export async function registerAction(
   input: unknown,
 ): Promise<ActionResult<{ email: string }>> {
   return runAction(async () => {
-    const parsed = registerSchema.safeParse(input);
+    const parsed = registerCompanySchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
         "Check the highlighted fields.",
         parsed.error.flatten().fieldErrors,
       );
     }
-    const { name, email, password } = parsed.data;
+    const { name, email, password, companyName } = parsed.data;
 
     const ip = await clientIp();
     const limited = rateLimit(`register:${ip}`, AUTH_LIMIT);
@@ -58,14 +59,21 @@ export async function registerAction(
       });
     }
 
-    const isFirstUser = (await db.user.count()) === 0;
-    await db.user.create({
-      data: {
-        name,
-        email,
-        passwordHash: await hashPassword(password),
-        role: isFirstUser ? "OWNER" : "MEMBER",
-      },
+    const passwordHash = await hashPassword(password);
+    await db.$transaction(async (tx) => {
+      const slug = await generateCompanySlug(companyName);
+      const company = await tx.company.create({
+        data: { name: companyName, slug },
+      });
+      await tx.user.create({
+        data: {
+          name,
+          email,
+          passwordHash,
+          role: "OWNER",
+          companyId: company.id,
+        },
+      });
     });
 
     const token = await createVerificationToken(email);

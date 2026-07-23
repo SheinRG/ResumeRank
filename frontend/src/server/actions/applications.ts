@@ -34,8 +34,14 @@ export async function createApplicationAction(
     const { jobId, candidateId } = parsed.data;
 
     const [job, candidate] = await Promise.all([
-      db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, status: true } }),
-      db.candidate.findUnique({ where: { id: candidateId }, select: { id: true, name: true } }),
+      db.job.findUnique({
+        where: { id: jobId, companyId: user.companyId },
+        select: { id: true, title: true, status: true },
+      }),
+      db.candidate.findUnique({
+        where: { id: candidateId, companyId: user.companyId },
+        select: { id: true, name: true },
+      }),
     ]);
     if (!job) {
       return actionError("Check the highlighted fields.", {
@@ -54,7 +60,7 @@ export async function createApplicationAction(
     let application: Application;
     try {
       application = await db.application.create({
-        data: { jobId, candidateId, createdById: user.id },
+        data: { jobId, candidateId, companyId: user.companyId, createdById: user.id },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -64,6 +70,7 @@ export async function createApplicationAction(
     }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "application.create",
       entityType: "application",
@@ -92,16 +99,20 @@ export async function updateStageAction(
     const { id, stage } = parsed.data;
 
     const existing = await db.application.findUnique({
-      where: { id },
+      where: { id, companyId: user.companyId },
       select: { stage: true, candidate: { select: { name: true } } },
     });
     if (!existing) {
       return actionError("This application no longer exists.");
     }
 
-    const application = await db.application.update({ where: { id }, data: { stage } });
+    const application = await db.application.update({
+      where: { id, companyId: user.companyId },
+      data: { stage },
+    });
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "application.stage",
       entityType: "application",
@@ -121,13 +132,22 @@ export async function softDeleteApplicationAction(
 ): Promise<ActionResult<Application>> {
   return runAction(async () => {
     const user = await requireWriter();
-    const application = await db.application.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-      include: { candidate: { select: { name: true } } },
-    });
+    let application: Application & { candidate: { name: string } };
+    try {
+      application = await db.application.update({
+        where: { id, companyId: user.companyId },
+        data: { deletedAt: new Date() },
+        include: { candidate: { select: { name: true } } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This application no longer exists.");
+      }
+      throw error;
+    }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "application.delete",
       entityType: "application",
@@ -146,13 +166,22 @@ export async function restoreApplicationAction(
 ): Promise<ActionResult<Application>> {
   return runAction(async () => {
     const user = await requireWriter();
-    const application = await db.application.update({
-      where: { id },
-      data: { deletedAt: null },
-      include: { candidate: { select: { name: true } } },
-    });
+    let application: Application & { candidate: { name: string } };
+    try {
+      application = await db.application.update({
+        where: { id, companyId: user.companyId },
+        data: { deletedAt: null },
+        include: { candidate: { select: { name: true } } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This application no longer exists.");
+      }
+      throw error;
+    }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "application.restore",
       entityType: "application",

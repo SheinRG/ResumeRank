@@ -2,6 +2,7 @@ import { db } from "./db";
 import type { Prisma } from "./generated/prisma/client";
 
 interface ActivityInput {
+  companyId: string;
   actorId: string;
   action: string;
   entityType: "job" | "candidate" | "application" | "user";

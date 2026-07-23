@@ -1,5 +1,5 @@
 import { db } from "@resumerank/core/db";
-import { requireUser } from "@/lib/auth/guards";
+import { requireMember } from "@/lib/auth/guards";
 import { PAGE_SIZE, type ApplicationListParams } from "@resumerank/core/validators/search";
 import type {
   CandidateSource,
@@ -66,12 +66,14 @@ export interface ApplicationDetail {
 }
 
 function buildApplicationWhere(
+  companyId: string,
   jobId: string,
   params: ApplicationListParams,
 ): Prisma.ApplicationWhereInput {
   const q = params.q.trim();
   return {
     jobId,
+    companyId,
     deletedAt: null,
     stage: params.stage,
     ...(q
@@ -99,9 +101,9 @@ export async function listApplicationsForJob(
   jobId: string,
   params: ApplicationListParams,
 ): Promise<Paged<ApplicationListItem>> {
-  await requireUser();
+  const user = await requireMember();
 
-  const where = buildApplicationWhere(jobId, params);
+  const where = buildApplicationWhere(user.companyId, jobId, params);
   const total = await db.application.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(
     params.page,
@@ -170,9 +172,9 @@ export async function listApplicationsForJob(
 }
 
 export async function getApplication(id: string): Promise<ApplicationDetail | null> {
-  await requireUser();
+  const user = await requireMember();
   return db.application.findUnique({
-    where: { id },
+    where: { id, companyId: user.companyId },
     include: {
       job: { include: { requirements: { orderBy: { order: "asc" } } } },
       candidate: true,

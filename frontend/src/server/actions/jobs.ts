@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
+import { Prisma } from "@resumerank/core/generated/prisma/client";
 import { requireWriter } from "@/lib/auth/guards";
 import { jobCreateSchema, jobUpdateSchema } from "@resumerank/core/validators/job";
 import { runAction } from "@/server/run-action";
@@ -26,6 +27,7 @@ export async function createJobAction(
     const job = await db.job.create({
       data: {
         ...jobFields,
+        companyId: user.companyId,
         createdById: user.id,
         requirements: {
           create: requirements.map((r, index) => ({
@@ -39,6 +41,7 @@ export async function createJobAction(
     });
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "job.create",
       entityType: "job",
@@ -67,6 +70,14 @@ export async function updateJobAction(
     const user = await requireWriter();
     const { id, requirements, ...jobFields } = parsed.data;
 
+    const target = await db.job.findUnique({
+      where: { id, companyId: user.companyId },
+      select: { id: true },
+    });
+    if (!target) {
+      return actionError("This job no longer exists.");
+    }
+
     const existing = await db.jobRequirement.findMany({
       where: { jobId: id },
       select: { id: true },
@@ -78,7 +89,7 @@ export async function updateJobAction(
     const toDelete = [...existingIds].filter((rid) => !keepIds.has(rid));
 
     const job = await db.$transaction(async (tx) => {
-      await tx.job.update({ where: { id }, data: jobFields });
+      await tx.job.update({ where: { id, companyId: user.companyId }, data: jobFields });
 
       if (toDelete.length) {
         await tx.jobRequirement.deleteMany({ where: { id: { in: toDelete } } });
@@ -103,12 +114,13 @@ export async function updateJobAction(
       }
 
       return tx.job.findUniqueOrThrow({
-        where: { id },
+        where: { id, companyId: user.companyId },
         include: { requirements: { orderBy: { order: "asc" } } },
       });
     });
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "job.update",
       entityType: "job",
@@ -126,13 +138,22 @@ export async function updateJobAction(
 export async function archiveJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction(async () => {
     const user = await requireWriter();
-    const job = await db.job.update({
-      where: { id },
-      data: { status: "ARCHIVED" },
-      include: { requirements: { orderBy: { order: "asc" } } },
-    });
+    let job: JobDetail;
+    try {
+      job = await db.job.update({
+        where: { id, companyId: user.companyId },
+        data: { status: "ARCHIVED" },
+        include: { requirements: { orderBy: { order: "asc" } } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This job no longer exists.");
+      }
+      throw error;
+    }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "job.archive",
       entityType: "job",
@@ -151,13 +172,22 @@ export async function archiveJobAction(id: string): Promise<ActionResult<JobDeta
 export async function reopenJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction(async () => {
     const user = await requireWriter();
-    const job = await db.job.update({
-      where: { id },
-      data: { status: "OPEN" },
-      include: { requirements: { orderBy: { order: "asc" } } },
-    });
+    let job: JobDetail;
+    try {
+      job = await db.job.update({
+        where: { id, companyId: user.companyId },
+        data: { status: "OPEN" },
+        include: { requirements: { orderBy: { order: "asc" } } },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This job no longer exists.");
+      }
+      throw error;
+    }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "job.reopen",
       entityType: "job",

@@ -1,5 +1,5 @@
 import { db } from "@resumerank/core/db";
-import { requireUser } from "@/lib/auth/guards";
+import { requireMember } from "@/lib/auth/guards";
 import { PAGE_SIZE, type JobListParams } from "@resumerank/core/validators/search";
 import type {
   EmploymentType,
@@ -48,9 +48,13 @@ export interface JobOption {
   status: JobStatus;
 }
 
-function buildJobWhere(params: JobListParams): Prisma.JobWhereInput {
+function buildJobWhere(
+  companyId: string,
+  params: JobListParams,
+): Prisma.JobWhereInput {
   const q = params.q.trim();
   return {
+    companyId,
     status: params.status,
     title: q ? { contains: q, mode: "insensitive" } : undefined,
   };
@@ -67,9 +71,9 @@ function buildJobOrderBy(
 export async function listJobs(
   params: JobListParams,
 ): Promise<Paged<JobListItem>> {
-  await requireUser();
+  const user = await requireMember();
 
-  const where = buildJobWhere(params);
+  const where = buildJobWhere(user.companyId, params);
   const total = await db.job.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(
     params.page,
@@ -132,9 +136,9 @@ export async function listJobs(
 }
 
 export async function getJob(id: string): Promise<JobDetail | null> {
-  await requireUser();
+  const user = await requireMember();
   return db.job.findUnique({
-    where: { id },
+    where: { id, companyId: user.companyId },
     include: {
       requirements: { orderBy: { order: "asc" } },
     },
@@ -142,9 +146,9 @@ export async function getJob(id: string): Promise<JobDetail | null> {
 }
 
 export async function listJobOptions(): Promise<JobOption[]> {
-  await requireUser();
+  const user = await requireMember();
   return db.job.findMany({
-    where: { status: "OPEN" },
+    where: { status: "OPEN", companyId: user.companyId },
     select: { id: true, title: true, status: true },
     orderBy: [{ title: "asc" }, { id: "asc" }],
   });

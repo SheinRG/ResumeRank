@@ -11,23 +11,24 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
 import { Input } from "@/components/ui/input";
 import { useActionForm } from "@/components/shared/use-action-form";
-import { registerSchema } from "@resumerank/core/validators/auth";
+import { registerCompanySchema } from "@resumerank/core/validators/company";
 import { registerAction } from "@/server/actions/auth";
 
 function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
   const { fieldErrors, formError, isPending, submit } = useActionForm({
-    schema: registerSchema,
+    schema: registerCompanySchema,
     action: registerAction,
     onSuccess: (data) => setRegisteredEmail(data.email),
   });
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
-    submit({ name, email, password });
+    submit({ name, email, password, companyName });
   }
 
   if (registeredEmail) {
@@ -108,6 +109,21 @@ function RegisterForm() {
             required
           />
         </FormField>
+        <FormField
+          label="Company name"
+          htmlFor="register-company-name"
+          errors={fieldErrors.companyName}
+        >
+          <Input
+            id="register-company-name"
+            name="companyName"
+            autoComplete="organization"
+            placeholder="Acme Talent"
+            value={companyName}
+            onChange={(event) => setCompanyName(event.target.value)}
+            required
+          />
+        </FormField>
         <Button type="submit" disabled={isPending} className="w-full">
           {isPending ? (
             <Loader2 className="animate-spin" aria-hidden="true" />
@@ -117,6 +133,10 @@ function RegisterForm() {
           Create account
         </Button>
       </form>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Joining an existing team? Ask an admin for an invite link.
+      </p>
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}

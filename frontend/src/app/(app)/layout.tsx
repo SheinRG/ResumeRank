@@ -28,6 +28,9 @@ export default async function AppLayout({
   }
 
   const user = await loadCurrentUser();
+  if (!user.companyId) {
+    redirect("/onboarding");
+  }
 
   return (
     <div className="min-h-screen bg-background">

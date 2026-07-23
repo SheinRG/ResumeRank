@@ -1,5 +1,5 @@
 import { db } from "@resumerank/core/db";
-import { requireUser } from "@/lib/auth/guards";
+import { requireMember } from "@/lib/auth/guards";
 import { STAGES, type Stage } from "@resumerank/core/validators/enums";
 
 const RECENT_ACTIVITY_LIMIT = 8;
@@ -94,7 +94,8 @@ function scoreBucketLabel(index: number): string {
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
-  await requireUser();
+  const user = await requireMember();
+  const companyId = user.companyId;
 
   const weekStarts = lastNWeekStarts(HISTORY_WEEKS);
   const earliestWeekStart = weekStarts[0];
@@ -112,35 +113,36 @@ export async function getDashboardData(): Promise<DashboardData> {
     recentInRange,
     recentActivity,
   ] = await Promise.all([
-    db.job.count({ where: { status: "OPEN" } }),
-    db.job.count(),
-    db.candidate.count(),
-    db.candidate.count({ where: { createdAt: { gte: recentSince } } }),
+    db.job.count({ where: { companyId, status: "OPEN" } }),
+    db.job.count({ where: { companyId } }),
+    db.candidate.count({ where: { companyId } }),
+    db.candidate.count({ where: { companyId, createdAt: { gte: recentSince } } }),
     db.application.count({
-      where: { deletedAt: null, stage: { in: [...ACTIVE_STAGES] } },
+      where: { companyId, deletedAt: null, stage: { in: [...ACTIVE_STAGES] } },
     }),
     db.application.aggregate({
-      where: { deletedAt: null, aiScore: { not: null } },
+      where: { companyId, deletedAt: null, aiScore: { not: null } },
       _avg: { aiScore: true },
       _count: { aiScore: true },
     }),
     db.application.groupBy({
       by: ["stage"],
-      where: { deletedAt: null },
+      where: { companyId, deletedAt: null },
       _count: { _all: true },
     }),
     db.$queryRaw<Array<{ bucket: number; count: number }>>`
       SELECT LEAST(${SCORE_BUCKET_COUNT}, floor("aiScore"::numeric / ${SCORE_BUCKET_WIDTH}) + 1)::int AS bucket,
              count(*)::int AS count
       FROM "Application"
-      WHERE "deletedAt" IS NULL AND "aiScore" IS NOT NULL
+      WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL AND "aiScore" IS NOT NULL
       GROUP BY bucket
     `,
     db.application.findMany({
-      where: { deletedAt: null, createdAt: { gte: earliestWeekStart } },
+      where: { companyId, deletedAt: null, createdAt: { gte: earliestWeekStart } },
       select: { createdAt: true },
     }),
     db.activityLog.findMany({
+      where: { companyId },
       take: RECENT_ACTIVITY_LIMIT,
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       include: { actor: { select: { id: true, name: true, image: true } } },

@@ -7,6 +7,7 @@ const PROTECTED_PREFIXES = [
   "/applications",
   "/activity",
   "/settings",
+  "/onboarding",
 ];
 
 const AUTH_PAGES = ["/login", "/register"];
@@ -51,6 +52,7 @@ export const config = {
     "/applications/:path*",
     "/activity/:path*",
     "/settings/:path*",
+    "/onboarding",
     "/login",
     "/register",
   ],

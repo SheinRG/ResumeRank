@@ -102,12 +102,12 @@ Notes on refinements vs. the brief:
 ## Explicit assumptions
 
 1. **One-shot build:** the reviewer instructed a full build in one pass, overriding the plan-gate in the original brief. plan.md is written first, then implementation follows immediately.
-2. **Single shared workspace:** all users belong to one implicit team (roles differentiate power). Multi-tenant orgs are out of scope — named in the roadmap.
+2. **Single shared workspace, at the time this plan was written:** all users belonged to one implicit team (roles differentiate power) and multi-tenant orgs were named as roadmap. That roadmap item has since shipped — see `docs/architecture.md`'s Multi-tenancy section: each company registers its own isolated workspace on shared Postgres, scoped by `companyId`.
 3. **Resume as pasted text:** file upload + parsing (PDF/DOCX) is deferred; `resumeText` is the scoring input. This keeps the trial's 60-second core flow friction-free and the parsing failure surface out of scope.
 4. **Email delivery:** Resend is used when `RESEND_API_KEY` is set; otherwise verification/reset links are logged to the server console (documented in README). Seeded demo users are pre-verified so reviewers never need email.
 5. **Rate limiting** is an in-process token bucket — correct on a single serverless instance per region; a Redis-backed limiter is the named production upgrade.
 6. **Groq model:** `llama-3.3-70b-versatile` with JSON response format; model name is env-configurable.
-7. **First registered user becomes OWNER**; subsequent signups are MEMBER until an admin changes them.
+7. **First registered user becomes OWNER, at the time this plan was written:** since multi-tenancy shipped, every registration creates a new company and its registrant is that company's OWNER — there's no shared workspace for a "first user" to be first in. Joining an existing company happens only via an emailed invite (see `docs/architecture.md`).
 
 ## Open questions (proceeding with the defaults above)
 

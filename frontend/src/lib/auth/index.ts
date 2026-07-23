@@ -66,16 +66,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   events: {
     // OAuth sign-ups arrive with a provider-verified email; mirror that into
-    // our verification gate. The very first account in the workspace is the owner.
+    // our verification gate. Role stays MEMBER and companyId stays null —
+    // onboarding resolves whether they create a company or join one by invite.
     async createUser({ user }) {
       if (!user.id) return;
-      const isFirstUser = (await db.user.count()) === 1;
       await db.user.update({
         where: { id: user.id },
-        data: {
-          emailVerified: new Date(),
-          ...(isFirstUser ? { role: "OWNER" } : {}),
-        },
+        data: { emailVerified: new Date() },
       });
     },
   },

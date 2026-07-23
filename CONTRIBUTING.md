@@ -41,6 +41,6 @@ All four must pass — CI runs the same checks on every push and PR.
 The short version (see `AGENTS.md` for the full rules):
 
 - TypeScript strict — no `any`.
-- Validation lives in `src/lib/validators` and is shared by client and server. Never add ad-hoc validation.
-- Every mutation goes through a server action with an auth guard and an activity-log entry.
-- UI uses the primitives in `src/components/ui`; spacing stays on the 4/8px scale.
+- Validation lives in `backend/src/validators` (`@resumerank/core/validators`) and is shared by client and server. Never add ad-hoc validation.
+- Every mutation goes through a server action with an auth guard — `requireWriter`/`requireAdmin`, which both call the tenancy guard `requireMember` — and an activity-log entry.
+- UI uses the primitives in `frontend/src/components/ui`; spacing stays on the 4/8px scale.

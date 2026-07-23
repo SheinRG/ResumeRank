@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # ResumeRank — Engineering Conventions
 
-ResumeRank is an applicant-tracking + AI resume-screening tool. Recruiters create Jobs with structured requirements, add Candidates (pasted resume text), and score each Application with an LLM that returns a per-requirement verdict (STRONG/PARTIAL/MISSING) with quoted evidence — explainable scoring is the differentiator. See `docs/plan.md` for milestones and acceptance criteria.
+ResumeRank is a multi-tenant, open-source applicant-tracking + AI resume-screening tool. Each company gets its own isolated workspace (row-level tenancy on a shared Postgres): recruiters create Jobs with structured requirements, add Candidates (pasted resume text), and score each Application with an LLM that returns a per-requirement verdict (STRONG/PARTIAL/MISSING) with quoted evidence — explainable scoring is the differentiator. See `docs/plan.md` for milestones and acceptance criteria.
 
 ## Monorepo layout (npm workspaces)
 
@@ -38,6 +38,7 @@ Backend modules are imported by name: `@resumerank/core/db`, `@resumerank/core/v
 - Validate with the shared Zod schemas from `@resumerank/core/validators` on BOTH the client form and inside the server action. Never write a second ad-hoc validation.
 - Every mutation: goes through a server action in `frontend/src/server/actions/`, starts with a guard (`requireWriter()` / `requireAdmin()` from `@/lib/auth/guards`), verifies row-level ownership where relevant, returns `ActionResult<T>` via `runAction()` (`@/server/run-action`), returns the mutated record, and logs to the activity log (`logActivity` from `@resumerank/core/activity`).
 - Never trust a client-sent role or id claim; guards re-fetch the user from the DB.
+- **Tenancy is not optional.** Every read or write on a tenant-owned model (`Job`, `Candidate`, `Application`, `ActivityLog`) goes through `requireMember()` (or `requireWriter()`/`requireAdmin()`, which both call it) and filters/scopes by that guard's `companyId` — never query one of these models without a company filter. Every create sets `companyId` from the guard, not from client input. `logActivity` requires a `companyId` on every call. Cross-tenant ids must behave as if they don't exist (404/not-found, never a leak).
 - Secrets only via `env()` from `@resumerank/core/env` (server-only). Nothing secret behind `NEXT_PUBLIC_`.
 
 ## Design system
@@ -63,5 +64,5 @@ Run from the repo root; the root scripts fan out to the right workspace.
 
 ## Structure
 
-- **frontend** — `frontend/src/app/(marketing)` public pages · `frontend/src/app/(auth)` login/register/verify/reset · `frontend/src/app/(app)` the signed-in product (sidebar shell). `frontend/src/components/ui` primitives · `frontend/src/components/<feature>` feature components · `frontend/src/server/actions` mutations · `frontend/src/server/queries` reads · `frontend/src/lib` Next-bound shared logic.
-- **backend** — `backend/src/{validators,scoring,auth,types}`, `backend/src/{db,env,email,rate-limit,activity}.ts`, `backend/prisma/` (schema, migrations, seed). Consumed as `@resumerank/core/*`.
+- **frontend** — `frontend/src/app/(marketing)` public pages · `frontend/src/app/(auth)` login/register/verify/reset, plus `/onboarding` (OAuth users with no company: accept a pending invite or create one) and `/invite` (accept an emailed invite token) · `frontend/src/app/(app)` the signed-in product (sidebar shell), including `settings/company` (company profile, admin/owner-editable) and `settings/team` (invite/revoke teammates). `frontend/src/components/ui` primitives · `frontend/src/components/<feature>` feature components · `frontend/src/server/actions` mutations · `frontend/src/server/queries` reads · `frontend/src/lib` Next-bound shared logic (`lib/auth/guards.ts` has `requireMember()` alongside `requireWriter`/`requireAdmin`).
+- **backend** — `backend/src/{validators,scoring,auth,types}`, `backend/src/{db,env,email,rate-limit,activity,company}.ts` (`company.ts` slugifies/generates unique company slugs), `backend/prisma/` (schema — `Company`/`CompanyInvite` models, `companyId` on `User`/`Job`/`Candidate`/`Application`/`ActivityLog` — migrations, seed). Consumed as `@resumerank/core/*`.

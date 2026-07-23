@@ -8,6 +8,7 @@ const TABS = [
   { value: "profile", href: "/settings", label: "Profile" },
   { value: "account", href: "/settings/account", label: "Account" },
   { value: "team", href: "/settings/team", label: "Team" },
+  { value: "company", href: "/settings/company", label: "Company" },
 ] as const;
 
 export function SettingsNav() {
@@ -17,7 +18,9 @@ export function SettingsNav() {
     ? "team"
     : pathname.startsWith("/settings/account")
       ? "account"
-      : "profile";
+      : pathname.startsWith("/settings/company")
+        ? "company"
+        : "profile";
 
   function handleChange(value: string) {
     const tab = TABS.find((item) => item.value === value);

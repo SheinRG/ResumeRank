@@ -18,6 +18,14 @@ export interface CurrentUser {
   role: Role;
   emailVerified: Date | null;
   image: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  companyLogoUrl: string | null;
+}
+
+/** A signed-in user who has completed onboarding and belongs to a company. */
+export interface CompanyUser extends CurrentUser {
+  companyId: string;
 }
 
 /**
@@ -39,14 +47,30 @@ export async function requireUser(): Promise<CurrentUser> {
       role: true,
       emailVerified: true,
       image: true,
+      companyId: true,
+      company: { select: { name: true, logoUrl: true } },
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
-  return user;
+  const { company, ...rest } = user;
+  return {
+    ...rest,
+    companyName: company?.name ?? null,
+    companyLogoUrl: company?.logoUrl ?? null,
+  };
 }
 
-export async function requireWriter(): Promise<CurrentUser> {
+/** Narrows to a user who has a company — onboarding must run before this passes. */
+export async function requireMember(): Promise<CompanyUser> {
   const user = await requireUser();
+  if (!user.companyId) {
+    throw new GateError("Create or join a company first.");
+  }
+  return { ...user, companyId: user.companyId };
+}
+
+export async function requireWriter(): Promise<CompanyUser> {
+  const user = await requireMember();
   if (!user.emailVerified) {
     throw new GateError("Verify your email to make changes.");
   }
@@ -56,7 +80,7 @@ export async function requireWriter(): Promise<CurrentUser> {
   return user;
 }
 
-export async function requireAdmin(): Promise<CurrentUser> {
+export async function requireAdmin(): Promise<CompanyUser> {
   const user = await requireWriter();
   if (!canAdmin(user.role)) {
     throw new GateError("Only admins can do that.");
