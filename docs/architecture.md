@@ -78,9 +78,74 @@ The session JWT carries `user.id` and `user.role` (set in
 ever used for UI affordances — showing or hiding a button. Authorization
 itself is decided by the fresh database row, so a role downgrade takes effect
 on the very next request instead of waiting for the JWT to expire.
+`requireMember` additionally requires the fresh row to have a `companyId`
+(narrowing the return type to `CompanyUser`, where `companyId` is non-null) —
+`requireWriter` and `requireAdmin` both call it first, so every write path
+already has a company to scope to before it checks verification or role.
 `requireWriter` additionally rejects unverified emails and viewer role;
 `requireAdmin` layers an owner/admin check on top. No action trusts a
 client-sent role or id.
+
+## Multi-tenancy
+
+ResumeRank runs many companies on one shared Postgres database, isolated by
+row-level `companyId` scoping rather than a database- or schema-per-tenant
+split. `Job`, `Candidate`, `Application`, and `ActivityLog` all carry a
+required `companyId`; `Candidate.email` is unique per company
+(`@@unique([companyId, email])`), not globally, so two different companies
+can each have their own candidate at the same address. `User.companyId` is
+the one nullable exception — an OAuth sign-up exists before it has a company.
+
+**Enforcement lives in the guards, not in ad-hoc `where` clauses scattered
+through the app.** `requireMember()` (`frontend/src/lib/auth/guards.ts`)
+re-fetches the user from the database on every call and throws unless
+`companyId` is set, returning a `CompanyUser` whose `companyId` is
+guaranteed non-null. Every query in `frontend/src/server/queries/` and every
+action in `frontend/src/server/actions/` calls `requireMember()` (directly,
+or transitively via `requireWriter`/`requireAdmin`) and threads its
+`companyId` into the Prisma call — as a `where: { companyId, ... }` filter on
+reads, and as the `companyId` field on every `create`. `logActivity`
+(`backend/src/activity.ts`) takes `companyId` as a required field, so an
+activity entry can't be written without one. Because every lookup is scoped
+this way, an id belonging to another company simply doesn't match the query
+and behaves as if it doesn't exist — there is no separate "is this mine?"
+check to forget.
+
+**Membership lifecycle.** There are three ways to end up with a `companyId`:
+
+1. **Register** (`/register`, `registerAction` in
+   `frontend/src/server/actions/auth.ts`) — creates a `Company` (slug via
+   `generateCompanySlug`, `backend/src/company.ts`) and the calling user as
+   its `OWNER` in one transaction. Registering never joins an existing
+   company; there is no first-user-becomes-owner shared workspace.
+2. **Invite → accept** — an admin/owner invites by email + role from
+   `/settings/team` (`inviteMemberAction`, `frontend/src/server/actions/company.ts`),
+   which mints a hashed, expiring token (`createCompanyInvite`,
+   `backend/src/auth/tokens.ts`) and emails a link to `/invite?token=...`.
+   That route (`frontend/src/app/(auth)/invite/page.tsx`) branches on whether
+   the recipient already has an account: a brand-new email gets a name +
+   password form (`acceptInviteAction`) that creates the user pre-verified
+   (the emailed link already proved the address); an existing company-less
+   account can accept while signed in (`acceptPendingInviteAction`).
+   Re-inviting a pending email re-sends rather than erroring; revoking
+   deletes the pending row.
+3. **Onboarding** — a Google sign-in has no password-based registration step,
+   so a user with `companyId: null` lands on `/onboarding`
+   (`frontend/src/app/(auth)/onboarding/page.tsx`) and either accepts a
+   pending invite addressed to their email or creates a company
+   (`createCompanyAction`), which is registration's create-company step
+   without the credential signup. The `(app)` layout
+   (`frontend/src/app/(app)/layout.tsx`) redirects any signed-in,
+   company-less user to `/onboarding` before rendering the product shell.
+
+**Backfill migration.** `backend/prisma/migrations/20260723054528_add_company_multi_tenancy`
+adds the `Company`/`CompanyInvite` tables and the new `companyId` columns as
+nullable first, then — only if the database already has at least one
+`User` row — creates a `Default Company` and backfills every existing
+`User`/`Job`/`Candidate`/`Application`/`ActivityLog` row onto it before
+tightening the tenant-owned columns (everything but `User.companyId`) to
+`NOT NULL`. A fresh, empty database skips the backfill entirely since the
+`WHERE EXISTS (SELECT 1 FROM "User")` guard never fires.
 
 ## Data layer: Prisma 7 with a driver adapter
 

@@ -92,6 +92,8 @@ security headers, and this documentation set.
   feeling that way the moment the scoring pipeline needed to join evaluations
   back to requirements by id.
 - **Naming a limitation is different from ignoring it.** The rate limiter and
-  the single-workspace model are both real constraints, not oversights —
-  writing them into `docs/plan.md` as explicit assumptions up front made it
-  possible to build fast without pretending the shortcuts weren't shortcuts.
+  the (then-)single-workspace model were both real constraints, not
+  oversights — writing them into `docs/plan.md` as explicit assumptions up
+  front made it possible to build fast without pretending the shortcuts
+  weren't shortcuts, and made the single-workspace one easy to find and
+  convert to real multi-tenancy later (see `docs/architecture.md`).

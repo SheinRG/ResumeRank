@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { CurrentUser } from "@/lib/auth/guards";
+import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -57,9 +59,19 @@ export function SidebarContent({
 
       <div className="flex flex-col gap-2.5">
         {!collapsed ? (
-          <span className="px-6 font-mono text-[10px] tracking-[0.1em] text-white/30">
-            WORKSPACE
-          </span>
+          <div className="flex items-center gap-2 px-6" title={user.companyName ?? undefined}>
+            <Avatar className="size-5 shrink-0 rounded-[6px]">
+              {user.companyLogoUrl ? (
+                <AvatarImage src={user.companyLogoUrl} alt="" className="object-cover" />
+              ) : null}
+              <AvatarFallback className="rounded-[6px] bg-white/10 text-[9px] font-medium text-white/70">
+                {initials(user.companyName ?? "") || "•"}
+              </AvatarFallback>
+            </Avatar>
+            <span className="truncate font-mono text-[10px] uppercase tracking-[0.1em] text-white/30">
+              {user.companyName ?? "Workspace"}
+            </span>
+          </div>
         ) : null}
         <SidebarNav onNavigate={onNavigate} collapsed={collapsed} />
       </div>

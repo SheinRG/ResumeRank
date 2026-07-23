@@ -27,7 +27,7 @@ export async function createCandidateAction(
     let candidate: Candidate;
     try {
       candidate = await db.candidate.create({
-        data: { ...parsed.data, createdById: user.id },
+        data: { ...parsed.data, companyId: user.companyId, createdById: user.id },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -39,6 +39,7 @@ export async function createCandidateAction(
     }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "candidate.create",
       entityType: "candidate",
@@ -69,17 +70,24 @@ export async function updateCandidateAction(
 
     let candidate: Candidate;
     try {
-      candidate = await db.candidate.update({ where: { id }, data: fields });
+      candidate = await db.candidate.update({
+        where: { id, companyId: user.companyId },
+        data: fields,
+      });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return actionError("Check the highlighted fields.", {
           email: [DUPLICATE_EMAIL_ERROR],
         });
       }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This candidate no longer exists.");
+      }
       throw error;
     }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "candidate.update",
       entityType: "candidate",
@@ -99,9 +107,20 @@ export async function deleteCandidateAction(
 ): Promise<ActionResult<Candidate>> {
   return runAction(async () => {
     const user = await requireWriter();
-    const candidate = await db.candidate.delete({ where: { id } });
+    let candidate: Candidate;
+    try {
+      candidate = await db.candidate.delete({
+        where: { id, companyId: user.companyId },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return actionError("This candidate no longer exists.");
+      }
+      throw error;
+    }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "candidate.delete",
       entityType: "candidate",

@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "crypto";
 import { db } from "../db";
+import type { CompanyInvite } from "../generated/prisma/client";
+import type { Role } from "../generated/prisma/enums";
 
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Tokens are stored hashed so a database leak never exposes usable links. */
 function sha256(value: string): string {
@@ -74,4 +77,54 @@ export async function consumePasswordResetToken(
     data: { usedAt: new Date() },
   });
   return record.userId;
+}
+
+interface CreateCompanyInviteInput {
+  companyId: string;
+  email: string;
+  role: Role;
+  invitedById: string;
+}
+
+/**
+ * Re-inviting the same email replaces the pending invite rather than
+ * accumulating rows — the unique [companyId, email] constraint means this is
+ * an upsert, and resetting expiresAt/acceptedAt makes a stale accepted or
+ * expired invite usable again under a fresh link.
+ */
+export async function createCompanyInvite(
+  input: CreateCompanyInviteInput,
+): Promise<{ invite: CompanyInvite; rawToken: string }> {
+  const raw = generateToken();
+  const invite = await db.companyInvite.upsert({
+    where: { companyId_email: { companyId: input.companyId, email: input.email } },
+    create: {
+      companyId: input.companyId,
+      email: input.email,
+      role: input.role,
+      invitedById: input.invitedById,
+      tokenHash: sha256(raw),
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+    },
+    update: {
+      role: input.role,
+      invitedById: input.invitedById,
+      tokenHash: sha256(raw),
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+      acceptedAt: null,
+    },
+  });
+  return { invite, rawToken: raw };
+}
+
+export async function consumeInviteToken(
+  rawToken: string,
+): Promise<CompanyInvite | null> {
+  const invite = await db.companyInvite.findUnique({
+    where: { tokenHash: sha256(rawToken) },
+  });
+  if (!invite || invite.acceptedAt !== null || invite.expiresAt < new Date()) {
+    return null;
+  }
+  return invite;
 }

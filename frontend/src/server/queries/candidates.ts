@@ -1,5 +1,5 @@
 import { db } from "@resumerank/core/db";
-import { requireUser } from "@/lib/auth/guards";
+import { requireMember } from "@/lib/auth/guards";
 import { PAGE_SIZE, type CandidateListParams } from "@resumerank/core/validators/search";
 import type { CandidateSource, JobStatus, Stage } from "@resumerank/core/validators/enums";
 import type { Prisma } from "@resumerank/core/generated/prisma/client";
@@ -45,10 +45,12 @@ export interface CandidateOption {
 }
 
 function buildCandidateWhere(
+  companyId: string,
   params: CandidateListParams,
 ): Prisma.CandidateWhereInput {
   const q = params.q.trim();
   return {
+    companyId,
     source: params.source,
     ...(q
       ? {
@@ -73,9 +75,9 @@ function buildCandidateOrderBy(
 export async function listCandidates(
   params: CandidateListParams,
 ): Promise<Paged<CandidateListItem>> {
-  await requireUser();
+  const user = await requireMember();
 
-  const where = buildCandidateWhere(params);
+  const where = buildCandidateWhere(user.companyId, params);
   const total = await db.candidate.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(
     params.page,
@@ -116,9 +118,9 @@ export async function listCandidates(
 }
 
 export async function getCandidate(id: string): Promise<CandidateDetail | null> {
-  await requireUser();
+  const user = await requireMember();
   return db.candidate.findUnique({
-    where: { id },
+    where: { id, companyId: user.companyId },
     include: {
       applications: {
         where: { deletedAt: null },
@@ -130,8 +132,9 @@ export async function getCandidate(id: string): Promise<CandidateDetail | null> 
 }
 
 export async function listCandidateOptions(): Promise<CandidateOption[]> {
-  await requireUser();
+  const user = await requireMember();
   return db.candidate.findMany({
+    where: { companyId: user.companyId },
     select: { id: true, name: true, email: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
@@ -144,9 +147,9 @@ function csvField(value: string): string {
 export async function exportCandidatesCsv(
   params: CandidateListParams,
 ): Promise<string> {
-  await requireUser();
+  const user = await requireMember();
 
-  const where = buildCandidateWhere(params);
+  const where = buildCandidateWhere(user.companyId, params);
   const candidates = await db.candidate.findMany({
     where,
     orderBy: buildCandidateOrderBy(params.sort),

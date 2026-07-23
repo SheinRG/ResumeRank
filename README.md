@@ -8,6 +8,13 @@ AI**, and get a weighted 0–100 score plus a requirement-by-requirement
 breakdown: verdict, a verbatim quote from the resume, and a note explaining
 the call.
 
+ResumeRank is open source and built for many companies, not one. Register and
+you get your own company workspace — your jobs, candidates, and applications,
+isolated from every other company on the same instance. Invite your team by
+email, and customize your company profile (logo, industry, size, location)
+from Settings. Self-host it for your org, or run it as a shared instance where
+each company that registers gets its own walled-off data.
+
 ## Features
 
 - **Explainable AI scoring** — Groq returns a strict JSON contract, parsed by
@@ -21,6 +28,18 @@ the call.
   rejected, with soft delete and undo.
 - **Team scorecards** — teammates leave a 1–5 rating and notes alongside the
   AI's evaluation.
+- **Multi-tenant workspaces** — every company's jobs, candidates,
+  applications, and activity log are scoped to that company alone; a shared
+  Postgres database backs any number of tenants with row-level isolation.
+- **Company registration** — signing up creates your company and makes you
+  its OWNER; there's no shared or first-user-wins workspace.
+- **Email invites** — admins/owners invite teammates by email and role
+  (admin / member / viewer) from Settings → Team; invitees accept at a
+  tokenized `/invite` link. Google sign-ins with no company land on
+  `/onboarding` to accept a pending invite or create a company.
+- **Company settings** — HR (admin/owner) edits the company profile (name,
+  logo, website, description, industry, size, location) from Settings →
+  Company; members see it read-only.
 - **Server-enforced RBAC** — owner / admin / member / viewer roles are
   re-checked from the database on every mutation; the client role is never
   trusted.
@@ -45,12 +64,16 @@ An npm-workspaces monorepo:
 
 - **`backend/`** (`@resumerank/core`) — framework-agnostic domain: Prisma
   schema / migrations / generated client / seed, the `db` and `env` singletons,
-  Zod validators, the scoring engine, auth helpers, email, rate limiting, the
-  activity log, and shared types. No Next.js imports; ships raw TypeScript that
-  Turbopack transpiles.
-- **`frontend/`** — the Next.js App Router app: routes, UI, server actions and
-  queries, the Auth.js config and guards, and the marketing site. Imports the
-  backend as `@resumerank/core/*`.
+  Zod validators, the scoring engine, auth helpers (including company invite
+  tokens), company slug generation, email, rate limiting, the activity log,
+  and shared types. No Next.js imports; ships raw TypeScript that Turbopack
+  transpiles.
+- **`frontend/`** — the Next.js App Router app: routes (including
+  `/onboarding` and `/invite` for joining a company, and `/settings/company`
+  for the company profile), UI, server actions and queries — every tenant-owned
+  one scoped to the caller's company via `requireMember()` — the Auth.js config
+  and guards, and the marketing site. Imports the backend as
+  `@resumerank/core/*`.
 
 Run every command from the repo root — the root scripts fan out to the right
 workspace, and a single root `.env` feeds both.
@@ -76,13 +99,19 @@ npm run db:seed
 npm run dev -- -p 3005
 ```
 
-Open `http://localhost:3005`. Sign in with the seeded demo account:
+Open `http://localhost:3005`. Sign in with the seeded demo account, which
+lands you in the demo company "Acme Talent":
 
 - **Email:** `demo@resumerank.app`
 - **Password:** `demo1234`
 
 AI scoring works out of the box against seeded data; to score new
 applications yourself, add a free `GROQ_API_KEY` (see the env table below).
+
+Registering a new account (`/register`) instead creates **your own** company
+and makes you its owner — it's fully isolated from Acme Talent and from every
+other company on the same instance. Teammates don't self-register into your
+company; invite them by email from Settings → Team once you're signed in.
 
 ## Environment variables
 
@@ -141,6 +170,13 @@ Neon's pooled connection string). Set `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to
 the deployed domain, run `npm run db:deploy` against the production database
 before first traffic, and configure `GROQ_API_KEY` / `RESEND_API_KEY` if you
 want live scoring and email delivery rather than console fallbacks.
+
+One deployment can serve many companies: the app is multi-tenant on a shared
+database, so every company that registers gets its own isolated workspace on
+the same instance — no per-tenant infrastructure to stand up. If you'd rather
+not share an instance with other companies, self-host: each self-hoster gets
+their own deployment and their own Postgres database, with the first company
+to register on it as its only tenant.
 
 ## Screenshots
 

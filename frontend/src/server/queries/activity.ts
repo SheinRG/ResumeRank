@@ -1,5 +1,5 @@
 import { db } from "@resumerank/core/db";
-import { requireUser } from "@/lib/auth/guards";
+import { requireMember } from "@/lib/auth/guards";
 import { PAGE_SIZE } from "@resumerank/core/validators/search";
 import type { Prisma } from "@resumerank/core/generated/prisma/client";
 import type { Paged } from "@resumerank/core/types/paged";
@@ -26,9 +26,12 @@ export interface ActivityItem {
 export async function listActivity(
   params: ActivityListParams,
 ): Promise<Paged<ActivityItem>> {
-  await requireUser();
+  const user = await requireMember();
 
-  const where: Prisma.ActivityLogWhereInput = { entityType: params.entityType };
+  const where: Prisma.ActivityLogWhereInput = {
+    companyId: user.companyId,
+    entityType: params.entityType,
+  };
   const total = await db.activityLog.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(
     params.page,

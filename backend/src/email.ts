@@ -106,6 +106,33 @@ export async function sendVerificationEmail(
   });
 }
 
+interface SendInviteEmailInput {
+  to: string;
+  token: string;
+  companyName: string;
+  inviterName: string;
+}
+
+export async function sendInviteEmail({
+  to,
+  token,
+  companyName,
+  inviterName,
+}: SendInviteEmailInput): Promise<void> {
+  const url = `${env().NEXT_PUBLIC_APP_URL}/invite?token=${encodeURIComponent(token)}`;
+  await send({
+    to,
+    subject: `${inviterName} invited you to join ${companyName} on ResumeRank`,
+    actionUrl: url,
+    html: emailShell(
+      `Join ${companyName} on ResumeRank`,
+      `${inviterName} invited you to join ${companyName}'s workspace on ResumeRank. This link expires in 7 days.`,
+      "Accept invite",
+      url,
+    ),
+  });
+}
+
 export async function sendPasswordResetEmail(
   to: string,
   token: string,

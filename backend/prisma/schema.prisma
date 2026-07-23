@@ -66,9 +66,11 @@ model User {
   image         String?
   role          Role      @default(MEMBER)
   notifyByEmail Boolean   @default(true)
+  companyId     String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  company             Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
   accounts            Account[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -77,6 +79,48 @@ model User {
   applicationsCreated Application[]        @relation("ApplicationCreatedBy")
   scorecards          Scorecard[]
   activities          ActivityLog[]
+  invitesSent         CompanyInvite[]      @relation("InvitesSent")
+
+  @@index([companyId])
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logoUrl     String?
+  website     String?
+  description String?
+  industry    String?
+  size        String?
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users        User[]
+  jobs         Job[]
+  candidates   Candidate[]
+  applications Application[]
+  activities   ActivityLog[]
+  invites      CompanyInvite[]
+}
+
+model CompanyInvite {
+  id          String    @id @default(cuid())
+  companyId   String
+  email       String
+  role        Role      @default(MEMBER)
+  tokenHash   String    @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invitedBy User    @relation("InvitesSent", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, email])
+  @@index([companyId, createdAt(sort: Desc)])
 }
 
 model Account {
@@ -138,16 +182,18 @@ model Job {
   location       String?
   employmentType EmploymentType @default(FULL_TIME)
   status         JobStatus      @default(OPEN)
+  companyId      String
   createdById    String
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy    User             @relation("JobCreatedBy", fields: [createdById], references: [id])
   requirements JobRequirement[]
   applications Application[]
 
-  @@index([status, createdAt(sort: Desc), id])
-  @@index([title])
+  @@index([companyId, status, createdAt(sort: Desc), id])
+  @@index([companyId, title])
 }
 
 model JobRequirement {
@@ -167,19 +213,22 @@ model JobRequirement {
 model Candidate {
   id          String          @id @default(cuid())
   name        String
-  email       String          @unique
+  email       String
   headline    String?
   source      CandidateSource @default(MANUAL)
   resumeText  String
+  companyId   String
   createdById String
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy    User          @relation("CandidateCreatedBy", fields: [createdById], references: [id])
   applications Application[]
 
-  @@index([name])
-  @@index([createdAt(sort: Desc), id])
+  @@unique([companyId, email])
+  @@index([companyId, name])
+  @@index([companyId, createdAt(sort: Desc), id])
 }
 
 model Application {
@@ -191,10 +240,12 @@ model Application {
   aiSummary   String?
   scoredAt    DateTime?
   deletedAt   DateTime?
+  companyId   String
   createdById String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
   candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   createdBy   User         @relation("ApplicationCreatedBy", fields: [createdById], references: [id])
@@ -204,7 +255,7 @@ model Application {
   @@unique([jobId, candidateId])
   @@index([jobId, deletedAt, stage, aiScore(sort: Desc)])
   @@index([candidateId])
-  @@index([stage, createdAt(sort: Desc), id])
+  @@index([companyId, stage, createdAt(sort: Desc), id])
 }
 
 model Evaluation {
@@ -247,10 +298,12 @@ model ActivityLog {
   entityId   String
   summary    String
   metadata   Json?
+  companyId  String
   createdAt  DateTime @default(now())
 
-  actor User @relation(fields: [actorId], references: [id])
+  actor   User    @relation(fields: [actorId], references: [id])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@index([entityType, entityId, createdAt(sort: Desc)])
-  @@index([createdAt(sort: Desc), id])
+  @@index([companyId, entityType, entityId, createdAt(sort: Desc)])
+  @@index([companyId, createdAt(sort: Desc), id])
 }

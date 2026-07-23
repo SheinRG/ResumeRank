@@ -908,12 +908,24 @@ async function main(): Promise<void> {
       db.session.deleteMany(),
       db.account.deleteMany(),
       db.verificationToken.deleteMany(),
+      db.companyInvite.deleteMany(),
       db.user.deleteMany(),
+      db.company.deleteMany(),
     ],
     // A remote (Neon) database has round-trip latency that can exceed the
     // 2s default wait to acquire a connection and start the batch.
     { maxWait: 15000, timeout: 30000 },
   );
+
+  const company = await db.company.create({
+    data: {
+      name: "Acme Talent",
+      slug: "acme-talent",
+      industry: "Staffing & Recruiting",
+      location: "Remote",
+      createdAt: daysAgo(60),
+    },
+  });
 
   const passwordHash = await bcrypt.hash("demo1234", 12);
 
@@ -924,6 +936,7 @@ async function main(): Promise<void> {
         email: "owner@resumerank.app",
         role: "OWNER",
         passwordHash,
+        companyId: company.id,
         emailVerified: daysAgo(60),
         createdAt: daysAgo(60),
       },
@@ -934,6 +947,7 @@ async function main(): Promise<void> {
         email: "demo@resumerank.app",
         role: "ADMIN",
         passwordHash,
+        companyId: company.id,
         emailVerified: daysAgo(50),
         createdAt: daysAgo(50),
       },
@@ -944,6 +958,7 @@ async function main(): Promise<void> {
         email: "maya@resumerank.app",
         role: "MEMBER",
         passwordHash,
+        companyId: company.id,
         emailVerified: daysAgo(45),
         createdAt: daysAgo(45),
       },
@@ -954,6 +969,7 @@ async function main(): Promise<void> {
         email: "viewer@resumerank.app",
         role: "VIEWER",
         passwordHash,
+        companyId: company.id,
         emailVerified: daysAgo(40),
         createdAt: daysAgo(40),
       },
@@ -970,6 +986,7 @@ async function main(): Promise<void> {
         description: job.description,
         location: job.location,
         status: "OPEN",
+        companyId: company.id,
         createdById: demo.id,
         createdAt: daysAgo(job.createdDaysAgo),
         requirements: {
@@ -989,6 +1006,7 @@ async function main(): Promise<void> {
     );
     await db.activityLog.create({
       data: {
+        companyId: company.id,
         actorId: demo.id,
         action: "job.created",
         entityType: "job",
@@ -1008,6 +1026,7 @@ async function main(): Promise<void> {
         headline: c.headline,
         source: c.source,
         resumeText: c.resumeText,
+        companyId: company.id,
         createdById: demo.id,
         createdAt: daysAgo(c.createdDaysAgo),
       },
@@ -1015,6 +1034,7 @@ async function main(): Promise<void> {
     candidateIdByKey.set(c.key, created.id);
     await db.activityLog.create({
       data: {
+        companyId: company.id,
         actorId: demo.id,
         action: "candidate.created",
         entityType: "candidate",
@@ -1055,6 +1075,7 @@ async function main(): Promise<void> {
         aiScore,
         aiSummary: scored ? a.summary : null,
         scoredAt: scored ? daysAgo(a.createdDaysAgo - 1) : null,
+        companyId: company.id,
         createdById: demo.id,
         createdAt: daysAgo(a.createdDaysAgo),
         evaluations: scored
@@ -1076,6 +1097,7 @@ async function main(): Promise<void> {
 
     await db.activityLog.create({
       data: {
+        companyId: company.id,
         actorId: demo.id,
         action: "application.created",
         entityType: "application",
@@ -1087,6 +1109,7 @@ async function main(): Promise<void> {
     if (scored) {
       await db.activityLog.create({
         data: {
+          companyId: company.id,
           actorId: demo.id,
           action: "application.scored",
           entityType: "application",
@@ -1099,6 +1122,7 @@ async function main(): Promise<void> {
     if (a.stage !== "NEW") {
       await db.activityLog.create({
         data: {
+          companyId: company.id,
           actorId: maya.id,
           action: "application.stage_changed",
           entityType: "application",

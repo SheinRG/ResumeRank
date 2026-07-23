@@ -24,7 +24,7 @@ export async function upsertScorecardAction(
     const { applicationId, rating, notes } = parsed.data;
 
     const application = await db.application.findUnique({
-      where: { id: applicationId },
+      where: { id: applicationId, companyId: user.companyId },
       select: { id: true, candidate: { select: { name: true } } },
     });
     if (!application) {
@@ -39,6 +39,7 @@ export async function upsertScorecardAction(
     });
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "scorecard.upsert",
       entityType: "application",

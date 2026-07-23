@@ -23,7 +23,7 @@ export async function scoreApplicationAction(
     const user = await requireWriter();
 
     const application = await db.application.findUnique({
-      where: { id: applicationId },
+      where: { id: applicationId, companyId: user.companyId },
       select: {
         jobId: true,
         candidateId: true,
@@ -51,6 +51,7 @@ export async function scoreApplicationAction(
     }
 
     await logActivity({
+      companyId: user.companyId,
       actorId: user.id,
       action: "application.score",
       entityType: "application",

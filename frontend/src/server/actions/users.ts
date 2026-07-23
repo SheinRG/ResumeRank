@@ -50,8 +50,8 @@ export async function updateUserRoleAction(
       return actionError("You can't change your own role.");
     }
 
-    const target = await db.user.findUnique({
-      where: { id: userId },
+    const target = await db.user.findFirst({
+      where: { id: userId, companyId: admin.companyId },
       select: { id: true, role: true },
     });
     if (!target) {
@@ -71,6 +71,7 @@ export async function updateUserRoleAction(
     });
 
     await logActivity({
+      companyId: admin.companyId,
       actorId: admin.id,
       action: "user.role",
       entityType: "user",
@@ -111,13 +112,17 @@ export async function updateProfileAction(
       select: TEAM_MEMBER_SELECT,
     });
 
-    await logActivity({
-      actorId: currentUser.id,
-      action: "user.profile",
-      entityType: "user",
-      entityId: user.id,
-      summary: "updated their profile",
-    });
+    // Onboarding users (no company yet) have nothing to scope the log to.
+    if (currentUser.companyId) {
+      await logActivity({
+        companyId: currentUser.companyId,
+        actorId: currentUser.id,
+        action: "user.profile",
+        entityType: "user",
+        entityId: user.id,
+        summary: "updated their profile",
+      });
+    }
 
     revalidatePath("/settings/team");
     revalidatePath("/settings");
@@ -175,13 +180,16 @@ export async function changePasswordAction(
       data: { passwordHash },
     });
 
-    await logActivity({
-      actorId: currentUser.id,
-      action: "user.password",
-      entityType: "user",
-      entityId: currentUser.id,
-      summary: "changed their password",
-    });
+    if (currentUser.companyId) {
+      await logActivity({
+        companyId: currentUser.companyId,
+        actorId: currentUser.id,
+        action: "user.password",
+        entityType: "user",
+        entityId: currentUser.id,
+        summary: "changed their password",
+      });
+    }
 
     return actionOk({ id: currentUser.id });
   });
@@ -236,12 +244,20 @@ export async function deleteAccountAction(
     // The workspace's shared jobs, candidates and applications are re-homed to
     // an owner so deleting a teammate never destroys team data. Owners must
     // hand off the role first — otherwise there'd be no one to inherit it.
-    const inheritor = await db.user.findFirst({
-      where: { role: "OWNER", id: { not: currentUser.id } },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
-    if (!inheritor) {
+    // A company-less (onboarding) user owns no shared data, so there's no
+    // inheritor to find and nothing to reassign.
+    const inheritor = currentUser.companyId
+      ? await db.user.findFirst({
+          where: {
+            role: "OWNER",
+            companyId: currentUser.companyId,
+            id: { not: currentUser.id },
+          },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        })
+      : null;
+    if (currentUser.companyId && !inheritor) {
       return actionError(
         currentUser.role === "OWNER"
           ? "Transfer the owner role to a teammate before deleting your account."
@@ -271,19 +287,21 @@ export async function deleteAccountAction(
     }
 
     await db.$transaction(async (tx) => {
-      const reassign = { createdById: inheritor.id };
-      await tx.job.updateMany({
-        where: { createdById: currentUser.id },
-        data: reassign,
-      });
-      await tx.candidate.updateMany({
-        where: { createdById: currentUser.id },
-        data: reassign,
-      });
-      await tx.application.updateMany({
-        where: { createdById: currentUser.id },
-        data: reassign,
-      });
+      if (inheritor) {
+        const reassign = { createdById: inheritor.id };
+        await tx.job.updateMany({
+          where: { createdById: currentUser.id },
+          data: reassign,
+        });
+        await tx.candidate.updateMany({
+          where: { createdById: currentUser.id },
+          data: reassign,
+        });
+        await tx.application.updateMany({
+          where: { createdById: currentUser.id },
+          data: reassign,
+        });
+      }
       await tx.activityLog.deleteMany({ where: { actorId: currentUser.id } });
       await tx.user.delete({ where: { id: currentUser.id } });
     });

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { GateError, requireUser } from "@/lib/auth/guards";
+import { GateError, requireMember } from "@/lib/auth/guards";
 import { candidateListParamsSchema } from "@resumerank/core/validators/search";
 import { exportCandidatesCsv } from "@/server/queries/candidates";
 
 export async function GET(request: Request): Promise<NextResponse> {
   try {
-    await requireUser();
+    await requireMember();
   } catch (error) {
     if (error instanceof GateError) {
       return NextResponse.json({ error: error.message }, { status: 401 });
