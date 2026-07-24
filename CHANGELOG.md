@@ -6,6 +6,10 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- AI autofill on the add-candidate form: an "Autofill from resume" action extracts the candidate's name, email, and a synthesized headline from the pasted resume text via Groq, pre-filling the intake fields for review. Extracted emails are dropped unless they appear verbatim in the resume, matching the scoring engine's anti-hallucination checks.
+
 ## [1.1.0] - 2026-07-23
 
 ### Added
