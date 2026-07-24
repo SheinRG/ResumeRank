@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Save, UserPlus } from "lucide-react";
+import { Loader2, Save, Sparkles, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
@@ -25,7 +25,7 @@ import {
   candidateCreateSchema,
   candidateUpdateSchema,
 } from "@resumerank/core/validators/candidate";
-import { createCandidateAction, updateCandidateAction } from "@/server/actions/candidates";
+import { createCandidateAction, updateCandidateAction, extractCandidateProfileAction } from "@/server/actions/candidates";
 
 type FieldErrors = Partial<
   Record<"name" | "email" | "headline" | "source" | "resumeText", string[]>
@@ -65,6 +65,7 @@ export function CandidateForm({ mode, candidate }: CandidateFormProps) {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isExtracting, startExtracting] = useTransition();
 
   function update<K extends keyof CandidateFormValues>(key: K, value: CandidateFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -101,6 +102,33 @@ export function CandidateForm({ mode, candidate }: CandidateFormProps) {
 
       toast.success(mode === "edit" ? "Candidate updated." : "Candidate added.");
       router.push(`/candidates/${result.data.id}`);
+    });
+  }
+
+  function handleExtract() {
+    startExtracting(async () => {
+      const result = await extractCandidateProfileAction(values.resumeText);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      const { name, email, headline } = result.data;
+      setValues((current) => ({
+        ...current,
+        name: name ?? current.name,
+        email: email ?? current.email,
+        headline: headline ?? current.headline,
+      }));
+      const filled = [
+        name ? "name" : null,
+        email ? "email" : null,
+        headline ? "headline" : null,
+      ].filter((field): field is string => field !== null);
+      if (filled.length === 0) {
+        toast.info("Couldn't find contact details to fill in. Add them manually.");
+        return;
+      }
+      toast.success(`Filled in ${filled.join(", ")} from the resume. Review before saving.`);
     });
   }
 
@@ -188,6 +216,29 @@ export function CandidateForm({ mode, candidate }: CandidateFormProps) {
       >
         {resumeLength.toLocaleString()} / {MIN_RESUME_LENGTH.toLocaleString()} characters minimum
       </p>
+      <div className="-mt-2 flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleExtract}
+          disabled={resumeBelowMin || isExtracting || isPending}
+        >
+          {isExtracting ? (
+            <Loader2 className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Sparkles aria-hidden="true" />
+          )}
+          {isExtracting ? "Extracting…" : "Autofill from resume"}
+        </Button>
+        <p className="text-xs text-muted-foreground" role={isExtracting ? "status" : undefined}>
+          {isExtracting
+            ? "Reading the resume — usually takes a few seconds."
+            : resumeBelowMin
+              ? "Paste the resume first, then let AI fill in name, email, and headline."
+              : "Let AI fill name, email, and headline from the resume — you can edit before saving."}
+        </p>
+      </div>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={isPending}>

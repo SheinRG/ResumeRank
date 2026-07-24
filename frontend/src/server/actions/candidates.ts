@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { Prisma, type Candidate } from "@resumerank/core/generated/prisma/client";
 import { requireWriter } from "@/lib/auth/guards";
-import { candidateCreateSchema, candidateUpdateSchema } from "@resumerank/core/validators/candidate";
+import { candidateCreateSchema, candidateUpdateSchema, MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
+import { extractCandidateProfile, ExtractionError, type CandidateProfile } from "@resumerank/core/extraction/engine";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -132,5 +133,32 @@ export async function deleteCandidateAction(
     revalidatePath("/dashboard");
 
     return actionOk(candidate);
+  });
+}
+
+export async function extractCandidateProfileAction(
+  resumeText: unknown,
+): Promise<ActionResult<CandidateProfile>> {
+  return runAction(async () => {
+    await requireWriter();
+
+    if (
+      typeof resumeText !== "string" ||
+      resumeText.trim().length < MIN_RESUME_LENGTH
+    ) {
+      return actionError(
+        `Paste at least ${MIN_RESUME_LENGTH} characters of resume text before extracting.`,
+      );
+    }
+
+    try {
+      const profile = await extractCandidateProfile(resumeText);
+      return actionOk(profile);
+    } catch (error) {
+      if (error instanceof ExtractionError) {
+        return actionError(error.message);
+      }
+      throw error;
+    }
   });
 }
