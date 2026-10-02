@@ -113,15 +113,23 @@ export interface ScoreOutcome {
   aiSummary: string;
 }
 
+export interface ScoreTarget {
+  applicationId: string;
+  companyId: string;
+}
+
 /**
  * Scores an application end to end and persists the result atomically:
  * either the full evaluation set replaces the old one, or nothing changes.
+ * Every read and write is scoped to `companyId`, so a caller that skipped its
+ * own ownership check (a batch job, a queue worker) still can't cross tenants.
  */
-export async function scoreApplication(
-  applicationId: string,
-): Promise<ScoreOutcome> {
+export async function scoreApplication({
+  applicationId,
+  companyId,
+}: ScoreTarget): Promise<ScoreOutcome> {
   const application = await db.application.findUnique({
-    where: { id: applicationId },
+    where: { id: applicationId, companyId },
     include: {
       candidate: { select: { resumeText: true } },
       job: {
@@ -165,8 +173,16 @@ export async function scoreApplication(
     })),
   );
 
+  // The tenant-scoped update runs first: if the application has left the
+  // tenant, it throws and the evaluation writes never happen.
   await db.$transaction([
-    db.evaluation.deleteMany({ where: { applicationId } }),
+    db.application.update({
+      where: { id: applicationId, companyId },
+      data: { aiScore, aiSummary: result.summary, scoredAt: new Date() },
+    }),
+    db.evaluation.deleteMany({
+      where: { applicationId, application: { companyId } },
+    }),
     db.evaluation.createMany({
       data: result.evaluations.map((e) => ({
         applicationId,
@@ -179,10 +195,6 @@ export async function scoreApplication(
         evidence: e.evidence,
         note: e.note,
       })),
-    }),
-    db.application.update({
-      where: { id: applicationId },
-      data: { aiScore, aiSummary: result.summary, scoredAt: new Date() },
     }),
   ]);
 

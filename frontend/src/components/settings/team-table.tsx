@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { RemoveMemberDialog } from "@/components/settings/remove-member-dialog";
 import { initials } from "@/lib/format";
 import { updateUserRoleAction } from "@/server/actions/users";
 import type { TeamMember } from "@/server/queries/users";
@@ -36,10 +37,12 @@ const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
 export function TeamTable({
   members,
   currentUserId,
+  currentUserRole,
   canManage,
 }: {
   members: TeamMember[];
   currentUserId: string;
+  currentUserRole: Role;
   canManage: boolean;
 }) {
   const [rows, setRows] = useState(members);
@@ -64,6 +67,19 @@ export function TeamTable({
     });
   }
 
+  function handleRemoved(userId: string) {
+    setRows((current) => current.filter((member) => member.id !== userId));
+  }
+
+  // Mirrors the server rule: only an owner may remove another owner.
+  function canRemove(member: TeamMember) {
+    return (
+      canManage &&
+      member.id !== currentUserId &&
+      (member.role !== "OWNER" || currentUserRole === "OWNER")
+    );
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -71,6 +87,11 @@ export function TeamTable({
           <TableHead>Member</TableHead>
           <TableHead>Email</TableHead>
           <TableHead>Role</TableHead>
+          {canManage ? (
+            <TableHead className="w-14">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -112,6 +133,17 @@ export function TeamTable({
                 <Badge variant="outline">{ROLE_LABELS[member.role]}</Badge>
               )}
             </TableCell>
+            {canManage ? (
+              <TableCell className="text-right">
+                {canRemove(member) ? (
+                  <RemoveMemberDialog
+                    userId={member.id}
+                    memberName={member.name}
+                    onRemoved={handleRemoved}
+                  />
+                ) : null}
+              </TableCell>
+            ) : null}
           </TableRow>
         ))}
       </TableBody>

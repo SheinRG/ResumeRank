@@ -6,9 +6,13 @@ import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn } from "@/lib/auth";
 import { requireAdmin, requireUser } from "@/lib/auth/guards";
-import { generateCompanySlug } from "@resumerank/core/company";
+import { withUniqueCompanySlug } from "@resumerank/core/company";
 import { hashPassword } from "@resumerank/core/auth/password";
-import { createCompanyInvite, consumeInviteToken } from "@resumerank/core/auth/tokens";
+import {
+  claimInvite,
+  createCompanyInvite,
+  findValidInviteByToken,
+} from "@resumerank/core/auth/tokens";
 import { sendInviteEmail } from "@resumerank/core/email";
 import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
 import {
@@ -54,17 +58,18 @@ export async function createCompanyAction(
       return actionError("You already belong to a company.");
     }
 
-    const company = await db.$transaction(async (tx) => {
-      const slug = await generateCompanySlug(parsed.data.companyName);
-      const created = await tx.company.create({
-        data: { name: parsed.data.companyName, slug },
-      });
-      await tx.user.update({
-        where: { id: user.id },
-        data: { companyId: created.id, role: "OWNER" },
-      });
-      return created;
-    });
+    const company = await withUniqueCompanySlug(parsed.data.companyName, (slug) =>
+      db.$transaction(async (tx) => {
+        const created = await tx.company.create({
+          data: { name: parsed.data.companyName, slug },
+        });
+        await tx.user.update({
+          where: { id: user.id },
+          data: { companyId: created.id, role: "OWNER" },
+        });
+        return created;
+      }),
+    );
 
     await logActivity({
       companyId: company.id,
@@ -144,16 +149,17 @@ export async function acceptPendingInviteAction(
       return actionError("This invite was sent to a different email address.");
     }
 
-    await db.$transaction(async (tx) => {
+    const joined = await db.$transaction(async (tx) => {
+      if (!(await claimInvite(tx, invite.id))) return false;
       await tx.user.update({
         where: { id: user.id },
         data: { companyId: invite.companyId, role: invite.role },
       });
-      await tx.companyInvite.update({
-        where: { id: invite.id },
-        data: { acceptedAt: new Date() },
-      });
+      return true;
     });
+    if (!joined) {
+      return actionError("This invite is no longer valid.");
+    }
 
     await logActivity({
       companyId: invite.companyId,
@@ -284,7 +290,7 @@ export async function acceptInviteAction(
       );
     }
 
-    const invite = await consumeInviteToken(parsed.data.token);
+    const invite = await findValidInviteByToken(parsed.data.token);
     if (!invite) {
       return actionError(
         "This invite link is invalid or has expired. Ask your admin to send a new one.",
@@ -298,7 +304,8 @@ export async function acceptInviteAction(
 
     const passwordHash = await hashPassword(parsed.data.password);
     const created = await db.$transaction(async (tx) => {
-      const user = await tx.user.create({
+      if (!(await claimInvite(tx, invite.id))) return null;
+      return tx.user.create({
         data: {
           name: parsed.data.name,
           email: invite.email,
@@ -310,12 +317,12 @@ export async function acceptInviteAction(
           companyId: invite.companyId,
         },
       });
-      await tx.companyInvite.update({
-        where: { id: invite.id },
-        data: { acceptedAt: new Date() },
-      });
-      return user;
     });
+    if (!created) {
+      return actionError(
+        "This invite link is invalid or has expired. Ask your admin to send a new one.",
+      );
+    }
 
     await logActivity({
       companyId: invite.companyId,

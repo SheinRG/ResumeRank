@@ -3,12 +3,14 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
+import { refreshSession, signOut } from "@/lib/auth";
 import { requireAdmin, requireUser } from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
   changePasswordSchema,
   deleteAccountSchema,
   notificationPreferencesSchema,
+  removeMemberSchema,
   updateProfileSchema,
 } from "@resumerank/core/validators/user";
 import { hashPassword, verifyPassword } from "@resumerank/core/auth/password";
@@ -78,6 +80,67 @@ export async function updateUserRoleAction(
       entityId: user.id,
       summary: `changed ${user.name}'s role to ${role}`,
       metadata: { from: target.role, to: role },
+    });
+
+    revalidatePath("/settings/team");
+
+    return actionOk(user);
+  });
+}
+
+/**
+ * Detaches a teammate from the workspace. Their account survives (they can
+ * be re-invited or start their own company) and the records they created stay
+ * with the company. Access ends on their next request: the guards re-read
+ * `companyId` from the database, and their open sessions are revoked.
+ */
+export async function removeMemberAction(
+  input: unknown,
+): Promise<ActionResult<TeamMember>> {
+  return runAction(async () => {
+    const parsed = removeMemberSchema.safeParse(input);
+    if (!parsed.success) {
+      return actionError(
+        "Check the highlighted fields.",
+        parsed.error.flatten().fieldErrors,
+      );
+    }
+    const admin = await requireAdmin();
+    const { userId } = parsed.data;
+
+    if (userId === admin.id) {
+      return actionError(
+        "You can't remove yourself. Delete your account from Account settings instead.",
+      );
+    }
+
+    const target = await db.user.findFirst({
+      where: { id: userId, companyId: admin.companyId },
+      select: { id: true, role: true },
+    });
+    if (!target) {
+      return actionError("That user no longer exists.");
+    }
+    if (target.role === "OWNER" && admin.role !== "OWNER") {
+      return actionError("Only an owner can remove another owner.");
+    }
+
+    // The role resets so an elevated role never carries into whatever
+    // workspace the user joins next.
+    const user = await db.user.update({
+      where: { id: userId, companyId: admin.companyId },
+      data: { companyId: null, role: "MEMBER", sessionVersion: { increment: 1 } },
+      select: TEAM_MEMBER_SELECT,
+    });
+
+    await logActivity({
+      companyId: admin.companyId,
+      actorId: admin.id,
+      action: "user.remove",
+      entityType: "user",
+      entityId: user.id,
+      summary: `removed ${user.name} from the workspace`,
+      metadata: { role: target.role },
     });
 
     revalidatePath("/settings/team");
@@ -174,11 +237,14 @@ export async function changePasswordAction(
       });
     }
 
+    // Signs out every other device; this one is re-stamped so the user who
+    // just proved the old password stays signed in.
     const passwordHash = await hashPassword(parsed.data.newPassword);
     await db.user.update({
       where: { id: currentUser.id },
-      data: { passwordHash },
+      data: { passwordHash, sessionVersion: { increment: 1 } },
     });
+    await refreshSession({});
 
     if (currentUser.companyId) {
       await logActivity({
@@ -193,6 +259,26 @@ export async function changePasswordAction(
 
     return actionOk({ id: currentUser.id });
   });
+}
+
+/** Revokes every session for this account, including the current one. */
+export async function signOutEverywhereAction(): Promise<void> {
+  const currentUser = await requireUser();
+  await db.user.update({
+    where: { id: currentUser.id },
+    data: { sessionVersion: { increment: 1 } },
+  });
+  if (currentUser.companyId) {
+    await logActivity({
+      companyId: currentUser.companyId,
+      actorId: currentUser.id,
+      action: "user.sign_out_everywhere",
+      entityType: "user",
+      entityId: currentUser.id,
+      summary: "signed out of all devices",
+    });
+  }
+  await signOut({ redirectTo: "/login" });
 }
 
 export async function updateNotificationPreferencesAction(

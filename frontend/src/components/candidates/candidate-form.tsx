@@ -24,6 +24,7 @@ import {
   MIN_RESUME_LENGTH,
   candidateCreateSchema,
   candidateUpdateSchema,
+  resumeTextSchema,
 } from "@resumerank/core/validators/candidate";
 import { createCandidateAction, updateCandidateAction, extractCandidateProfileAction } from "@/server/actions/candidates";
 
@@ -106,8 +107,16 @@ export function CandidateForm({ mode, candidate }: CandidateFormProps) {
   }
 
   function handleExtract() {
+    const resume = resumeTextSchema.safeParse(values.resumeText);
+    if (!resume.success) {
+      setFieldErrors((current) => ({
+        ...current,
+        resumeText: resume.error.issues.map((issue) => issue.message),
+      }));
+      return;
+    }
     startExtracting(async () => {
-      const result = await extractCandidateProfileAction(values.resumeText);
+      const result = await extractCandidateProfileAction(resume.data);
       if (!result.ok) {
         toast.error(result.error);
         return;

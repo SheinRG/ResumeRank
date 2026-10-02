@@ -4,7 +4,7 @@ import { CircleX } from "lucide-react";
 
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
-import { consumeInviteToken } from "@resumerank/core/auth/tokens";
+import { findValidInviteByToken } from "@resumerank/core/auth/tokens";
 import {
   Card,
   CardContent,
@@ -53,7 +53,7 @@ async function InvitePage({ searchParams }: InvitePageProps) {
     return <ErrorCard heading="Invite link invalid" message={INVALID_INVITE_MESSAGE} />;
   }
 
-  const invite = await consumeInviteToken(token);
+  const invite = await findValidInviteByToken(token);
   if (!invite) {
     return <ErrorCard heading="Invite link invalid" message={INVALID_INVITE_MESSAGE} />;
   }

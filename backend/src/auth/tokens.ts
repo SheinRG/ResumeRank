@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { db } from "../db";
-import type { CompanyInvite } from "../generated/prisma/client";
+import type { CompanyInvite, Prisma } from "../generated/prisma/client";
 import type { Role } from "../generated/prisma/enums";
 
 const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -117,7 +117,8 @@ export async function createCompanyInvite(
   return { invite, rawToken: raw };
 }
 
-export async function consumeInviteToken(
+/** Read-only lookup: the invite is not used up until `claimInvite` runs. */
+export async function findValidInviteByToken(
   rawToken: string,
 ): Promise<CompanyInvite | null> {
   const invite = await db.companyInvite.findUnique({
@@ -127,4 +128,22 @@ export async function consumeInviteToken(
     return null;
   }
   return invite;
+}
+
+/**
+ * Marks an invite accepted only if it is still pending and unexpired, as a
+ * single conditional write. Run it first inside the accepting transaction:
+ * when two requests race on one invite exactly one claims it, and the loser
+ * gets `false` before it has written anything.
+ */
+export async function claimInvite(
+  tx: Prisma.TransactionClient,
+  inviteId: string,
+): Promise<boolean> {
+  const now = new Date();
+  const { count } = await tx.companyInvite.updateMany({
+    where: { id: inviteId, acceptedAt: null, expiresAt: { gt: now } },
+    data: { acceptedAt: now },
+  });
+  return count === 1;
 }

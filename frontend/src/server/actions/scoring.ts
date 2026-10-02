@@ -5,6 +5,7 @@ import { db } from "@resumerank/core/db";
 import { requireWriter } from "@/lib/auth/guards";
 import { scoreApplication, ScoringError, type ScoreOutcome } from "@resumerank/core/scoring/engine";
 import { MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
+import { checkAiQuota } from "@resumerank/core/rate-limit";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -40,9 +41,17 @@ export async function scoreApplicationAction(
       );
     }
 
+    const overQuota = checkAiQuota({ userId: user.id, companyId: user.companyId });
+    if (overQuota) {
+      return actionError(overQuota);
+    }
+
     let outcome: ScoreOutcome;
     try {
-      outcome = await scoreApplication(applicationId);
+      outcome = await scoreApplication({
+        applicationId,
+        companyId: user.companyId,
+      });
     } catch (error) {
       if (error instanceof ScoringError) {
         return actionError(error.message);

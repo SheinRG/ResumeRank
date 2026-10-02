@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { Prisma } from "./generated/prisma/client";
 
 /**
  * Lowercases, replaces anything non-alphanumeric with a hyphen, and collapses
@@ -37,4 +38,32 @@ export async function generateCompanySlug(name: string): Promise<string> {
     suffix += 1;
   }
   return `${base}-${suffix}`;
+}
+
+const SLUG_ATTEMPTS = 3;
+
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+/**
+ * Runs `create` with a freshly generated slug, retrying on a unique-constraint
+ * conflict. Two concurrent signups for the same name can both see a slug as
+ * free (reading inside the transaction doesn't prevent that under READ
+ * COMMITTED), and one then fails on the unique index. A failed statement
+ * aborts a Postgres transaction, so `create` should be the whole transaction:
+ * the retry regenerates the slug, now seeing the competitor's committed row.
+ */
+export async function withUniqueCompanySlug<T>(
+  name: string,
+  create: (slug: string) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    const slug = await generateCompanySlug(name);
+    try {
+      return await create(slug);
+    } catch (error) {
+      if (!isUniqueViolation(error) || attempt >= SLUG_ATTEMPTS) throw error;
+    }
+  }
 }

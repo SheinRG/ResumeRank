@@ -5,7 +5,7 @@ import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn, signOut } from "@/lib/auth";
 import { hashPassword } from "@resumerank/core/auth/password";
-import { generateCompanySlug } from "@resumerank/core/company";
+import { withUniqueCompanySlug } from "@resumerank/core/company";
 import {
   consumePasswordResetToken,
   consumeVerificationToken,
@@ -60,21 +60,22 @@ export async function registerAction(
     }
 
     const passwordHash = await hashPassword(password);
-    await db.$transaction(async (tx) => {
-      const slug = await generateCompanySlug(companyName);
-      const company = await tx.company.create({
-        data: { name: companyName, slug },
-      });
-      await tx.user.create({
-        data: {
-          name,
-          email,
-          passwordHash,
-          role: "OWNER",
-          companyId: company.id,
-        },
-      });
-    });
+    await withUniqueCompanySlug(companyName, (slug) =>
+      db.$transaction(async (tx) => {
+        const company = await tx.company.create({
+          data: { name: companyName, slug },
+        });
+        await tx.user.create({
+          data: {
+            name,
+            email,
+            passwordHash,
+            role: "OWNER",
+            companyId: company.id,
+          },
+        });
+      }),
+    );
 
     const token = await createVerificationToken(email);
     await sendVerificationEmail(email, token);
@@ -214,9 +215,14 @@ export async function resetPasswordAction(
       );
     }
 
+    // A reset usually means the old password is compromised, so every session
+    // signed in with it is revoked.
     await db.user.update({
       where: { id: userId },
-      data: { passwordHash: await hashPassword(parsed.data.password) },
+      data: {
+        passwordHash: await hashPassword(parsed.data.password),
+        sessionVersion: { increment: 1 },
+      },
     });
     return actionOk(undefined);
   });

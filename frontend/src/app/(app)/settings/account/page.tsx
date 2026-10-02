@@ -12,6 +12,7 @@ import { requireUser } from "@/lib/auth/guards";
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
 import { NotificationSettings } from "@/components/settings/notification-settings";
 import { DeleteAccount } from "@/components/settings/delete-account";
+import { SignOutEverywhere } from "@/components/settings/sign-out-everywhere";
 
 export const metadata: Metadata = { title: "Account · Settings" };
 
@@ -53,6 +54,19 @@ export default async function SettingsAccountPage() {
         </CardHeader>
         <CardContent>
           <NotificationSettings notifyByEmail={notifyByEmail} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sessions</CardTitle>
+          <CardDescription>
+            Signed in somewhere you don&apos;t recognise, or on a shared computer?
+            End every session, including this one.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SignOutEverywhere />
         </CardContent>
       </Card>
 
