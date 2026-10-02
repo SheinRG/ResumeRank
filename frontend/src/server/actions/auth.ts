@@ -214,9 +214,14 @@ export async function resetPasswordAction(
       );
     }
 
+    // A reset usually means the old password is compromised, so every session
+    // signed in with it is revoked.
     await db.user.update({
       where: { id: userId },
-      data: { passwordHash: await hashPassword(parsed.data.password) },
+      data: {
+        passwordHash: await hashPassword(parsed.data.password),
+        sessionVersion: { increment: 1 },
+      },
     });
     return actionOk(undefined);
   });

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { auth } from "@/lib/auth";
+import { GateError, requireUser, type CurrentUser } from "@/lib/auth/guards";
 import { db } from "@resumerank/core/db";
 import {
   Card,
@@ -19,19 +19,19 @@ export const metadata: Metadata = {
   title: "Set up your workspace",
 };
 
-async function OnboardingPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
+async function loadOnboardingUser(): Promise<CurrentUser> {
+  try {
+    return await requireUser();
+  } catch (error) {
+    if (error instanceof GateError) {
+      redirect("/session-ended");
+    }
+    throw error;
   }
+}
 
-  const user = await db.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, email: true, companyId: true },
-  });
-  if (!user) {
-    redirect("/login");
-  }
+async function OnboardingPage() {
+  const user = await loadOnboardingUser();
   if (user.companyId) {
     redirect("/dashboard");
   }

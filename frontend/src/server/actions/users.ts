@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
+import { refreshSession, signOut } from "@/lib/auth";
 import { requireAdmin, requireUser } from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
@@ -90,8 +91,8 @@ export async function updateUserRoleAction(
 /**
  * Detaches a teammate from the workspace. Their account survives (they can
  * be re-invited or start their own company) and the records they created stay
- * with the company. Access ends on their next request because the guards
- * re-read `companyId` from the database every time.
+ * with the company. Access ends on their next request: the guards re-read
+ * `companyId` from the database, and their open sessions are revoked.
  */
 export async function removeMemberAction(
   input: unknown,
@@ -128,7 +129,7 @@ export async function removeMemberAction(
     // workspace the user joins next.
     const user = await db.user.update({
       where: { id: userId, companyId: admin.companyId },
-      data: { companyId: null, role: "MEMBER" },
+      data: { companyId: null, role: "MEMBER", sessionVersion: { increment: 1 } },
       select: TEAM_MEMBER_SELECT,
     });
 
@@ -236,11 +237,14 @@ export async function changePasswordAction(
       });
     }
 
+    // Signs out every other device; this one is re-stamped so the user who
+    // just proved the old password stays signed in.
     const passwordHash = await hashPassword(parsed.data.newPassword);
     await db.user.update({
       where: { id: currentUser.id },
-      data: { passwordHash },
+      data: { passwordHash, sessionVersion: { increment: 1 } },
     });
+    await refreshSession({});
 
     if (currentUser.companyId) {
       await logActivity({
@@ -255,6 +259,26 @@ export async function changePasswordAction(
 
     return actionOk({ id: currentUser.id });
   });
+}
+
+/** Revokes every session for this account, including the current one. */
+export async function signOutEverywhereAction(): Promise<void> {
+  const currentUser = await requireUser();
+  await db.user.update({
+    where: { id: currentUser.id },
+    data: { sessionVersion: { increment: 1 } },
+  });
+  if (currentUser.companyId) {
+    await logActivity({
+      companyId: currentUser.companyId,
+      actorId: currentUser.id,
+      action: "user.sign_out_everywhere",
+      entityType: "user",
+      entityId: currentUser.id,
+      summary: "signed out of all devices",
+    });
+  }
+  await signOut({ redirectTo: "/login" });
 }
 
 export async function updateNotificationPreferencesAction(

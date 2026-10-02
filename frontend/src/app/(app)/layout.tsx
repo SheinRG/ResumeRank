@@ -11,7 +11,7 @@ async function loadCurrentUser(): Promise<CurrentUser> {
     return await requireUser();
   } catch (error) {
     if (error instanceof GateError) {
-      redirect("/login");
+      redirect("/session-ended");
     }
     throw error;
   }
@@ -24,7 +24,7 @@ export default async function AppLayout({
 }) {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login");
+    redirect("/session-ended");
   }
 
   const user = await loadCurrentUser();

@@ -27,6 +27,7 @@ const LOGIN_ERRORS: Record<LoginErrorCode, string> = {
     "Google hasn't verified that email address, so we can't sign you in with it.",
   AccountNotLinked:
     "An account with this email already exists. Log in with your password and verify your email, then you can use Google.",
+  SessionExpired: "Your session has ended. Log in again to continue.",
 };
 
 function loginErrorMessage(code: string | undefined): string | null {

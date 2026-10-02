@@ -29,6 +29,7 @@ const providers = [
         email: user.email,
         image: user.image,
         role: roleSchema.parse(user.role),
+        sessionVersion: user.sessionVersion,
       };
     },
   }),
@@ -40,15 +41,26 @@ const providers = [
 ];
 
 /** Error codes the login page knows how to explain. */
-export type LoginErrorCode = "GoogleEmailUnverified" | "AccountNotLinked";
+export type LoginErrorCode =
+  | "GoogleEmailUnverified"
+  | "AccountNotLinked"
+  | "SessionExpired";
 
 function loginError(code: LoginErrorCode): string {
   return `/login?error=${code}`;
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+export const {
+  handlers,
+  auth,
+  signIn,
+  signOut,
+  unstable_update: refreshSession,
+} = NextAuth({
   adapter: PrismaAdapter(db),
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
   trustHost: true,
   pages: {
     signIn: "/login",
@@ -79,10 +91,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user?.id) {
         token.id = user.id;
         token.role = user.role;
+        token.sessionVersion = user.sessionVersion ?? 0;
+      }
+      // An explicit refresh (after the user changes their own password)
+      // re-stamps this session so it survives the revocation it triggered.
+      if (trigger === "update" && token.id) {
+        const current = await db.user.findUnique({
+          where: { id: token.id },
+          select: { sessionVersion: true },
+        });
+        if (current) token.sessionVersion = current.sessionVersion;
       }
       // An uploaded avatar is an inlined data URL, which would chunk the session
       // cookie across several kilobytes of every request header. Nothing reads
@@ -93,6 +115,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       if (token.id) session.user.id = token.id;
       session.user.role = token.role ?? "MEMBER";
+      session.user.sessionVersion = token.sessionVersion ?? 0;
       return session;
     },
   },

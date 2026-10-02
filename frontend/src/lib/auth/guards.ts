@@ -31,7 +31,8 @@ export interface CompanyUser extends CurrentUser {
 /**
  * Resolves the signed-in user fresh from the database on every call, so a
  * role demotion takes effect on the next request — the JWT is never the
- * authorization source of truth.
+ * authorization source of truth. A token whose session version is behind the
+ * user's has been revoked and is rejected the same way.
  */
 export async function requireUser(): Promise<CurrentUser> {
   const session = await auth();
@@ -41,6 +42,7 @@ export async function requireUser(): Promise<CurrentUser> {
   const user = await db.user.findUnique({
     where: { id },
     select: {
+      sessionVersion: true,
       id: true,
       name: true,
       email: true,
@@ -52,7 +54,10 @@ export async function requireUser(): Promise<CurrentUser> {
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
-  const { company, ...rest } = user;
+  const { company, sessionVersion, ...rest } = user;
+  if (sessionVersion !== session.user.sessionVersion) {
+    throw new GateError("Your session has ended. Log in again to continue.");
+  }
   return {
     ...rest,
     companyName: company?.name ?? null,

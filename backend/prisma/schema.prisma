@@ -58,17 +58,20 @@ enum Verdict {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  emailVerified DateTime?
-  passwordHash  String?
-  image         String?
-  role          Role      @default(MEMBER)
-  notifyByEmail Boolean   @default(true)
-  companyId     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  emailVerified  DateTime?
+  passwordHash   String?
+  image          String?
+  role           Role      @default(MEMBER)
+  notifyByEmail  Boolean   @default(true)
+  // Stamped into each session token; bumping it revokes every existing
+  // session (password change/reset, removal, "sign out everywhere").
+  sessionVersion Int       @default(0)
+  companyId      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   company             Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
   accounts            Account[]
