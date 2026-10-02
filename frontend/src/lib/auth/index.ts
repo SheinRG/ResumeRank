@@ -32,10 +32,19 @@ const providers = [
       };
     },
   }),
+  // Linking by email is only safe once both sides have proven they own the
+  // address; the signIn callback enforces that before Auth.js links anything.
   ...(isGoogleAuthEnabled()
     ? [Google({ allowDangerousEmailAccountLinking: true })]
     : []),
 ];
+
+/** Error codes the login page knows how to explain. */
+export type LoginErrorCode = "GoogleEmailUnverified" | "AccountNotLinked";
+
+function loginError(code: LoginErrorCode): string {
+  return `/login?error=${code}`;
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
@@ -47,6 +56,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   providers,
   callbacks: {
+    /**
+     * Blocks pre-account takeover: someone registers a password account with a
+     * victim's address and waits for the victim to "Sign in with Google" into
+     * it. A Google login may join an existing account only if Google vouches
+     * for the address and the existing account has verified it too.
+     */
+    async signIn({ user, account, profile }) {
+      if (account?.provider !== "google") return true;
+      if (profile?.email_verified !== true || !user.email) {
+        return loginError("GoogleEmailUnverified");
+      }
+      const existing = await db.user.findUnique({
+        where: { email: user.email },
+        select: {
+          emailVerified: true,
+          accounts: { where: { provider: "google" }, select: { id: true } },
+        },
+      });
+      if (existing && existing.accounts.length === 0 && !existing.emailVerified) {
+        return loginError("AccountNotLinked");
+      }
+      return true;
+    },
     jwt({ token, user }) {
       if (user?.id) {
         token.id = user.id;
