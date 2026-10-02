@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { createTransport, type Transporter } from "nodemailer";
 import { env } from "./env";
+import { escapeHtml, singleLine } from "./html";
 
 interface Email {
   to: string;
@@ -77,7 +78,20 @@ async function send(email: Email): Promise<void> {
   );
 }
 
-function emailShell(heading: string, body: string, cta: string, url: string): string {
+/**
+ * Takes plain text and escapes every value itself, so a caller can pass a
+ * user-controlled company or inviter name without thinking about markup.
+ */
+function emailShell(
+  headingText: string,
+  bodyText: string,
+  ctaText: string,
+  actionUrl: string,
+): string {
+  const heading = escapeHtml(headingText);
+  const body = escapeHtml(bodyText);
+  const cta = escapeHtml(ctaText);
+  const url = escapeHtml(actionUrl);
   return `
   <div style="font-family:ui-sans-serif,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#18181b">
     <p style="font-size:14px;font-weight:600;letter-spacing:0.04em;color:#6366f1;margin:0 0 24px">RESUMERANK</p>
@@ -122,7 +136,7 @@ export async function sendInviteEmail({
   const url = `${env().NEXT_PUBLIC_APP_URL}/invite?token=${encodeURIComponent(token)}`;
   await send({
     to,
-    subject: `${inviterName} invited you to join ${companyName} on ResumeRank`,
+    subject: singleLine(`${inviterName} invited you to join ${companyName} on ResumeRank`),
     actionUrl: url,
     html: emailShell(
       `Join ${companyName} on ResumeRank`,
