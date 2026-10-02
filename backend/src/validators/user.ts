@@ -44,6 +44,11 @@ export type NotificationPreferencesInput = z.infer<
   typeof notificationPreferencesSchema
 >;
 
+export const removeMemberSchema = z.object({
+  userId: z.string().min(1),
+});
+export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
+
 export const deleteAccountSchema = z.object({
   confirmEmail: z.string().trim().min(1, "Type your email to confirm"),
   password: z.string().optional(),

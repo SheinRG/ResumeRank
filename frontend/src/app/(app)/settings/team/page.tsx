@@ -33,6 +33,7 @@ export default async function SettingsTeamPage() {
           <TeamTable
             members={members}
             currentUserId={user.id}
+            currentUserRole={user.role}
             canManage={canManage}
           />
         </CardContent>

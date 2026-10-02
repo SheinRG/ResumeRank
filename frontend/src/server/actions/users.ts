@@ -9,6 +9,7 @@ import {
   changePasswordSchema,
   deleteAccountSchema,
   notificationPreferencesSchema,
+  removeMemberSchema,
   updateProfileSchema,
 } from "@resumerank/core/validators/user";
 import { hashPassword, verifyPassword } from "@resumerank/core/auth/password";
@@ -78,6 +79,67 @@ export async function updateUserRoleAction(
       entityId: user.id,
       summary: `changed ${user.name}'s role to ${role}`,
       metadata: { from: target.role, to: role },
+    });
+
+    revalidatePath("/settings/team");
+
+    return actionOk(user);
+  });
+}
+
+/**
+ * Detaches a teammate from the workspace. Their account survives (they can
+ * be re-invited or start their own company) and the records they created stay
+ * with the company. Access ends on their next request because the guards
+ * re-read `companyId` from the database every time.
+ */
+export async function removeMemberAction(
+  input: unknown,
+): Promise<ActionResult<TeamMember>> {
+  return runAction(async () => {
+    const parsed = removeMemberSchema.safeParse(input);
+    if (!parsed.success) {
+      return actionError(
+        "Check the highlighted fields.",
+        parsed.error.flatten().fieldErrors,
+      );
+    }
+    const admin = await requireAdmin();
+    const { userId } = parsed.data;
+
+    if (userId === admin.id) {
+      return actionError(
+        "You can't remove yourself. Delete your account from Account settings instead.",
+      );
+    }
+
+    const target = await db.user.findFirst({
+      where: { id: userId, companyId: admin.companyId },
+      select: { id: true, role: true },
+    });
+    if (!target) {
+      return actionError("That user no longer exists.");
+    }
+    if (target.role === "OWNER" && admin.role !== "OWNER") {
+      return actionError("Only an owner can remove another owner.");
+    }
+
+    // The role resets so an elevated role never carries into whatever
+    // workspace the user joins next.
+    const user = await db.user.update({
+      where: { id: userId, companyId: admin.companyId },
+      data: { companyId: null, role: "MEMBER" },
+      select: TEAM_MEMBER_SELECT,
+    });
+
+    await logActivity({
+      companyId: admin.companyId,
+      actorId: admin.id,
+      action: "user.remove",
+      entityType: "user",
+      entityId: user.id,
+      summary: `removed ${user.name} from the workspace`,
+      metadata: { role: target.role },
     });
 
     revalidatePath("/settings/team");

@@ -5,6 +5,7 @@ import {
   jobListParamsSchema,
   llmScoringResultSchema,
   registerSchema,
+  removeMemberSchema,
   scorecardSchema,
   updateProfileSchema,
 } from "../../src/validators";
@@ -58,6 +59,17 @@ describe("updateProfileSchema", () => {
 
   it("saves a name on its own", () => {
     expect(updateProfileSchema.safeParse({ name: "Raghav" }).success).toBe(true);
+  });
+});
+
+describe("removeMemberSchema", () => {
+  it("accepts a user id", () => {
+    expect(removeMemberSchema.safeParse({ userId: "u_1" }).success).toBe(true);
+  });
+
+  it("rejects a missing or empty user id", () => {
+    expect(removeMemberSchema.safeParse({}).success).toBe(false);
+    expect(removeMemberSchema.safeParse({ userId: "" }).success).toBe(false);
   });
 });
 
