@@ -99,7 +99,7 @@ export async function updateStageAction(
     const { id, stage } = parsed.data;
 
     const existing = await db.application.findUnique({
-      where: { id, companyId: user.companyId },
+      where: { id, companyId: user.companyId, deletedAt: null },
       select: { stage: true, candidate: { select: { name: true } } },
     });
     if (!existing) {
@@ -107,7 +107,7 @@ export async function updateStageAction(
     }
 
     const application = await db.application.update({
-      where: { id, companyId: user.companyId },
+      where: { id, companyId: user.companyId, deletedAt: null },
       data: { stage },
     });
 
