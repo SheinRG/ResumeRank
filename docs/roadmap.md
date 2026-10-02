@@ -28,7 +28,7 @@ Trust-breaking defects, mostly small.
 - [x] **Unbounded AI spend.** `rateLimit` used only in `auth.ts`/`company.ts`. `scoreApplicationAction` and `extractCandidateProfileAction` (`actions/candidates.ts:139`) are unlimited; extraction checks only a min length (`:146`), skipping the 50k max in `validators/candidate.ts:24`. → Validate through the shared schema; per-user + per-tenant limits.
 - [x] **Error boundary leaks messages.** `frontend/src/app/(app)/error.tsx:16` renders `error.message`. → Generic copy + `error.digest` as a support reference.
 - [x] **Scorecard on removed application.** `actions/scorecards.ts:26` doesn't check `deletedAt`.
-- [ ] **Slug race.** `generateCompanySlug` (`backend/src/company.ts:26`) reads via `db` not `tx`; unhandled P2002 on concurrent registration. → Generate inside the tx and retry on conflict.
+- [x] **Slug race.** `generateCompanySlug` (`backend/src/company.ts:26`) reads via `db` not `tx`; unhandled P2002 on concurrent registration. → Generate inside the tx and retry on conflict.
 
 ---
 

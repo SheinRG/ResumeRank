@@ -6,7 +6,7 @@ import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn } from "@/lib/auth";
 import { requireAdmin, requireUser } from "@/lib/auth/guards";
-import { generateCompanySlug } from "@resumerank/core/company";
+import { withUniqueCompanySlug } from "@resumerank/core/company";
 import { hashPassword } from "@resumerank/core/auth/password";
 import {
   claimInvite,
@@ -58,17 +58,18 @@ export async function createCompanyAction(
       return actionError("You already belong to a company.");
     }
 
-    const company = await db.$transaction(async (tx) => {
-      const slug = await generateCompanySlug(parsed.data.companyName);
-      const created = await tx.company.create({
-        data: { name: parsed.data.companyName, slug },
-      });
-      await tx.user.update({
-        where: { id: user.id },
-        data: { companyId: created.id, role: "OWNER" },
-      });
-      return created;
-    });
+    const company = await withUniqueCompanySlug(parsed.data.companyName, (slug) =>
+      db.$transaction(async (tx) => {
+        const created = await tx.company.create({
+          data: { name: parsed.data.companyName, slug },
+        });
+        await tx.user.update({
+          where: { id: user.id },
+          data: { companyId: created.id, role: "OWNER" },
+        });
+        return created;
+      }),
+    );
 
     await logActivity({
       companyId: company.id,
