@@ -7,6 +7,23 @@ import { resolvePageWindow } from "./pagination";
 
 export type ActivityEntityType = "job" | "candidate" | "application" | "user";
 
+export interface ActivityActor {
+  id: string | null;
+  name: string;
+  image: string | null;
+}
+
+export const activityActorInclude = {
+  actor: { select: { id: true, name: true, image: true } },
+} as const;
+
+const DELETED_ACTOR: ActivityActor = { id: null, name: "Deleted user", image: null };
+
+/** Entries outlive their author's account; render those as an anonymous actor. */
+export function toActivityActor(actor: ActivityActor | null): ActivityActor {
+  return actor ?? DELETED_ACTOR;
+}
+
 export interface ActivityListParams {
   entityType?: ActivityEntityType;
   page: number;
@@ -20,7 +37,7 @@ export interface ActivityItem {
   summary: string;
   metadata: Prisma.JsonValue | null;
   createdAt: Date;
-  actor: { id: string; name: string; image: string | null };
+  actor: ActivityActor;
 }
 
 export async function listActivity(
@@ -42,13 +59,14 @@ export async function listActivity(
     return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
   }
 
-  const items = await db.activityLog.findMany({
+  const rows = await db.activityLog.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     skip,
     take,
-    include: { actor: { select: { id: true, name: true, image: true } } },
+    include: activityActorInclude,
   });
+  const items = rows.map((row) => ({ ...row, actor: toActivityActor(row.actor) }));
 
   return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
 }

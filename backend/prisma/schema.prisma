@@ -292,7 +292,9 @@ model Scorecard {
 
 model ActivityLog {
   id         String   @id @default(cuid())
-  actorId    String
+  // Nullable so a deleted account is anonymised in the trail rather than
+  // erasing the entries it authored.
+  actorId    String?
   action     String
   entityType String
   entityId   String
@@ -301,9 +303,10 @@ model ActivityLog {
   companyId  String
   createdAt  DateTime @default(now())
 
-  actor   User    @relation(fields: [actorId], references: [id])
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, entityType, entityId, createdAt(sort: Desc)])
   @@index([companyId, createdAt(sort: Desc), id])
+  @@index([actorId])
 }
