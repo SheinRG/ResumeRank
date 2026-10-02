@@ -42,7 +42,10 @@ export async function scoreApplicationAction(
 
     let outcome: ScoreOutcome;
     try {
-      outcome = await scoreApplication(applicationId);
+      outcome = await scoreApplication({
+        applicationId,
+        companyId: user.companyId,
+      });
     } catch (error) {
       if (error instanceof ScoringError) {
         return actionError(error.message);
