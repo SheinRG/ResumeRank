@@ -1,6 +1,11 @@
 import { db } from "@resumerank/core/db";
 import { requireMember } from "@/lib/auth/guards";
 import { STAGES, type Stage } from "@resumerank/core/validators/enums";
+import {
+  activityActorInclude,
+  toActivityActor,
+  type ActivityActor,
+} from "./activity";
 
 const RECENT_ACTIVITY_LIMIT = 8;
 const SCORE_BUCKET_WIDTH = 10;
@@ -44,7 +49,7 @@ export interface ActivityFeedItem {
   entityId: string;
   summary: string;
   createdAt: Date;
-  actor: { id: string; name: string; image: string | null };
+  actor: ActivityActor;
 }
 
 export interface DashboardData {
@@ -111,7 +116,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     stageGroups,
     scoreBucketRows,
     recentInRange,
-    recentActivity,
+    recentActivityRows,
   ] = await Promise.all([
     db.job.count({ where: { companyId, status: "OPEN" } }),
     db.job.count({ where: { companyId } }),
@@ -145,9 +150,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       where: { companyId },
       take: RECENT_ACTIVITY_LIMIT,
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-      include: { actor: { select: { id: true, name: true, image: true } } },
+      include: activityActorInclude,
     }),
   ]);
+  const recentActivity: ActivityFeedItem[] = recentActivityRows.map((row) => ({
+    ...row,
+    actor: toActivityActor(row.actor),
+  }));
 
   const countByStage = new Map(
     stageGroups.map((g): [Stage, number] => [g.stage, g._count._all]),

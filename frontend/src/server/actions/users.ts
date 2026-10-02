@@ -286,23 +286,17 @@ export async function deleteAccountAction(
       }
     }
 
+    const companyId = currentUser.companyId;
+    // Activity rows are left untouched: the FK nulls their actor on delete, so
+    // the company's audit trail survives with the author anonymised.
     await db.$transaction(async (tx) => {
-      if (inheritor) {
+      if (inheritor && companyId) {
+        const owned = { createdById: currentUser.id, companyId };
         const reassign = { createdById: inheritor.id };
-        await tx.job.updateMany({
-          where: { createdById: currentUser.id },
-          data: reassign,
-        });
-        await tx.candidate.updateMany({
-          where: { createdById: currentUser.id },
-          data: reassign,
-        });
-        await tx.application.updateMany({
-          where: { createdById: currentUser.id },
-          data: reassign,
-        });
+        await tx.job.updateMany({ where: owned, data: reassign });
+        await tx.candidate.updateMany({ where: owned, data: reassign });
+        await tx.application.updateMany({ where: owned, data: reassign });
       }
-      await tx.activityLog.deleteMany({ where: { actorId: currentUser.id } });
       await tx.user.delete({ where: { id: currentUser.id } });
     });
 
