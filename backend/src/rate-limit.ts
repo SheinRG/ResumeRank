@@ -45,6 +45,38 @@ export function rateLimit(
 
 export const AUTH_LIMIT = { max: 5, windowMs: 15 * 60 * 1000 };
 
+/**
+ * Every AI call is a paid LLM request. The per-user window stops one person
+ * (or a stuck script) from hammering it; the per-company window caps a whole
+ * tenant's spend. Generous enough for a recruiter scoring a full pipeline.
+ */
+export const AI_USER_LIMIT = { max: 30, windowMs: 10 * 60 * 1000 };
+export const AI_COMPANY_LIMIT = { max: 300, windowMs: 60 * 60 * 1000 };
+
+function retryMessage(retryAfterSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+/** Returns an error message when the caller is over quota, otherwise null. */
+export function checkAiQuota({
+  userId,
+  companyId,
+}: {
+  userId: string;
+  companyId: string;
+}): string | null {
+  const user = rateLimit(`ai:user:${userId}`, AI_USER_LIMIT);
+  if (!user.allowed) {
+    return `You're using AI features too quickly. Try again in ${retryMessage(user.retryAfterSeconds)}.`;
+  }
+  const company = rateLimit(`ai:company:${companyId}`, AI_COMPANY_LIMIT);
+  if (!company.allowed) {
+    return `Your workspace has reached its hourly AI limit. Try again in ${retryMessage(company.retryAfterSeconds)}.`;
+  }
+  return null;
+}
+
 export function resetRateLimits(): void {
   buckets.clear();
 }

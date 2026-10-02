@@ -4,6 +4,17 @@ import { emailSchema } from "./auth";
 import { optionalText } from "./helpers";
 
 export const MIN_RESUME_LENGTH = 200;
+export const MAX_RESUME_LENGTH = 50_000;
+
+/** Also bounds what reaches the LLM, so it caps tokens spent per AI call. */
+export const resumeTextSchema = z
+  .string()
+  .trim()
+  .min(
+    MIN_RESUME_LENGTH,
+    `Resume text must be at least ${MIN_RESUME_LENGTH} characters so scoring has something to work with`,
+  )
+  .max(MAX_RESUME_LENGTH, "Resume text must be at most 50,000 characters");
 
 export const candidateCreateSchema = z.object({
   name: z
@@ -14,14 +25,7 @@ export const candidateCreateSchema = z.object({
   email: emailSchema,
   headline: optionalText(120, "Headline must be at most 120 characters"),
   source: candidateSourceSchema,
-  resumeText: z
-    .string()
-    .trim()
-    .min(
-      MIN_RESUME_LENGTH,
-      `Resume text must be at least ${MIN_RESUME_LENGTH} characters so scoring has something to work with`,
-    )
-    .max(50_000, "Resume text must be at most 50,000 characters"),
+  resumeText: resumeTextSchema,
 });
 export type CandidateCreateInput = z.infer<typeof candidateCreateSchema>;
 

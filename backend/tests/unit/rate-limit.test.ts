@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { rateLimit, resetRateLimits } from "../../src/rate-limit";
+import {
+  AI_COMPANY_LIMIT,
+  AI_USER_LIMIT,
+  checkAiQuota,
+  rateLimit,
+  resetRateLimits,
+} from "../../src/rate-limit";
 
 const WINDOW = { max: 3, windowMs: 60_000 };
 
@@ -35,5 +41,31 @@ describe("rateLimit", () => {
     vi.advanceTimersByTime(60_001);
     expect(rateLimit("k", WINDOW).allowed).toBe(true);
     vi.useRealTimers();
+  });
+});
+
+describe("checkAiQuota", () => {
+  beforeEach(() => {
+    resetRateLimits();
+  });
+
+  it("allows calls within both windows", () => {
+    expect(checkAiQuota({ userId: "u1", companyId: "c1" })).toBeNull();
+  });
+
+  it("blocks a user who exceeds the per-user window", () => {
+    for (let i = 0; i < AI_USER_LIMIT.max; i++) {
+      checkAiQuota({ userId: "u1", companyId: "c1" });
+    }
+    expect(checkAiQuota({ userId: "u1", companyId: "c1" })).toMatch(/too quickly/);
+    expect(checkAiQuota({ userId: "u2", companyId: "c1" })).toBeNull();
+  });
+
+  it("blocks a whole company once its shared window is spent", () => {
+    for (let i = 0; i < AI_COMPANY_LIMIT.max; i++) {
+      checkAiQuota({ userId: `u${i}`, companyId: "c1" });
+    }
+    expect(checkAiQuota({ userId: "fresh", companyId: "c1" })).toMatch(/hourly AI limit/);
+    expect(checkAiQuota({ userId: "fresh", companyId: "c2" })).toBeNull();
   });
 });

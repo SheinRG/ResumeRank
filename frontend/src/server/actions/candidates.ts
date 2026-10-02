@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { Prisma, type Candidate } from "@resumerank/core/generated/prisma/client";
 import { requireWriter } from "@/lib/auth/guards";
-import { candidateCreateSchema, candidateUpdateSchema, MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
+import {
+  candidateCreateSchema,
+  candidateUpdateSchema,
+  resumeTextSchema,
+} from "@resumerank/core/validators/candidate";
+import { checkAiQuota } from "@resumerank/core/rate-limit";
 import { extractCandidateProfile, ExtractionError, type CandidateProfile } from "@resumerank/core/extraction/engine";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
@@ -140,19 +145,22 @@ export async function extractCandidateProfileAction(
   resumeText: unknown,
 ): Promise<ActionResult<CandidateProfile>> {
   return runAction(async () => {
-    await requireWriter();
+    const user = await requireWriter();
 
-    if (
-      typeof resumeText !== "string" ||
-      resumeText.trim().length < MIN_RESUME_LENGTH
-    ) {
+    const parsed = resumeTextSchema.safeParse(resumeText);
+    if (!parsed.success) {
       return actionError(
-        `Paste at least ${MIN_RESUME_LENGTH} characters of resume text before extracting.`,
+        parsed.error.issues[0]?.message ?? "Check the resume text and try again.",
       );
     }
 
+    const overQuota = checkAiQuota({ userId: user.id, companyId: user.companyId });
+    if (overQuota) {
+      return actionError(overQuota);
+    }
+
     try {
-      const profile = await extractCandidateProfile(resumeText);
+      const profile = await extractCandidateProfile(parsed.data);
       return actionOk(profile);
     } catch (error) {
       if (error instanceof ExtractionError) {
