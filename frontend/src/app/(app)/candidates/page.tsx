@@ -56,22 +56,22 @@ export default async function CandidatesPage({
         title="Candidates"
         description="Everyone you've added, across every job."
         actions={
-          <>
-            <Button asChild variant="outline" size="sm">
-              <Link href={buildExportHref(params)}>
-                <Download aria-hidden="true" />
-                Export CSV
-              </Link>
-            </Button>
-            {writer ? (
+          writer ? (
+            <>
+              <Button asChild variant="outline" size="sm">
+                <Link href={buildExportHref(params)} prefetch={false}>
+                  <Download aria-hidden="true" />
+                  Export CSV
+                </Link>
+              </Button>
               <Button asChild size="sm">
                 <Link href="/candidates/new">
                   <UserPlus aria-hidden="true" />
                   New candidate
                 </Link>
               </Button>
-            ) : null}
-          </>
+            </>
+          ) : null
         }
       />
 

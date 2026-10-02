@@ -1,12 +1,14 @@
 import { db } from "@resumerank/core/db";
-import { requireMember } from "@/lib/auth/guards";
+import { csvRow } from "@resumerank/core/csv";
+import { requireMember, requireWriter } from "@/lib/auth/guards";
 import { PAGE_SIZE, type CandidateListParams } from "@resumerank/core/validators/search";
 import type { CandidateSource, JobStatus, Stage } from "@resumerank/core/validators/enums";
 import type { Prisma } from "@resumerank/core/generated/prisma/client";
 import type { Paged } from "@resumerank/core/types/paged";
 import { resolvePageWindow } from "./pagination";
 
-const CSV_EXPORT_CAP = 1000;
+const CSV_EXPORT_BATCH = 500;
+const CSV_HEADER = ["name", "email", "headline", "source", "applications", "createdAt"];
 
 export interface CandidateListItem {
   id: string;
@@ -140,43 +142,71 @@ export async function listCandidateOptions(): Promise<CandidateOption[]> {
   });
 }
 
-function csvField(value: string): string {
-  return /["\n,]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+export interface CandidateCsvExport {
+  rowCount: number;
+  stream: ReadableStream<Uint8Array>;
 }
 
+/**
+ * Bulk PII export, so it requires write access rather than mere membership.
+ * Rows stream in keyset-paged batches: no row cap, and memory stays at one
+ * batch regardless of how many candidates the company has.
+ */
 export async function exportCandidatesCsv(
   params: CandidateListParams,
-): Promise<string> {
-  const user = await requireMember();
+): Promise<CandidateCsvExport> {
+  const user = await requireWriter();
 
   const where = buildCandidateWhere(user.companyId, params);
-  const candidates = await db.candidate.findMany({
-    where,
-    orderBy: buildCandidateOrderBy(params.sort),
-    take: CSV_EXPORT_CAP,
-    select: {
-      name: true,
-      email: true,
-      headline: true,
-      source: true,
-      createdAt: true,
-      _count: { select: { applications: { where: { deletedAt: null } } } },
+  const orderBy = buildCandidateOrderBy(params.sort);
+  const rowCount = await db.candidate.count({ where });
+  const encoder = new TextEncoder();
+  let cursor: string | null = null;
+  let headerSent = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (!headerSent) {
+        headerSent = true;
+        controller.enqueue(encoder.encode(`${csvRow(CSV_HEADER)}\n`));
+        return;
+      }
+
+      const batch = await db.candidate.findMany({
+        where,
+        orderBy,
+        take: CSV_EXPORT_BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          headline: true,
+          source: true,
+          createdAt: true,
+          _count: { select: { applications: { where: { deletedAt: null } } } },
+        },
+      });
+
+      if (batch.length > 0) {
+        const lines = batch.map((c) =>
+          csvRow([
+            c.name,
+            c.email,
+            c.headline ?? "",
+            c.source,
+            String(c._count.applications),
+            c.createdAt.toISOString(),
+          ]),
+        );
+        controller.enqueue(encoder.encode(`${lines.join("\n")}\n`));
+        cursor = batch[batch.length - 1].id;
+      }
+      if (batch.length < CSV_EXPORT_BATCH) {
+        controller.close();
+      }
     },
   });
 
-  const header = "name,email,headline,source,applications,createdAt";
-  const rows = candidates.map((c) =>
-    [
-      c.name,
-      c.email,
-      c.headline ?? "",
-      c.source,
-      String(c._count.applications),
-      c.createdAt.toISOString(),
-    ]
-      .map(csvField)
-      .join(","),
-  );
-
-  return [header, ...rows].join("\n");
+  return { rowCount, stream };
 }
