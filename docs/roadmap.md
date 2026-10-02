@@ -26,7 +26,7 @@ Trust-breaking defects, mostly small.
 - [x] **Invite token not consumed atomically.** `consumeInviteToken` (`backend/src/auth/tokens.ts:120-130`) only reads; acceptance is marked later (`actions/company.ts:313-316`). → Mark consumed inside the signup transaction.
 - [x] **HTML injection in invite emails.** `backend/src/email.ts:128-129` interpolates `companyName`/`inviterName` unescaped. → Escape all interpolated values.
 - [x] **Unbounded AI spend.** `rateLimit` used only in `auth.ts`/`company.ts`. `scoreApplicationAction` and `extractCandidateProfileAction` (`actions/candidates.ts:139`) are unlimited; extraction checks only a min length (`:146`), skipping the 50k max in `validators/candidate.ts:24`. → Validate through the shared schema; per-user + per-tenant limits.
-- [ ] **Error boundary leaks messages.** `frontend/src/app/(app)/error.tsx:16` renders `error.message`. → Generic copy + `error.digest` as a support reference.
+- [x] **Error boundary leaks messages.** `frontend/src/app/(app)/error.tsx:16` renders `error.message`. → Generic copy + `error.digest` as a support reference.
 - [ ] **Scorecard on removed application.** `actions/scorecards.ts:26` doesn't check `deletedAt`.
 - [ ] **Slug race.** `generateCompanySlug` (`backend/src/company.ts:26`) reads via `db` not `tx`; unhandled P2002 on concurrent registration. → Generate inside the tx and retry on conflict.
 
