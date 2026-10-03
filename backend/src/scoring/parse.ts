@@ -1,7 +1,8 @@
+import { DomainError } from "../services/errors";
 import type { LlmScoringResult } from "../validators/scoring";
 import type { RequirementWeight } from "../validators/enums";
 
-export class ScoringError extends Error {}
+export class ScoringError extends DomainError {}
 
 export interface ScoringRequirement {
   id: string;

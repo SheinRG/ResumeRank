@@ -1,7 +1,5 @@
 import Groq from "groq-sdk";
-import { db } from "../db";
 import { env } from "../env";
-import { computeScore } from "./math";
 import {
   extractJson,
   reconcileResult,
@@ -15,7 +13,7 @@ import {
 
 export { ScoringError } from "./parse";
 
-interface ScoringJob {
+export interface ScoringJob {
   title: string;
   description: string;
   requirements: ScoringRequirement[];
@@ -55,7 +53,7 @@ ${resumeText}
 <<<RESUME_END>>>`;
 }
 
-async function requestEvaluation(
+export async function requestEvaluation(
   job: ScoringJob,
   resumeText: string,
 ): Promise<LlmScoringResult> {
@@ -106,97 +104,4 @@ async function requestEvaluation(
   throw new ScoringError(
     "The model kept returning malformed output. Try scoring again.",
   );
-}
-
-export interface ScoreOutcome {
-  aiScore: number;
-  aiSummary: string;
-}
-
-export interface ScoreTarget {
-  applicationId: string;
-  companyId: string;
-}
-
-/**
- * Scores an application end to end and persists the result atomically:
- * either the full evaluation set replaces the old one, or nothing changes.
- * Every read and write is scoped to `companyId`, so a caller that skipped its
- * own ownership check (a batch job, a queue worker) still can't cross tenants.
- */
-export async function scoreApplication({
-  applicationId,
-  companyId,
-}: ScoreTarget): Promise<ScoreOutcome> {
-  const application = await db.application.findUnique({
-    where: { id: applicationId, companyId },
-    include: {
-      candidate: { select: { resumeText: true } },
-      job: {
-        select: {
-          title: true,
-          description: true,
-          requirements: {
-            orderBy: { order: "asc" },
-            select: { id: true, label: true, weight: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!application || application.deletedAt) {
-    throw new ScoringError("This application no longer exists.");
-  }
-  if (application.job.requirements.length === 0) {
-    throw new ScoringError(
-      "This job has no requirements yet. Add requirements to define the scoring rubric.",
-    );
-  }
-
-  const result = await requestEvaluation(
-    {
-      title: application.job.title,
-      description: application.job.description,
-      requirements: application.job.requirements,
-    },
-    application.candidate.resumeText,
-  );
-
-  const weightById = new Map(
-    application.job.requirements.map((r) => [r.id, r.weight]),
-  );
-  const aiScore = computeScore(
-    result.evaluations.map((e) => ({
-      verdict: e.verdict,
-      weight: weightById.get(e.requirementId) ?? "NICE",
-    })),
-  );
-
-  // The tenant-scoped update runs first: if the application has left the
-  // tenant, it throws and the evaluation writes never happen.
-  await db.$transaction([
-    db.application.update({
-      where: { id: applicationId, companyId },
-      data: { aiScore, aiSummary: result.summary, scoredAt: new Date() },
-    }),
-    db.evaluation.deleteMany({
-      where: { applicationId, application: { companyId } },
-    }),
-    db.evaluation.createMany({
-      data: result.evaluations.map((e) => ({
-        applicationId,
-        requirementId: e.requirementId,
-        criterion:
-          application.job.requirements.find((r) => r.id === e.requirementId)
-            ?.label ?? "",
-        weight: weightById.get(e.requirementId) ?? "NICE",
-        verdict: e.verdict,
-        evidence: e.evidence,
-        note: e.note,
-      })),
-    }),
-  ]);
-
-  return { aiScore, aiSummary: result.summary };
 }

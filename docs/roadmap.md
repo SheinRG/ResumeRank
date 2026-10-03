@@ -37,17 +37,17 @@ Trust-breaking defects, mostly small.
 ### 1.1 Service layer extraction (highest leverage)
 All business logic (tenancy filters, activity logging, scoring orchestration) lives in Next-bound `frontend/src/server/actions/*` and `queries/*`, coupled to `auth()` and `revalidatePath`. A public API, mobile client, or queue worker would have to duplicate it.
 
-- [ ] Create `@resumerank/core/services/*` taking an explicit `TenantContext { companyId, actorId, role }`.
-- [ ] Server actions, route handlers (API keys/webhooks), and workers become thin adapters: guard → build context → call service → revalidate.
-- [ ] Write `logActivity` **inside** the same `$transaction` as the mutation (today e.g. `scoring.ts:53` logs after the write — a failed log leaves an unaudited mutation).
+- [x] Create `@resumerank/core/services/*` taking an explicit `TenantContext { companyId, actorId, role }`.
+- [x] Server actions, route handlers (API keys/webhooks), and workers become thin adapters: guard → build context → call service → revalidate.
+- [x] Write `logActivity` **inside** the same `$transaction` as the mutation (today e.g. `scoring.ts:53` logs after the write — a failed log leaves an unaudited mutation).
 
 ### 1.2 Tenancy defense-in-depth
 Isolation currently relies on developers remembering a `where` clause; Phase 0 items show it already slipping.
 
 - [ ] Prisma client extension `db.forTenant(companyId)` that injects/asserts `companyId` on `Job`, `Candidate`, `Application`, `ActivityLog`.
-- [ ] Postgres RLS: `ENABLE ROW LEVEL SECURITY` + policy `"companyId" = current_setting('app.company_id')` on the four tenant tables; set via `set_config(..., true)` inside an interactive transaction; separate bypass role for auth/onboarding paths.
+- [ ] Postgres RLS (deferred to a follow-up PR after the extension + integration tests land): `ENABLE ROW LEVEL SECURITY` + policy `"companyId" = current_setting('app.company_id')` on the four tenant tables; set via `set_config(..., true)` inside an interactive transaction; separate bypass role for auth/onboarding paths.
 - [ ] Integration test suite (vitest against the CI Postgres service): seed two companies; assert every query and action returns not-found for the other tenant's ids. None exist today — the six unit test files in `backend/tests/unit` cover only pure functions.
-- [ ] Remove reliance on check-then-write ordering: `actions/jobs.ts:81,95,100` (`JobRequirement` by `jobId`/`id` only), `users.ts:67` (update by `id` after a separate `findFirst`).
+- [x] Remove reliance on check-then-write ordering: `actions/jobs.ts:81,95,100` (`JobRequirement` by `jobId`/`id` only), `users.ts:67` (update by `id` after a separate `findFirst`).
 
 ### 1.3 Observability (currently none)
 Only sink is `console.error("[action]", error)` (`frontend/src/server/run-action.ts:18`) with no request/user/company context.
