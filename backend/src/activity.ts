@@ -11,7 +11,14 @@ interface ActivityInput {
   metadata?: Prisma.InputJsonValue;
 }
 
-/** Append-only: rows are only ever inserted, never updated or deleted. */
-export async function logActivity(input: ActivityInput): Promise<void> {
-  await db.activityLog.create({ data: input });
+/**
+ * Append-only: rows are only ever inserted, never updated or deleted. Pass
+ * the mutation's transaction client so the write and its audit row commit
+ * or roll back together — an unaudited mutation is worse than a failed one.
+ */
+export async function logActivity(
+  input: ActivityInput,
+  client: Prisma.TransactionClient = db,
+): Promise<void> {
+  await client.activityLog.create({ data: input });
 }

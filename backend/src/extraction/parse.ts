@@ -1,9 +1,10 @@
+import { DomainError } from "../services/errors";
 import {
   candidateProfileSchema,
   type CandidateProfile,
 } from "../validators/extraction";
 
-export class ExtractionError extends Error {}
+export class ExtractionError extends DomainError {}
 
 function normalize(text: string): string {
   return text.replace(/\s+/g, " ").toLowerCase();

@@ -1,21 +1,22 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "@resumerank/core/db";
-import { Prisma, type Candidate } from "@resumerank/core/generated/prisma/client";
-import { requireWriter } from "@/lib/auth/guards";
+import type { Candidate } from "@resumerank/core/generated/prisma/client";
+import { requireWriter, tenantContext } from "@/lib/auth/guards";
 import {
   candidateCreateSchema,
   candidateUpdateSchema,
   resumeTextSchema,
 } from "@resumerank/core/validators/candidate";
-import { checkAiQuota } from "@resumerank/core/rate-limit";
-import { extractCandidateProfile, ExtractionError, type CandidateProfile } from "@resumerank/core/extraction/engine";
+import {
+  createCandidate,
+  deleteCandidate,
+  extractProfile,
+  updateCandidate,
+} from "@resumerank/core/services/candidates";
+import type { CandidateProfile } from "@resumerank/core/extraction/engine";
 import { runAction } from "@/server/run-action";
-import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
-
-const DUPLICATE_EMAIL_ERROR = "A candidate with this email already exists.";
 
 export async function createCandidateAction(
   input: unknown,
@@ -29,29 +30,7 @@ export async function createCandidateAction(
       );
     }
     const user = await requireWriter();
-
-    let candidate: Candidate;
-    try {
-      candidate = await db.candidate.create({
-        data: { ...parsed.data, companyId: user.companyId, createdById: user.id },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return actionError("Check the highlighted fields.", {
-          email: [DUPLICATE_EMAIL_ERROR],
-        });
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "candidate.create",
-      entityType: "candidate",
-      entityId: candidate.id,
-      summary: `added candidate "${candidate.name}"`,
-    });
+    const candidate = await createCandidate(tenantContext(user), parsed.data);
 
     revalidatePath("/candidates");
     revalidatePath("/dashboard");
@@ -72,34 +51,7 @@ export async function updateCandidateAction(
       );
     }
     const user = await requireWriter();
-    const { id, ...fields } = parsed.data;
-
-    let candidate: Candidate;
-    try {
-      candidate = await db.candidate.update({
-        where: { id, companyId: user.companyId },
-        data: fields,
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return actionError("Check the highlighted fields.", {
-          email: [DUPLICATE_EMAIL_ERROR],
-        });
-      }
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This candidate no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "candidate.update",
-      entityType: "candidate",
-      entityId: candidate.id,
-      summary: `updated candidate "${candidate.name}"`,
-    });
+    const candidate = await updateCandidate(tenantContext(user), parsed.data);
 
     revalidatePath("/candidates");
     revalidatePath(`/candidates/${candidate.id}`);
@@ -113,26 +65,7 @@ export async function deleteCandidateAction(
 ): Promise<ActionResult<Candidate>> {
   return runAction(async () => {
     const user = await requireWriter();
-    let candidate: Candidate;
-    try {
-      candidate = await db.candidate.delete({
-        where: { id, companyId: user.companyId },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This candidate no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "candidate.delete",
-      entityType: "candidate",
-      entityId: candidate.id,
-      summary: `deleted candidate "${candidate.name}"`,
-    });
+    const candidate = await deleteCandidate(tenantContext(user), id);
 
     revalidatePath("/candidates");
     revalidatePath("/dashboard");
@@ -154,19 +87,7 @@ export async function extractCandidateProfileAction(
       );
     }
 
-    const overQuota = checkAiQuota({ userId: user.id, companyId: user.companyId });
-    if (overQuota) {
-      return actionError(overQuota);
-    }
-
-    try {
-      const profile = await extractCandidateProfile(parsed.data);
-      return actionOk(profile);
-    } catch (error) {
-      if (error instanceof ExtractionError) {
-        return actionError(error.message);
-      }
-      throw error;
-    }
+    const profile = await extractProfile(tenantContext(user), parsed.data);
+    return actionOk(profile);
   });
 }

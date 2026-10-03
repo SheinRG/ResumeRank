@@ -1,22 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "@resumerank/core/db";
-import { Prisma, type Application } from "@resumerank/core/generated/prisma/client";
-import { requireWriter } from "@/lib/auth/guards";
+import type { Application } from "@resumerank/core/generated/prisma/client";
+import { requireWriter, tenantContext } from "@/lib/auth/guards";
 import {
   applicationCreateSchema,
   applicationStageSchema,
 } from "@resumerank/core/validators/application";
+import {
+  createApplication,
+  setApplicationRemoved,
+  updateStage,
+} from "@resumerank/core/services/applications";
 import { runAction } from "@/server/run-action";
-import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
-function revalidateApplication(jobId: string, applicationId: string, candidateId: string): void {
-  revalidatePath(`/jobs/${jobId}`);
-  revalidatePath(`/applications/${applicationId}`);
+function revalidateApplication(application: Application): void {
+  revalidatePath(`/jobs/${application.jobId}`);
+  revalidatePath(`/applications/${application.id}`);
   revalidatePath("/dashboard");
-  revalidatePath(`/candidates/${candidateId}`);
+  revalidatePath(`/candidates/${application.candidateId}`);
 }
 
 export async function createApplicationAction(
@@ -31,55 +34,8 @@ export async function createApplicationAction(
       );
     }
     const user = await requireWriter();
-    const { jobId, candidateId } = parsed.data;
-
-    const [job, candidate] = await Promise.all([
-      db.job.findUnique({
-        where: { id: jobId, companyId: user.companyId },
-        select: { id: true, title: true, status: true },
-      }),
-      db.candidate.findUnique({
-        where: { id: candidateId, companyId: user.companyId },
-        select: { id: true, name: true },
-      }),
-    ]);
-    if (!job) {
-      return actionError("Check the highlighted fields.", {
-        jobId: ["That job no longer exists."],
-      });
-    }
-    if (!candidate) {
-      return actionError("Check the highlighted fields.", {
-        candidateId: ["That candidate no longer exists."],
-      });
-    }
-    if (job.status === "ARCHIVED") {
-      return actionError("This job is archived — reopen it before adding applications.");
-    }
-
-    let application: Application;
-    try {
-      application = await db.application.create({
-        data: { jobId, candidateId, companyId: user.companyId, createdById: user.id },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        return actionError("This candidate is already attached to this job.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "application.create",
-      entityType: "application",
-      entityId: application.id,
-      summary: `attached ${candidate.name} to "${job.title}"`,
-    });
-
-    revalidateApplication(jobId, application.id, candidateId);
-
+    const application = await createApplication(tenantContext(user), parsed.data);
+    revalidateApplication(application);
     return actionOk(application);
   });
 }
@@ -96,33 +52,8 @@ export async function updateStageAction(
       );
     }
     const user = await requireWriter();
-    const { id, stage } = parsed.data;
-
-    const existing = await db.application.findUnique({
-      where: { id, companyId: user.companyId, deletedAt: null },
-      select: { stage: true, candidate: { select: { name: true } } },
-    });
-    if (!existing) {
-      return actionError("This application no longer exists.");
-    }
-
-    const application = await db.application.update({
-      where: { id, companyId: user.companyId, deletedAt: null },
-      data: { stage },
-    });
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "application.stage",
-      entityType: "application",
-      entityId: application.id,
-      summary: `moved ${existing.candidate.name} to ${stage}`,
-      metadata: { from: existing.stage, to: stage },
-    });
-
-    revalidateApplication(application.jobId, application.id, application.candidateId);
-
+    const application = await updateStage(tenantContext(user), parsed.data);
+    revalidateApplication(application);
     return actionOk(application);
   });
 }
@@ -132,31 +63,8 @@ export async function softDeleteApplicationAction(
 ): Promise<ActionResult<Application>> {
   return runAction(async () => {
     const user = await requireWriter();
-    let application: Application & { candidate: { name: string } };
-    try {
-      application = await db.application.update({
-        where: { id, companyId: user.companyId },
-        data: { deletedAt: new Date() },
-        include: { candidate: { select: { name: true } } },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This application no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "application.delete",
-      entityType: "application",
-      entityId: application.id,
-      summary: `removed ${application.candidate.name} from the pipeline`,
-    });
-
-    revalidateApplication(application.jobId, application.id, application.candidateId);
-
+    const application = await setApplicationRemoved(tenantContext(user), id, true);
+    revalidateApplication(application);
     return actionOk(application);
   });
 }
@@ -166,31 +74,8 @@ export async function restoreApplicationAction(
 ): Promise<ActionResult<Application>> {
   return runAction(async () => {
     const user = await requireWriter();
-    let application: Application & { candidate: { name: string } };
-    try {
-      application = await db.application.update({
-        where: { id, companyId: user.companyId },
-        data: { deletedAt: null },
-        include: { candidate: { select: { name: true } } },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This application no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "application.restore",
-      entityType: "application",
-      entityId: application.id,
-      summary: `restored ${application.candidate.name} to the pipeline`,
-    });
-
-    revalidateApplication(application.jobId, application.id, application.candidateId);
-
+    const application = await setApplicationRemoved(tenantContext(user), id, false);
+    revalidateApplication(application);
     return actionOk(application);
   });
 }

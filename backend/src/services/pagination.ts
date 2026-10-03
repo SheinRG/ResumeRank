@@ -1,4 +1,4 @@
-import { PAGE_SIZE } from "@resumerank/core/validators/search";
+import { PAGE_SIZE } from "../validators/search";
 
 export interface PageWindow {
   pageCount: number;

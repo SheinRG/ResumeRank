@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
 import type { Role } from "@resumerank/core/validators/enums";
+import type { TenantContext } from "@resumerank/core/services/context";
 
 // Re-exported so UI affordances can keep importing capability checks from the
 // guard module; the pure predicates live in the backend package where they are
@@ -91,4 +92,9 @@ export async function requireAdmin(): Promise<CompanyUser> {
     throw new GateError("Only admins can do that.");
   }
   return user;
+}
+
+/** The service-layer view of a guarded user: only what tenancy and authorization need. */
+export function tenantContext(user: CompanyUser): TenantContext {
+  return { companyId: user.companyId, actorId: user.id, role: user.role };
 }

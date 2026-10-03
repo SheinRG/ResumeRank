@@ -1,14 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db } from "@resumerank/core/db";
-import { Prisma } from "@resumerank/core/generated/prisma/client";
-import { requireWriter } from "@/lib/auth/guards";
+import { requireWriter, tenantContext } from "@/lib/auth/guards";
 import { jobCreateSchema, jobUpdateSchema } from "@resumerank/core/validators/job";
+import {
+  createJob,
+  setJobStatus,
+  updateJob,
+  type JobDetail,
+} from "@resumerank/core/services/jobs";
 import { runAction } from "@/server/run-action";
-import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
-import type { JobDetail } from "@/server/queries/jobs";
 
 export async function createJobAction(
   input: unknown,
@@ -22,32 +24,7 @@ export async function createJobAction(
       );
     }
     const user = await requireWriter();
-    const { requirements, ...jobFields } = parsed.data;
-
-    const job = await db.job.create({
-      data: {
-        ...jobFields,
-        companyId: user.companyId,
-        createdById: user.id,
-        requirements: {
-          create: requirements.map((r, index) => ({
-            label: r.label,
-            weight: r.weight,
-            order: index,
-          })),
-        },
-      },
-      include: { requirements: { orderBy: { order: "asc" } } },
-    });
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "job.create",
-      entityType: "job",
-      entityId: job.id,
-      summary: `created job "${job.title}"`,
-    });
+    const job = await createJob(tenantContext(user), parsed.data);
 
     revalidatePath("/jobs");
     revalidatePath("/dashboard");
@@ -68,65 +45,7 @@ export async function updateJobAction(
       );
     }
     const user = await requireWriter();
-    const { id, requirements, ...jobFields } = parsed.data;
-
-    const target = await db.job.findUnique({
-      where: { id, companyId: user.companyId },
-      select: { id: true },
-    });
-    if (!target) {
-      return actionError("This job no longer exists.");
-    }
-
-    const existing = await db.jobRequirement.findMany({
-      where: { jobId: id },
-      select: { id: true },
-    });
-    const existingIds = new Set(existing.map((r) => r.id));
-    const keepIds = new Set(
-      requirements.filter((r) => r.id).map((r) => r.id as string),
-    );
-    const toDelete = [...existingIds].filter((rid) => !keepIds.has(rid));
-
-    const job = await db.$transaction(async (tx) => {
-      await tx.job.update({ where: { id, companyId: user.companyId }, data: jobFields });
-
-      if (toDelete.length) {
-        await tx.jobRequirement.deleteMany({ where: { id: { in: toDelete } } });
-      }
-
-      for (const [index, requirement] of requirements.entries()) {
-        if (requirement.id && existingIds.has(requirement.id)) {
-          await tx.jobRequirement.update({
-            where: { id: requirement.id },
-            data: { label: requirement.label, weight: requirement.weight, order: index },
-          });
-        } else {
-          await tx.jobRequirement.create({
-            data: {
-              jobId: id,
-              label: requirement.label,
-              weight: requirement.weight,
-              order: index,
-            },
-          });
-        }
-      }
-
-      return tx.job.findUniqueOrThrow({
-        where: { id, companyId: user.companyId },
-        include: { requirements: { orderBy: { order: "asc" } } },
-      });
-    });
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "job.update",
-      entityType: "job",
-      entityId: job.id,
-      summary: `updated job "${job.title}"`,
-    });
+    const job = await updateJob(tenantContext(user), parsed.data);
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);
@@ -138,28 +57,7 @@ export async function updateJobAction(
 export async function archiveJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction(async () => {
     const user = await requireWriter();
-    let job: JobDetail;
-    try {
-      job = await db.job.update({
-        where: { id, companyId: user.companyId },
-        data: { status: "ARCHIVED" },
-        include: { requirements: { orderBy: { order: "asc" } } },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This job no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "job.archive",
-      entityType: "job",
-      entityId: job.id,
-      summary: `archived job "${job.title}"`,
-    });
+    const job = await setJobStatus(tenantContext(user), id, "ARCHIVED");
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);
@@ -172,28 +70,7 @@ export async function archiveJobAction(id: string): Promise<ActionResult<JobDeta
 export async function reopenJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction(async () => {
     const user = await requireWriter();
-    let job: JobDetail;
-    try {
-      job = await db.job.update({
-        where: { id, companyId: user.companyId },
-        data: { status: "OPEN" },
-        include: { requirements: { orderBy: { order: "asc" } } },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return actionError("This job no longer exists.");
-      }
-      throw error;
-    }
-
-    await logActivity({
-      companyId: user.companyId,
-      actorId: user.id,
-      action: "job.reopen",
-      entityType: "job",
-      entityId: job.id,
-      summary: `reopened job "${job.title}"`,
-    });
+    const job = await setJobStatus(tenantContext(user), id, "OPEN");
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);

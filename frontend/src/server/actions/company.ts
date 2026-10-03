@@ -5,42 +5,28 @@ import { revalidatePath } from "next/cache";
 import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn } from "@/lib/auth";
-import { requireAdmin, requireUser } from "@/lib/auth/guards";
+import { requireAdmin, requireUser, tenantContext } from "@/lib/auth/guards";
 import { withUniqueCompanySlug } from "@resumerank/core/company";
 import { hashPassword } from "@resumerank/core/auth/password";
+import { claimInvite, findValidInviteByToken } from "@resumerank/core/auth/tokens";
+import { updateCompany, type CompanyDetail } from "@resumerank/core/services/company";
 import {
-  claimInvite,
-  createCompanyInvite,
-  findValidInviteByToken,
-} from "@resumerank/core/auth/tokens";
-import { sendInviteEmail } from "@resumerank/core/email";
-import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
+  inviteMember,
+  revokeInvite,
+  type InviteResult,
+} from "@resumerank/core/services/team";
 import {
   acceptInviteSchema,
   companyNameSchema,
   inviteMemberSchema,
   updateCompanySchema,
 } from "@resumerank/core/validators/company";
-import type { Role } from "@resumerank/core/validators/enums";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
-import { COMPANY_DETAIL_SELECT, type CompanyDetail } from "@/server/queries/company";
-
-function tooManyAttempts(retryAfterSeconds: number): string {
-  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
-  return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
-}
 
 const createCompanySchema = z.object({ companyName: companyNameSchema });
 const inviteIdSchema = z.string().min(1, "Invite is missing");
-
-export interface InviteResult {
-  id: string;
-  email: string;
-  role: Role;
-  expiresAt: Date;
-}
 
 export async function createCompanyAction(
   input: unknown,
@@ -67,18 +53,20 @@ export async function createCompanyAction(
           where: { id: user.id },
           data: { companyId: created.id, role: "OWNER" },
         });
+        await logActivity(
+          {
+            companyId: created.id,
+            actorId: user.id,
+            action: "company.create",
+            entityType: "user",
+            entityId: user.id,
+            summary: `created ${created.name}`,
+          },
+          tx,
+        );
         return created;
       }),
     );
-
-    await logActivity({
-      companyId: company.id,
-      actorId: user.id,
-      action: "company.create",
-      entityType: "user",
-      entityId: user.id,
-      summary: `created ${company.name}`,
-    });
 
     return actionOk({ id: company.id, name: company.name, slug: company.slug });
   });
@@ -96,31 +84,7 @@ export async function updateCompanyAction(
       );
     }
     const admin = await requireAdmin();
-    const { name, logoUrl, website, description, industry, size, location } =
-      parsed.data;
-
-    const company = await db.company.update({
-      where: { id: admin.companyId },
-      data: {
-        name,
-        logoUrl: logoUrl === "" ? null : logoUrl,
-        website: website === "" ? null : website,
-        description: description ?? null,
-        industry: industry ?? null,
-        size: size ?? null,
-        location: location ?? null,
-      },
-      select: COMPANY_DETAIL_SELECT,
-    });
-
-    await logActivity({
-      companyId: admin.companyId,
-      actorId: admin.id,
-      action: "company.update",
-      entityType: "user",
-      entityId: admin.id,
-      summary: `updated ${company.name}'s company profile`,
-    });
+    const company = await updateCompany(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/company");
 
@@ -155,20 +119,22 @@ export async function acceptPendingInviteAction(
         where: { id: user.id },
         data: { companyId: invite.companyId, role: invite.role },
       });
+      await logActivity(
+        {
+          companyId: invite.companyId,
+          actorId: user.id,
+          action: "user.join",
+          entityType: "user",
+          entityId: user.id,
+          summary: `${user.name} joined the company`,
+        },
+        tx,
+      );
       return true;
     });
     if (!joined) {
       return actionError("This invite is no longer valid.");
     }
-
-    await logActivity({
-      companyId: invite.companyId,
-      actorId: user.id,
-      action: "user.join",
-      entityType: "user",
-      entityId: user.id,
-      summary: `${user.name} joined the company`,
-    });
 
     return actionOk({ companyId: invite.companyId });
   });
@@ -186,63 +152,11 @@ export async function inviteMemberAction(
       );
     }
     const admin = await requireAdmin();
-    const { email, role } = parsed.data;
-
-    if (email === admin.email.toLowerCase()) {
-      return actionError("You can't invite yourself.");
-    }
-
-    const limited = rateLimit(`invite:${admin.id}`, AUTH_LIMIT);
-    if (!limited.allowed) {
-      return actionError(tooManyAttempts(limited.retryAfterSeconds));
-    }
-
-    const existingUser = await db.user.findUnique({
-      where: { email },
-      select: { companyId: true },
-    });
-    if (existingUser?.companyId) {
-      return actionError("That person already belongs to a company.");
-    }
-
-    const company = await db.company.findUnique({
-      where: { id: admin.companyId },
-      select: { name: true },
-    });
-    if (!company) {
-      return actionError("Your company no longer exists.");
-    }
-
-    const { invite, rawToken } = await createCompanyInvite({
-      companyId: admin.companyId,
-      email,
-      role,
-      invitedById: admin.id,
-    });
-    await sendInviteEmail({
-      to: email,
-      token: rawToken,
-      companyName: company.name,
-      inviterName: admin.name,
-    });
-
-    await logActivity({
-      companyId: admin.companyId,
-      actorId: admin.id,
-      action: "user.invite",
-      entityType: "user",
-      entityId: invite.id,
-      summary: `invited ${email} as ${role.toLowerCase()}`,
-    });
+    const invite = await inviteMember(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
 
-    return actionOk({
-      id: invite.id,
-      email: invite.email,
-      role: invite.role,
-      expiresAt: invite.expiresAt,
-    });
+    return actionOk(invite);
   });
 }
 
@@ -255,26 +169,11 @@ export async function revokeInviteAction(
       return actionError("That invite could not be found.");
     }
     const admin = await requireAdmin();
-
-    const { count } = await db.companyInvite.deleteMany({
-      where: { id: parsed.data, companyId: admin.companyId },
-    });
-    if (count === 0) {
-      return actionError("That invite no longer exists.");
-    }
-
-    await logActivity({
-      companyId: admin.companyId,
-      actorId: admin.id,
-      action: "user.invite_revoked",
-      entityType: "user",
-      entityId: parsed.data,
-      summary: "revoked a pending invite",
-    });
+    const revoked = await revokeInvite(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
 
-    return actionOk({ id: parsed.data });
+    return actionOk(revoked);
   });
 }
 
@@ -305,7 +204,7 @@ export async function acceptInviteAction(
     const passwordHash = await hashPassword(parsed.data.password);
     const created = await db.$transaction(async (tx) => {
       if (!(await claimInvite(tx, invite.id))) return null;
-      return tx.user.create({
+      const user = await tx.user.create({
         data: {
           name: parsed.data.name,
           email: invite.email,
@@ -317,21 +216,24 @@ export async function acceptInviteAction(
           companyId: invite.companyId,
         },
       });
+      await logActivity(
+        {
+          companyId: invite.companyId,
+          actorId: user.id,
+          action: "user.join",
+          entityType: "user",
+          entityId: user.id,
+          summary: `${user.name} joined via invite`,
+        },
+        tx,
+      );
+      return user;
     });
     if (!created) {
       return actionError(
         "This invite link is invalid or has expired. Ask your admin to send a new one.",
       );
     }
-
-    await logActivity({
-      companyId: invite.companyId,
-      actorId: created.id,
-      action: "user.join",
-      entityType: "user",
-      entityId: created.id,
-      summary: `${created.name} joined via invite`,
-    });
 
     try {
       await signIn("credentials", {

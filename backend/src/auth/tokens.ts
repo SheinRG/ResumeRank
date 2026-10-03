@@ -94,9 +94,10 @@ interface CreateCompanyInviteInput {
  */
 export async function createCompanyInvite(
   input: CreateCompanyInviteInput,
+  client: Prisma.TransactionClient = db,
 ): Promise<{ invite: CompanyInvite; rawToken: string }> {
   const raw = generateToken();
-  const invite = await db.companyInvite.upsert({
+  const invite = await client.companyInvite.upsert({
     where: { companyId_email: { companyId: input.companyId, email: input.email } },
     create: {
       companyId: input.companyId,
