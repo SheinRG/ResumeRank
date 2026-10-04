@@ -96,17 +96,19 @@ model User {
 }
 
 model Company {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  logoUrl     String?
-  website     String?
-  description String?
-  industry    String?
-  size        String?
-  location    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  logoUrl       String?
+  website       String?
+  description   String?
+  industry      String?
+  size          String?
+  location      String?
+  /// Overrides the default AI token budget (AI_TOKEN_BUDGET) per rolling 30 days.
+  aiTokenBudget Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   users        User[]
   jobs         Job[]
@@ -370,4 +372,17 @@ model ActivityLog {
   @@index([companyId, entityType, entityId, createdAt(sort: Desc)])
   @@index([companyId, createdAt(sort: Desc), id])
   @@index([actorId])
+}
+
+/// Sliding-window counters shared by every app instance (rate limits, failed
+/// logins, AI token usage). One row per key per fixed window; a limit reads
+/// the current and the previous window, so rows live for two windows.
+model RateLimitCounter {
+  key         String
+  windowStart DateTime
+  count       Int
+  expiresAt   DateTime
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
 }

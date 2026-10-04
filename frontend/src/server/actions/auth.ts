@@ -1,9 +1,9 @@
 "use server";
 
 import { headers } from "next/headers";
-import { AuthError } from "next-auth";
+import { AuthError, CredentialsSignin } from "next-auth";
 import { db } from "@resumerank/core/db";
-import { signIn, signOut } from "@/lib/auth";
+import { signIn, signOut, TOO_MANY_LOGIN_ATTEMPTS } from "@/lib/auth";
 import { hashPassword } from "@resumerank/core/auth/password";
 import { withUniqueCompanySlug } from "@resumerank/core/company";
 import {
@@ -13,7 +13,9 @@ import {
   createVerificationToken,
 } from "@resumerank/core/auth/tokens";
 import { sendPasswordResetEmail, sendVerificationEmail } from "@resumerank/core/email";
+import { loginBlocked } from "@resumerank/core/auth/login-throttle";
 import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
+import { clientIp as resolveClientIp } from "@resumerank/core/request-ip";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -24,8 +26,12 @@ import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
 async function clientIp(): Promise<string> {
-  const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  return resolveClientIp(await headers());
+}
+
+function tooManyLoginAttempts(retryAfterSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return `Too many sign-in attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}, or reset your password.`;
 }
 
 function tooManyAttempts(retryAfterSeconds: number): string {
@@ -47,7 +53,7 @@ export async function registerAction(
     const { name, email, password, companyName } = parsed.data;
 
     const ip = await clientIp();
-    const limited = rateLimit(`register:${ip}`, AUTH_LIMIT);
+    const limited = await rateLimit(`register:${ip}`, AUTH_LIMIT);
     if (!limited.allowed) {
       return actionError(tooManyAttempts(limited.retryAfterSeconds));
     }
@@ -96,13 +102,12 @@ export async function loginAction(
       );
     }
 
+    // authorize() enforces the limits; these read-only checks only let the
+    // form say how long to wait instead of a generic failure.
     const ip = await clientIp();
-    const limited = rateLimit(
-      `login:${ip}:${parsed.data.email}`,
-      AUTH_LIMIT,
-    );
-    if (!limited.allowed) {
-      return actionError(tooManyAttempts(limited.retryAfterSeconds));
+    const blocked = await loginBlocked(parsed.data.email, ip);
+    if (!blocked.allowed) {
+      return actionError(tooManyLoginAttempts(blocked.retryAfterSeconds));
     }
 
     try {
@@ -112,6 +117,10 @@ export async function loginAction(
         redirect: false,
       });
     } catch (error) {
+      if (error instanceof CredentialsSignin && error.code === TOO_MANY_LOGIN_ATTEMPTS) {
+        const { retryAfterSeconds } = await loginBlocked(parsed.data.email, ip);
+        return actionError(tooManyLoginAttempts(retryAfterSeconds));
+      }
       if (error instanceof AuthError) {
         return actionError("Wrong email or password.");
       }
@@ -158,7 +167,7 @@ export async function resendVerificationAction(
     const { email } = parsed.data;
 
     const ip = await clientIp();
-    const limited = rateLimit(`verify:${ip}:${email}`, AUTH_LIMIT);
+    const limited = await rateLimit(`verify:${ip}:${email}`, AUTH_LIMIT);
     if (!limited.allowed) {
       return actionError(tooManyAttempts(limited.retryAfterSeconds));
     }
@@ -182,7 +191,7 @@ export async function forgotPasswordAction(
     const { email } = parsed.data;
 
     const ip = await clientIp();
-    const limited = rateLimit(`reset:${ip}:${email}`, AUTH_LIMIT);
+    const limited = await rateLimit(`reset:${ip}:${email}`, AUTH_LIMIT);
     if (!limited.allowed) {
       return actionError(tooManyAttempts(limited.retryAfterSeconds));
     }

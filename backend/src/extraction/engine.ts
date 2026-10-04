@@ -32,9 +32,13 @@ ${resumeText}
  * temperature, JSON response mode, and a single corrective retry that feeds the
  * validation failure back — malformed output is the dominant failure mode.
  */
-export async function extractCandidateProfile(
-  resumeText: string,
-): Promise<CandidateProfile> {
+export interface ExtractionOutcome {
+  profile: CandidateProfile;
+  /** Prompt + completion tokens across every attempt, for budget accounting. */
+  tokens: number;
+}
+
+export async function extractCandidateProfile(resumeText: string): Promise<ExtractionOutcome> {
   const { GROQ_API_KEY, GROQ_MODEL } = env();
   if (!GROQ_API_KEY) {
     throw new ExtractionError(
@@ -44,10 +48,11 @@ export async function extractCandidateProfile(
 
   const groq = new Groq({ apiKey: GROQ_API_KEY });
   let lastError = "";
+  let tokens = 0;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const call = { operation: "extraction" as const, model: GROQ_MODEL, attempt: attempt + 1 };
-    const { completion } = await traceLlmCall(call, () =>
+    const { completion, usage } = await traceLlmCall(call, () =>
       groq.chat.completions.create({
         model: GROQ_MODEL,
         temperature: 0.2,
@@ -68,9 +73,11 @@ export async function extractCandidateProfile(
       }),
     );
 
+    tokens += (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0);
+
     const raw = completion.choices[0]?.message?.content ?? "";
     try {
-      return parseProfile(extractJson(raw), resumeText);
+      return { profile: parseProfile(extractJson(raw), resumeText), tokens };
     } catch (error) {
       lastError =
         error instanceof ExtractionError

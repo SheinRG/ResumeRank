@@ -1,5 +1,6 @@
 import { tenantDb, type TenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
+import { assertAiBudget } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
 import {
   assertScoringConfigured,
@@ -120,8 +121,8 @@ function assertScorable(resumeText: string, requirementCount: number): void {
   }
 }
 
-function quotaOrThrow(ctx: TenantContext, calls: number): void {
-  const overQuota = checkAiQuota({ userId: ctx.actorId, companyId: ctx.companyId, calls });
+async function quotaOrThrow(ctx: TenantContext, calls: number): Promise<void> {
+  const overQuota = await checkAiQuota({ userId: ctx.actorId, companyId: ctx.companyId, calls });
   if (overQuota) throw new DomainError(overQuota);
 }
 
@@ -193,7 +194,8 @@ export async function requestScoring(
       return { outcome: "reused", run };
     }
 
-    quotaOrThrow(ctx, 1);
+    await assertAiBudget(ctx.companyId);
+    await quotaOrThrow(ctx, 1);
     const run = await tx.scoringRun.create({
       data: newRunData(ctx, applicationId, inputHash, settings),
       select: RUN_VIEW_SELECT,
@@ -287,7 +289,8 @@ export async function requestJobScoring(
     };
     if (batch.length === 0) return result;
 
-    quotaOrThrow(ctx, batch.length);
+    await assertAiBudget(ctx.companyId);
+    await quotaOrThrow(ctx, batch.length);
     const scoringJob = scoringJobOf(job);
     await tx.scoringRun.createMany({
       data: batch.map((a) =>

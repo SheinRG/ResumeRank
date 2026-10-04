@@ -20,6 +20,15 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default("ResumeRank <onboarding@resend.dev>"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  /** Tokens each company may spend on AI per rolling 30 days, unless Company.aiTokenBudget overrides it. */
+  AI_TOKEN_BUDGET: z.coerce.number().int().positive().default(5_000_000),
+  /**
+   * Header carrying the real client IP when not on Vercel (e.g. cf-connecting-ip
+   * behind Cloudflare). Only set it to a header your proxy overwrites.
+   */
+  TRUSTED_IP_HEADER: z.string().trim().toLowerCase().optional(),
+  /** Set by Vercel on every deployment. */
+  VERCEL: z.string().optional(),
   /** Bearer token a scheduler sends to /api/cron/scoring; the route is disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });

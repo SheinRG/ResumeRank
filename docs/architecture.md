@@ -243,13 +243,52 @@ and refreshes the ranking as scores land; table rows show *Queued* /
 
 ## Rate limiting
 
-`src/lib/rate-limit.ts` is an in-process, fixed-window token bucket keyed by
-an arbitrary string (e.g. `ip+email`). It is correct for a single serverless
-instance per region — each cold-started instance has its own `Map` — which
-is an explicit, documented limitation (see `docs/plan.md`, assumption 5).
-Buckets are pruned once the map exceeds 10,000 entries to bound memory. The
-named production upgrade is a shared store such as Upstash Redis so the
-window is consistent across every instance and region.
+All limits live in Postgres (`backend/src/rate-limit.ts`), so they hold
+across every serverless instance and survive cold starts. `RateLimitCounter`
+stores one row per key per fixed window; a limit reads the current and the
+previous window and estimates a **sliding window**
+(`previous x (1 - elapsed) + current`), which avoids the 2x burst a fixed
+window allows at its boundary without a row per request.
+
+`rateLimit(key, { max, windowMs }, cost)` checks and spends in one
+statement: `INSERT ... ON CONFLICT DO UPDATE ... WHERE <fits>` locks the
+conflicting row and re-evaluates the condition against its latest value, so
+parallel requests can never overshoot `max`, and a request that would
+overshoot is refused whole without spending anything. `peekRateLimit` checks
+without spending; `recordUsage` adds usage that has already happened. Expired
+rows are swept opportunistically (1% of calls), so no scheduled job is needed.
+
+| Limit | Key | Budget |
+|---|---|---|
+| Registration, verification resend, password reset, invites | IP / IP + email / inviter | 5 per 15 min |
+| Login attempts from one IP (any account) | `login:ip:<ip>` | 30 per 15 min |
+| Failed logins on one account (any IP) | `login:fail:<email>` | 10 per 15 min, cleared on success |
+| AI requests per user | `ai:user:<id>` | 30 per 10 min |
+| AI calls per company (a bulk request counts each applicant) | `ai:company:<id>` | 300 per hour |
+| AI tokens per company | `ai-tokens:company:<id>` | `AI_TOKEN_BUDGET` (5M) per rolling 30 days, or `Company.aiTokenBudget` |
+
+**Login throttling runs inside the Credentials provider's `authorize()`.**
+Auth.js also exposes that provider at `POST /api/auth/callback/credentials`,
+so a limit placed only in the login form's server action could be bypassed
+by posting there directly. A throttled attempt is refused before the
+password is checked (so it reveals nothing), failures count for unknown
+emails too (so lockout doesn't reveal which accounts exist), and the lockout
+is temporary, never permanent, since anyone could trigger it against a victim;
+password reset still works meanwhile. The login form peeks first only to show
+how long to wait.
+
+**Client IP** comes only from a source the client can't forge
+(`backend/src/request-ip.ts`): `TRUSTED_IP_HEADER` if set (e.g.
+`cf-connecting-ip` behind Cloudflare), otherwise on Vercel
+`x-vercel-forwarded-for` (set by Vercel; a proxy in front can't overwrite
+it), otherwise the **last** `X-Forwarded-For` hop, the one the nearest proxy
+appended, never the first, which the client controls. Anything that isn't a
+valid IP falls into one shared `unknown` bucket.
+
+**AI token budget** (`backend/src/ai-budget.ts`) is checked before work
+starts (scoring requests, each queued run, resume autofill) and charged with
+the real token counts after the model answers, so a tenant can overshoot by
+at most the requests already in flight. Settings, Company shows the usage.
 
 ## Email
 

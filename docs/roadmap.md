@@ -71,9 +71,9 @@ Scoring is synchronous: `scoring.ts:45` awaits up to two sequential Groq calls (
 ### 1.5 Distributed rate limiting & quotas
 `backend/src/rate-limit.ts:6-11` is in-process memory (effective limit ≈ N instances × max, resets on cold start). IP key is the first `x-forwarded-for` value (`actions/auth.ts:28`) — spoofable unless the platform overwrites it.
 
-- [ ] Upstash Redis sliding window (or Vercel WAF rate limits).
-- [ ] Use the platform's trusted client-IP header.
-- [ ] Per-tenant LLM token budget + per-user limits on scoring/extraction; account lockout after repeated failures.
+- [x] Upstash Redis sliding window (or Vercel WAF rate limits). → Postgres sliding window instead (`RateLimitCounter`, one atomic statement per check), no new vendor. See `docs/architecture.md` (Rate limiting).
+- [x] Use the platform's trusted client-IP header. → `x-vercel-forwarded-for` on Vercel, `TRUSTED_IP_HEADER` elsewhere, else the last `X-Forwarded-For` hop.
+- [x] Per-tenant LLM token budget + per-user limits on scoring/extraction; account lockout after repeated failures. → login throttling moved into `authorize()`, which also closed a bypass via `POST /api/auth/callback/credentials`.
 
 ### 1.6 Data layer at scale
 - [ ] **Indexes for default views.** `Job(companyId, status, createdAt DESC, id)` / `Application(companyId, stage, createdAt DESC, id)` put the optional filter second, so unfiltered lists (`queries/jobs.ts:87`) and dashboard aggregates (`dashboard.ts:120-140`) sort the whole tenant in memory. → Add `(companyId, createdAt DESC, id)` on Job and Application; `WHERE "deletedAt" IS NULL` partial indexes on Application.

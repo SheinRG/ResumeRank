@@ -184,7 +184,7 @@ export async function inviteMember(
   const { email, role } = input;
 
   // Each invite sends an email, so the sender is throttled like a login attempt.
-  const limited = rateLimit(`invite:${ctx.actorId}`, AUTH_LIMIT);
+  const limited = await rateLimit(`invite:${ctx.actorId}`, AUTH_LIMIT);
   if (!limited.allowed) {
     const minutes = Math.max(1, Math.ceil(limited.retryAfterSeconds / 60));
     throw new DomainError(

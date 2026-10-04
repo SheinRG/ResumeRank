@@ -3,7 +3,7 @@ import { APIError, RateLimitError } from "groq-sdk";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "../../src/db";
-import { resetRateLimits } from "../../src/rate-limit";
+import { AI_BUDGET_EXHAUSTED, chargeAiTokens, getAiBudget } from "../../src/ai-budget";
 import { currentScoringSettings } from "../../src/scoring/engine";
 import { ScoringError } from "../../src/scoring/parse";
 import {
@@ -46,7 +46,20 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  resetRateLimits();
+  await db.rateLimitCounter.deleteMany({
+    where: {
+      OR: [
+        { key: { contains: a.companyId } },
+        { key: { contains: b.companyId } },
+        { key: { contains: a.owner.actorId } },
+        { key: { contains: b.owner.actorId } },
+      ],
+    },
+  });
+  await db.company.updateMany({
+    where: { id: { in: [a.companyId, b.companyId] } },
+    data: { aiTokenBudget: null },
+  });
   // Each test starts with an empty queue for these tenants, so one test's
   // leftover runs can't be claimed by another's drain.
   await db.scoringRun.deleteMany({
@@ -278,6 +291,39 @@ describe("the worker", () => {
     expect(stored.evaluations).toHaveLength(0);
     const application = await db.application.findUniqueOrThrow({ where: { id: applicationId } });
     expect(application.latestScoringRunId).toBeNull();
+  });
+});
+
+describe("AI token budget", () => {
+  it("charges each scored run's tokens to the company", async () => {
+    const { applicationId } = await addApplicant(a);
+    await requestScoring(a.owner, applicationId);
+    await drainScoringQueue({ evaluate: fakeEvaluator().evaluate, lanes: 1 });
+    expect((await getAiBudget(a.companyId)).used).toBe(120);
+  });
+
+  it("refuses new requests once the budget is spent", async () => {
+    const [first, second] = await Promise.all([addApplicant(a), addApplicant(a)]);
+    await db.company.update({ where: { id: a.companyId }, data: { aiTokenBudget: 100 } });
+    await requestScoring(a.owner, first.applicationId);
+    await drainScoringQueue({ evaluate: fakeEvaluator().evaluate, lanes: 1 });
+
+    await expect(requestScoring(a.owner, second.applicationId)).rejects.toThrow(
+      AI_BUDGET_EXHAUSTED,
+    );
+  });
+
+  it("stops a queued batch when the budget runs out mid-way", async () => {
+    const { applicationId } = await addApplicant(a);
+    const { run } = await requestScoring(a.owner, applicationId);
+    await db.company.update({ where: { id: a.companyId }, data: { aiTokenBudget: 1 } });
+    await chargeAiTokens(a.companyId, 5);
+    const { evaluate, calls } = fakeEvaluator();
+
+    await drainScoringQueue({ evaluate, lanes: 1 });
+
+    expect(calls).toHaveLength(0);
+    expect(await runOf(run.id)).toMatchObject({ status: "FAILED", error: AI_BUDGET_EXHAUSTED });
   });
 });
 

@@ -6,7 +6,21 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Login throttling now applies to every sign-in path. Previously it ran only
+  in the login form, so posting to the Auth.js credentials endpoint directly
+  allowed unlimited password guesses.
+- Rate limits are shared across all server instances (previously each
+  instance counted separately) and key on a client IP that can't be spoofed
+  with an `X-Forwarded-For` header.
+
 ### Added
+
+- Temporary account lockout after 10 failed sign-ins in 15 minutes, with a
+  message saying how long to wait.
+- Per-company AI token budget over a rolling 30 days, shown under
+  Settings, Company.
 
 - Background AI scoring: "Score with AI" queues the work and returns
   immediately; the page follows the run (Queued, Scoring, result) and picks
