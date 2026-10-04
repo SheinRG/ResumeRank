@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { csvRow } from "../csv";
 import { logActivity } from "../activity";
 import { checkAiQuota } from "../rate-limit";
@@ -106,14 +106,14 @@ export async function listCandidates(
   params: CandidateListParams,
 ): Promise<Paged<CandidateListItem>> {
   const where = buildCandidateWhere(ctx.companyId, params);
-  const total = await db.candidate.count({ where });
+  const total = await tenantDb(ctx).candidate.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
 
   if (overflow) {
     return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
   }
 
-  const candidates = await db.candidate.findMany({
+  const candidates = await tenantDb(ctx).candidate.findMany({
     where,
     orderBy: buildCandidateOrderBy(params.sort),
     skip,
@@ -138,7 +138,7 @@ export async function getCandidate(
   ctx: TenantContext,
   id: string,
 ): Promise<CandidateDetail | null> {
-  return db.candidate.findUnique({
+  return tenantDb(ctx).candidate.findUnique({
     where: { id, companyId: ctx.companyId },
     include: {
       applications: {
@@ -151,7 +151,7 @@ export async function getCandidate(
 }
 
 export async function listCandidateOptions(ctx: TenantContext): Promise<CandidateOption[]> {
-  return db.candidate.findMany({
+  return tenantDb(ctx).candidate.findMany({
     where: { companyId: ctx.companyId },
     select: { id: true, name: true, email: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
@@ -173,7 +173,7 @@ export async function exportCandidatesCsv(
 
   const where = buildCandidateWhere(ctx.companyId, params);
   const orderBy = buildCandidateOrderBy(params.sort);
-  const rowCount = await db.candidate.count({ where });
+  const rowCount = await tenantDb(ctx).candidate.count({ where });
 
   await logActivity({
     companyId: ctx.companyId,
@@ -197,7 +197,7 @@ export async function exportCandidatesCsv(
         return;
       }
 
-      const batch = await db.candidate.findMany({
+      const batch = await tenantDb(ctx).candidate.findMany({
         where,
         orderBy,
         take: CSV_EXPORT_BATCH,
@@ -235,7 +235,7 @@ export async function createCandidate(
   assertCanWrite(ctx);
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await tenantDb(ctx).$transaction(async (tx) => {
       const candidate = await tx.candidate.create({
         data: { ...input, companyId: ctx.companyId, createdById: ctx.actorId },
       });
@@ -266,7 +266,7 @@ export async function updateCandidate(
   const { id, ...fields } = input;
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await tenantDb(ctx).$transaction(async (tx) => {
       const candidate = await tx.candidate.update({
         where: { id, companyId: ctx.companyId },
         data: fields,
@@ -295,7 +295,7 @@ export async function deleteCandidate(ctx: TenantContext, id: string): Promise<C
   assertCanWrite(ctx);
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await tenantDb(ctx).$transaction(async (tx) => {
       const candidate = await tx.candidate.delete({
         where: { id, companyId: ctx.companyId },
       });

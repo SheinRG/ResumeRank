@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import { createCompanyInvite } from "../auth/tokens";
 import { sendInviteEmail } from "../email";
@@ -49,7 +49,7 @@ const USER_NOT_FOUND = "That user no longer exists.";
 
 /** Postgres sorts the native Role enum by declaration order (OWNER, ADMIN, MEMBER, VIEWER). */
 export async function listTeam(ctx: TenantContext): Promise<TeamMember[]> {
-  return db.user.findMany({
+  return tenantDb(ctx).user.findMany({
     where: { companyId: ctx.companyId },
     select: TEAM_MEMBER_SELECT,
     orderBy: [{ role: "asc" }, { name: "asc" }, { id: "asc" }],
@@ -57,7 +57,7 @@ export async function listTeam(ctx: TenantContext): Promise<TeamMember[]> {
 }
 
 export async function listPendingInvites(ctx: TenantContext): Promise<PendingInvite[]> {
-  const invites = await db.companyInvite.findMany({
+  const invites = await tenantDb(ctx).companyInvite.findMany({
     where: {
       companyId: ctx.companyId,
       acceptedAt: null,
@@ -89,7 +89,7 @@ export async function updateMemberRole(
     throw new ForbiddenError("Only an owner can assign the owner role.");
   }
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const target = await tx.user.findFirst({
       where: { id: userId, companyId: ctx.companyId },
       select: { role: true },
@@ -139,7 +139,7 @@ export async function removeMember(
     );
   }
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const target = await tx.user.findFirst({
       where: { id: userId, companyId: ctx.companyId },
       select: { role: true },
@@ -193,9 +193,9 @@ export async function inviteMember(
   }
 
   const [inviter, company, existingUser] = await Promise.all([
-    db.user.findUnique({ where: { id: ctx.actorId }, select: { name: true, email: true } }),
-    db.company.findUnique({ where: { id: ctx.companyId }, select: { name: true } }),
-    db.user.findUnique({ where: { email }, select: { companyId: true } }),
+    tenantDb(ctx).user.findUnique({ where: { id: ctx.actorId }, select: { name: true, email: true } }),
+    tenantDb(ctx).company.findUnique({ where: { id: ctx.companyId }, select: { name: true } }),
+    tenantDb(ctx).user.findUnique({ where: { email }, select: { companyId: true } }),
   ]);
   if (!inviter || !company) {
     throw new NotFoundError("Your company no longer exists.");
@@ -207,7 +207,7 @@ export async function inviteMember(
     throw new ConflictError("That person already belongs to a company.");
   }
 
-  const { invite, rawToken } = await db.$transaction(async (tx) => {
+  const { invite, rawToken } = await tenantDb(ctx).$transaction(async (tx) => {
     const created = await createCompanyInvite(
       { companyId: ctx.companyId, email, role, invitedById: ctx.actorId },
       tx,
@@ -247,7 +247,7 @@ export async function revokeInvite(
 ): Promise<{ id: string }> {
   assertCanAdmin(ctx);
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const { count } = await tx.companyInvite.deleteMany({
       where: { id: inviteId, companyId: ctx.companyId },
     });

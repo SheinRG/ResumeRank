@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { PAGE_SIZE } from "../validators/search";
 import type { Prisma } from "../generated/prisma/client";
 import type { Paged } from "../types/paged";
@@ -48,14 +48,14 @@ export async function listActivity(
     companyId: ctx.companyId,
     entityType: params.entityType,
   };
-  const total = await db.activityLog.count({ where });
+  const total = await tenantDb(ctx).activityLog.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
 
   if (overflow) {
     return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
   }
 
-  const rows = await db.activityLog.findMany({
+  const rows = await tenantDb(ctx).activityLog.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     skip,

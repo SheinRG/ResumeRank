@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Prisma } from "../generated/prisma/client";
 import type { EmploymentType, JobStatus, RequirementWeight } from "../validators/enums";
@@ -74,14 +74,14 @@ export async function listJobs(
   params: JobListParams,
 ): Promise<Paged<JobListItem>> {
   const where = buildJobWhere(ctx.companyId, params);
-  const total = await db.job.count({ where });
+  const total = await tenantDb(ctx).job.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
 
   if (overflow) {
     return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
   }
 
-  const jobs = await db.job.findMany({
+  const jobs = await tenantDb(ctx).job.findMany({
     where,
     orderBy: buildJobOrderBy(params.sort),
     skip,
@@ -104,7 +104,7 @@ export async function listJobs(
 
   const jobIds = jobs.map((job) => job.id);
   const scoreGroups = jobIds.length
-    ? await db.application.groupBy({
+    ? await tenantDb(ctx).application.groupBy({
         by: ["jobId"],
         where: {
           companyId: ctx.companyId,
@@ -138,14 +138,14 @@ export async function listJobs(
 }
 
 export async function getJob(ctx: TenantContext, id: string): Promise<JobDetail | null> {
-  return db.job.findUnique({
+  return tenantDb(ctx).job.findUnique({
     where: { id, companyId: ctx.companyId },
     include: withRequirements,
   });
 }
 
 export async function listJobOptions(ctx: TenantContext): Promise<JobOption[]> {
-  return db.job.findMany({
+  return tenantDb(ctx).job.findMany({
     where: { status: "OPEN", companyId: ctx.companyId },
     select: { id: true, title: true, status: true },
     orderBy: [{ title: "asc" }, { id: "asc" }],
@@ -156,7 +156,7 @@ export async function createJob(ctx: TenantContext, input: JobCreateInput): Prom
   assertCanWrite(ctx);
   const { requirements, ...jobFields } = input;
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const job = await tx.job.create({
       data: {
         ...jobFields,
@@ -197,7 +197,7 @@ export async function updateJob(ctx: TenantContext, input: JobUpdateInput): Prom
   assertCanWrite(ctx);
   const { id, requirements, ...jobFields } = input;
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     try {
       await tx.job.update({ where: { id, companyId: ctx.companyId }, data: jobFields });
     } catch (error) {
@@ -254,7 +254,7 @@ export async function setJobStatus(
 ): Promise<JobDetail> {
   assertCanWrite(ctx);
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     let job: JobDetail;
     try {
       job = await tx.job.update({

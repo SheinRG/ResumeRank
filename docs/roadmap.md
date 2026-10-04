@@ -44,7 +44,7 @@ All business logic (tenancy filters, activity logging, scoring orchestration) li
 ### 1.2 Tenancy defense-in-depth
 Isolation currently relies on developers remembering a `where` clause; Phase 0 items show it already slipping.
 
-- [ ] Prisma client extension `db.forTenant(companyId)` that injects/asserts `companyId` on `Job`, `Candidate`, `Application`, `ActivityLog`.
+- [x] Prisma client extension `db.forTenant(companyId)` that injects/asserts `companyId` on `Job`, `Candidate`, `Application`, `ActivityLog`. → `backend/src/tenant-db.ts`: `forTenant` / memoised `tenantDb(ctx)`, used by every service; throws `TenantViolationError` on a mismatched filter, create, or row move. Does not reach nested relation writes or raw SQL — RLS closes that gap.
 - [ ] Postgres RLS (deferred to a follow-up PR after the extension + integration tests land): `ENABLE ROW LEVEL SECURITY` + policy `"companyId" = current_setting('app.company_id')` on the four tenant tables; set via `set_config(..., true)` inside an interactive transaction; separate bypass role for auth/onboarding paths.
 - [ ] Integration test suite (vitest against the CI Postgres service): seed two companies; assert every query and action returns not-found for the other tenant's ids. None exist today — the six unit test files in `backend/tests/unit` cover only pure functions.
 - [x] Remove reliance on check-then-write ordering: `actions/jobs.ts:81,95,100` (`JobRequirement` by `jobId`/`id` only), `users.ts:67` (update by `id` after a separate `findFirst`).

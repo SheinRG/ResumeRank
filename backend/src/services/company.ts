@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Prisma } from "../generated/prisma/client";
 import type { UpdateCompanyInput } from "../validators/company";
@@ -29,7 +29,7 @@ const COMPANY_DETAIL_SELECT = {
 } satisfies Prisma.CompanySelect;
 
 export async function getCompany(ctx: TenantContext): Promise<CompanyDetail | null> {
-  return db.company.findUnique({
+  return tenantDb(ctx).company.findUnique({
     where: { id: ctx.companyId },
     select: COMPANY_DETAIL_SELECT,
   });
@@ -42,7 +42,7 @@ export async function updateCompany(
   assertCanAdmin(ctx);
   const { name, logoUrl, website, description, industry, size, location } = input;
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const company = await tx.company.update({
       where: { id: ctx.companyId },
       data: {
