@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { env } from "../env";
+import { logRejectedOutput, traceLlmCall } from "../observability/llm";
 import {
   extractJson,
   reconcileResult,
@@ -70,24 +71,27 @@ export async function requestEvaluation(
   // One retry with the validation failure fed back — malformed output is the
   // dominant failure mode and a single corrective turn usually fixes it.
   for (let attempt = 0; attempt < 2; attempt++) {
-    const completion = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      temperature: 0.2,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserPrompt(job, resumeText) },
-        ...(lastError
-          ? [
-              {
-                role: "user" as const,
-                content: `Your previous response was rejected: ${lastError}. Return corrected JSON in exactly the required shape.`,
-              },
-            ]
-          : []),
-      ],
-    });
+    const call = { operation: "scoring" as const, model: GROQ_MODEL, attempt: attempt + 1 };
+    const { completion } = await traceLlmCall(call, () =>
+      groq.chat.completions.create({
+        model: GROQ_MODEL,
+        temperature: 0.2,
+        max_tokens: 4096,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: buildUserPrompt(job, resumeText) },
+          ...(lastError
+            ? [
+                {
+                  role: "user" as const,
+                  content: `Your previous response was rejected: ${lastError}. Return corrected JSON in exactly the required shape.`,
+                },
+              ]
+            : []),
+        ],
+      }),
+    );
 
     const raw = completion.choices[0]?.message?.content ?? "";
     try {
@@ -98,6 +102,7 @@ export async function requestEvaluation(
         error instanceof ScoringError
           ? error.message
           : "JSON did not match the required schema.";
+      logRejectedOutput(call, lastError);
     }
   }
 

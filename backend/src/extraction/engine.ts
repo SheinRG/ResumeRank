@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { env } from "../env";
+import { logRejectedOutput, traceLlmCall } from "../observability/llm";
 import { extractJson, parseProfile, ExtractionError } from "./parse";
 import type { CandidateProfile } from "../validators/extraction";
 
@@ -45,24 +46,27 @@ export async function extractCandidateProfile(
   let lastError = "";
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const completion = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      temperature: 0.2,
-      max_tokens: 1024,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserPrompt(resumeText) },
-        ...(lastError
-          ? [
-              {
-                role: "user" as const,
-                content: `Your previous response was rejected: ${lastError}. Return corrected JSON in exactly the required shape.`,
-              },
-            ]
-          : []),
-      ],
-    });
+    const call = { operation: "extraction" as const, model: GROQ_MODEL, attempt: attempt + 1 };
+    const { completion } = await traceLlmCall(call, () =>
+      groq.chat.completions.create({
+        model: GROQ_MODEL,
+        temperature: 0.2,
+        max_tokens: 1024,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: buildUserPrompt(resumeText) },
+          ...(lastError
+            ? [
+                {
+                  role: "user" as const,
+                  content: `Your previous response was rejected: ${lastError}. Return corrected JSON in exactly the required shape.`,
+                },
+              ]
+            : []),
+        ],
+      }),
+    );
 
     const raw = completion.choices[0]?.message?.content ?? "";
     try {
@@ -72,6 +76,7 @@ export async function extractCandidateProfile(
         error instanceof ExtractionError
           ? error.message
           : "JSON did not match the required shape.";
+      logRejectedOutput(call, lastError);
     }
   }
 

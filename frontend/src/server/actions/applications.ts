@@ -25,7 +25,7 @@ function revalidateApplication(application: Application): void {
 export async function createApplicationAction(
   input: unknown,
 ): Promise<ActionResult<Application>> {
-  return runAction(async () => {
+  return runAction("createApplication", async () => {
     const parsed = applicationCreateSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -43,7 +43,7 @@ export async function createApplicationAction(
 export async function updateStageAction(
   input: unknown,
 ): Promise<ActionResult<Application>> {
-  return runAction(async () => {
+  return runAction("updateStage", async () => {
     const parsed = applicationStageSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -61,7 +61,7 @@ export async function updateStageAction(
 export async function softDeleteApplicationAction(
   id: string,
 ): Promise<ActionResult<Application>> {
-  return runAction(async () => {
+  return runAction("softDeleteApplication", async () => {
     const user = await requireWriter();
     const application = await setApplicationRemoved(tenantContext(user), id, true);
     revalidateApplication(application);
@@ -72,7 +72,7 @@ export async function softDeleteApplicationAction(
 export async function restoreApplicationAction(
   id: string,
 ): Promise<ActionResult<Application>> {
-  return runAction(async () => {
+  return runAction("restoreApplication", async () => {
     const user = await requireWriter();
     const application = await setApplicationRemoved(tenantContext(user), id, false);
     revalidateApplication(application);

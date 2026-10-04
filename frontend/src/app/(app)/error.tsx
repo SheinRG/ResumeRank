@@ -9,10 +9,10 @@ import { ErrorState } from "@/components/shared/error-state";
  */
 export default function AppError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   const reference = error.digest ? ` Reference: ${error.digest}.` : "";
   return (
@@ -20,7 +20,7 @@ export default function AppError({
       <ErrorState
         title="Something went wrong"
         message={`We couldn't load this page. Try again, and if it keeps happening, contact support.${reference}`}
-        onRetry={reset}
+        onRetry={unstable_retry}
       />
     </div>
   );

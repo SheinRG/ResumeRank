@@ -11,7 +11,7 @@ import { actionError, actionOk, type ActionResult } from "@resumerank/core/types
 export async function upsertScorecardAction(
   input: unknown,
 ): Promise<ActionResult<Scorecard>> {
-  return runAction(async () => {
+  return runAction("upsertScorecard", async () => {
     const parsed = scorecardSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(

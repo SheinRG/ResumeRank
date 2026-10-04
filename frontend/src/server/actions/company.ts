@@ -31,7 +31,7 @@ const inviteIdSchema = z.string().min(1, "Invite is missing");
 export async function createCompanyAction(
   input: unknown,
 ): Promise<ActionResult<{ id: string; name: string; slug: string }>> {
-  return runAction(async () => {
+  return runAction("createCompany", async () => {
     const parsed = createCompanySchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -75,7 +75,7 @@ export async function createCompanyAction(
 export async function updateCompanyAction(
   input: unknown,
 ): Promise<ActionResult<CompanyDetail>> {
-  return runAction(async () => {
+  return runAction("updateCompany", async () => {
     const parsed = updateCompanySchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -95,7 +95,7 @@ export async function updateCompanyAction(
 export async function acceptPendingInviteAction(
   inviteId: unknown,
 ): Promise<ActionResult<{ companyId: string }>> {
-  return runAction(async () => {
+  return runAction("acceptPendingInvite", async () => {
     const parsed = inviteIdSchema.safeParse(inviteId);
     if (!parsed.success) {
       return actionError("That invite could not be found.");
@@ -143,7 +143,7 @@ export async function acceptPendingInviteAction(
 export async function inviteMemberAction(
   input: unknown,
 ): Promise<ActionResult<InviteResult>> {
-  return runAction(async () => {
+  return runAction("inviteMember", async () => {
     const parsed = inviteMemberSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -163,7 +163,7 @@ export async function inviteMemberAction(
 export async function revokeInviteAction(
   inviteId: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  return runAction(async () => {
+  return runAction("revokeInvite", async () => {
     const parsed = inviteIdSchema.safeParse(inviteId);
     if (!parsed.success) {
       return actionError("That invite could not be found.");
@@ -180,7 +180,7 @@ export async function revokeInviteAction(
 export async function acceptInviteAction(
   input: unknown,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("acceptInvite", async () => {
     const parsed = acceptInviteSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(

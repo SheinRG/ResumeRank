@@ -52,11 +52,11 @@ Isolation currently relies on developers remembering a `where` clause; Phase 0 i
 ### 1.3 Observability (currently none)
 Only sink is `console.error("[action]", error)` (`frontend/src/server/run-action.ts:18`) with no request/user/company context.
 
-- [ ] `frontend/src/instrumentation.ts` with `register()` (OpenTelemetry/Sentry) and `onRequestError`.
-- [ ] `app/global-error.tsx`.
-- [ ] `runAction` takes an action name; logs structured JSON `{action, companyId, userId, digest, durationMs}` and captures exceptions.
-- [ ] Instrument LLM calls: latency, tokens, retries, failures (`engine.ts:74-94`, `extraction/engine.ts:67`).
-- [ ] `/api/health` (DB `SELECT 1`) for uptime monitors.
+- [x] `frontend/src/instrumentation.ts` with `register()` (OpenTelemetry/Sentry) and `onRequestError`. → `@vercel/otel` (vendor-neutral OTLP); `onRequestError` writes a `request.error` line keyed by digest.
+- [x] `app/global-error.tsx`.
+- [x] `runAction` takes an action name; logs structured JSON `{action, companyId, userId, digest, durationMs}` and captures exceptions. → `@resumerank/core/observability/log` + AsyncLocalStorage context the guards annotate; the generic error message carries the digest.
+- [x] Instrument LLM calls: latency, tokens, retries, failures (`engine.ts:74-94`, `extraction/engine.ts:67`). → `traceLlmCall`: GenAI-convention spans + `llm.call` / `llm.output_rejected` log lines.
+- [x] `/api/health` (DB `SELECT 1`) for uptime monitors. → bounded at 5s (Neon cold start ≈2s), no failure detail in the response.
 
 ### 1.4 Async AI pipeline
 Scoring is synchronous: `scoring.ts:45` awaits up to two sequential Groq calls (`max_tokens: 4096`, `engine.ts:74-92`) with no timeout, AbortSignal, or `maxDuration`. No bulk scoring — 300 applicants = 300 clicks. Rescoring destroys history (`engine.ts:169` `deleteMany`).

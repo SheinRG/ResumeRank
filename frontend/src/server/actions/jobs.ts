@@ -15,7 +15,7 @@ import { actionError, actionOk, type ActionResult } from "@resumerank/core/types
 export async function createJobAction(
   input: unknown,
 ): Promise<ActionResult<JobDetail>> {
-  return runAction(async () => {
+  return runAction("createJob", async () => {
     const parsed = jobCreateSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -36,7 +36,7 @@ export async function createJobAction(
 export async function updateJobAction(
   input: unknown,
 ): Promise<ActionResult<JobDetail>> {
-  return runAction(async () => {
+  return runAction("updateJob", async () => {
     const parsed = jobUpdateSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -55,7 +55,7 @@ export async function updateJobAction(
 }
 
 export async function archiveJobAction(id: string): Promise<ActionResult<JobDetail>> {
-  return runAction(async () => {
+  return runAction("archiveJob", async () => {
     const user = await requireWriter();
     const job = await setJobStatus(tenantContext(user), id, "ARCHIVED");
 
@@ -68,7 +68,7 @@ export async function archiveJobAction(id: string): Promise<ActionResult<JobDeta
 }
 
 export async function reopenJobAction(id: string): Promise<ActionResult<JobDetail>> {
-  return runAction(async () => {
+  return runAction("reopenJob", async () => {
     const user = await requireWriter();
     const job = await setJobStatus(tenantContext(user), id, "OPEN");
 

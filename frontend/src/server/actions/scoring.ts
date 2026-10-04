@@ -9,7 +9,7 @@ import { actionOk, type ActionResult } from "@resumerank/core/types/action";
 export async function scoreApplicationAction(
   applicationId: string,
 ): Promise<ActionResult<ScoreOutcome>> {
-  return runAction(async () => {
+  return runAction("scoreApplication", async () => {
     const user = await requireWriter();
     const outcome = await scoreApplication(tenantContext(user), applicationId);
 

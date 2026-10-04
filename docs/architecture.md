@@ -36,22 +36,16 @@ export type ActionResult<T = undefined> =
 `src/server/run-action.ts` wraps the body of every action:
 
 ```ts
-export async function runAction<T>(
-  body: () => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    return await body();
-  } catch (error) {
-    if (error instanceof GateError) return actionError(error.message);
-    console.error("[action]", error);
-    return actionError("Something went wrong on our side. Try again.");
-  }
+export function createJobAction(input: unknown) {
+  return runAction("createJob", async () => { /* guard → service → revalidate */ });
 }
 ```
 
-A `GateError` (thrown by the auth guards below) becomes a clean, named
-message on the client. Anything else is logged server-side and replaced with
-a generic message — the client never sees a raw stack trace. A typical action
+A `GateError` (thrown by the auth guards below) or a service `DomainError`
+becomes a clean, named message on the client. Anything else is logged
+server-side and replaced with a generic message carrying a short reference
+(the log line's `digest`) — the client never sees a raw stack trace. Every
+call also writes one structured `action` log line; see Observability. A typical action
 (`src/server/actions/jobs.ts::createJobAction`) follows the same shape every
 time: parse with a shared Zod schema, run a guard, do the write, call
 `logActivity`, `revalidatePath` the affected routes, and return the mutated
@@ -228,6 +222,28 @@ locally never needs to touch email at all.
 - **End-to-end** (`tests/e2e`, Playwright, `playwright.config.ts`) drives the
   real app on port 3105 and boots the dev server itself via `webServer` when
   one isn't already running, so `npm run test:e2e` works standalone in CI.
+
+## Observability
+
+- **Structured logs.** `@resumerank/core/observability/log` writes one JSON
+  object per line (`level`, `event`, `time`, fields) for log drains to index.
+  `withLogContext` opens an AsyncLocalStorage scope whose fields every nested
+  line inherits; `runAction` opens one per action and the guards annotate it
+  with `userId`/`companyId`, so an `llm.call` deep in a service is still
+  attributable. Event names: `action` (outcome `ok`/`invalid`/`denied`/
+  `rejected`/`error`, `durationMs`, `digest` on errors), `request.error`,
+  `llm.call`, `llm.output_rejected`, `health.database`.
+- **Server errors.** `src/instrumentation.ts` `onRequestError` logs every
+  render/route/action error with Next's `digest` — the same reference the
+  error boundaries (`(app)/error.tsx`, `global-error.tsx`) show the user — and
+  the route, never headers or the query string.
+- **Traces.** `register()` calls `registerOTel` (`@vercel/otel`). LLM attempts
+  run inside `llm.scoring` / `llm.extraction` spans with OpenTelemetry GenAI
+  attributes (model, input/output tokens) and record provider failures. On
+  Vercel, traces reach a connected observability integration; elsewhere set
+  `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Health.** `GET /api/health` runs a bounded `SELECT 1` (5s, enough for a
+  Neon cold start) and returns 200 `{status:"ok"}` or 503, without detail.
 
 ## Security headers and CSP
 
