@@ -14,7 +14,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "What AI model scores candidates?",
     answer:
-      "ResumeRank uses Groq (llama-3.3-70b-versatile by default) with a strict JSON response contract validated by Zod, so a malformed response never produces a partial or silently wrong score.",
+      "ResumeRank uses Groq (openai/gpt-oss-120b by default) with a strict JSON response contract validated by Zod, so a malformed response never produces a partial or silently wrong score.",
   },
   {
     question: "Is my data used to train any AI model?",

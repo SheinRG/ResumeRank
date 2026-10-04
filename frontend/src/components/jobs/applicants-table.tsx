@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -86,7 +87,14 @@ export function ApplicantsTable({
               <p className="text-xs text-muted-foreground">{row.candidate.email}</p>
             </TableCell>
             <TableCell>
-              <ScorePill score={row.aiScore} />
+              {row.scoringStatus ? (
+                <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  {row.scoringStatus === "RUNNING" ? "Scoring" : "Queued"}
+                </span>
+              ) : (
+                <ScorePill score={row.aiScore} />
+              )}
             </TableCell>
             <TableCell>
               {canWrite ? (

@@ -52,21 +52,21 @@ Isolation currently relies on developers remembering a `where` clause; Phase 0 i
 ### 1.3 Observability (currently none)
 Only sink is `console.error("[action]", error)` (`frontend/src/server/run-action.ts:18`) with no request/user/company context.
 
-- [ ] `frontend/src/instrumentation.ts` with `register()` (OpenTelemetry/Sentry) and `onRequestError`.
-- [ ] `app/global-error.tsx`.
-- [ ] `runAction` takes an action name; logs structured JSON `{action, companyId, userId, digest, durationMs}` and captures exceptions.
-- [ ] Instrument LLM calls: latency, tokens, retries, failures (`engine.ts:74-94`, `extraction/engine.ts:67`).
-- [ ] `/api/health` (DB `SELECT 1`) for uptime monitors.
+- [x] `frontend/src/instrumentation.ts` with `register()` (OpenTelemetry/Sentry) and `onRequestError`. → `@vercel/otel` (vendor-neutral OTLP); `onRequestError` writes a `request.error` line keyed by digest.
+- [x] `app/global-error.tsx`.
+- [x] `runAction` takes an action name; logs structured JSON `{action, companyId, userId, digest, durationMs}` and captures exceptions. → `@resumerank/core/observability/log` + AsyncLocalStorage context the guards annotate; the generic error message carries the digest.
+- [x] Instrument LLM calls: latency, tokens, retries, failures (`engine.ts:74-94`, `extraction/engine.ts:67`). → `traceLlmCall`: GenAI-convention spans + `llm.call` / `llm.output_rejected` log lines.
+- [x] `/api/health` (DB `SELECT 1`) for uptime monitors. → bounded at 5s (Neon cold start ≈2s), no failure detail in the response.
 
 ### 1.4 Async AI pipeline
 Scoring is synchronous: `scoring.ts:45` awaits up to two sequential Groq calls (`max_tokens: 4096`, `engine.ts:74-92`) with no timeout, AbortSignal, or `maxDuration`. No bulk scoring — 300 applicants = 300 clicks. Rescoring destroys history (`engine.ts:169` `deleteMany`).
 
-- [ ] `ScoringRun` model: `status (QUEUED|RUNNING|SUCCEEDED|FAILED)`, `model`, `promptVersion`, `temperature`, `inputHash` (resumeText + requirement set + model + prompt version), `promptTokens`, `completionTokens`, `latencyMs`, `rawOutput`, `actorId`, `companyId`.
-- [ ] Evaluations append-only, attached to a run; `Application.latestScoringRunId` is a pointer.
-- [ ] Durable queue/workflow (Vercel Workflow/Queues, Inngest, or BullMQ): idempotency by `inputHash`, exponential backoff on 429/5xx, per-tenant + global concurrency caps.
-- [ ] "Score all unscored for job X" bulk action; UI polls/streams job status instead of blocking `useTransition` (`score-button.tsx:33`).
-- [ ] Dedup/cache: skip the LLM when `inputHash` already has a successful run.
-- [ ] Same treatment for email: outbox table + queued sender with retries, bounce/complaint webhooks (today `email.ts:64-78` is awaited inline in `auth.ts:80,169,192`, `company.ts:216`).
+- [x] `ScoringRun` model: `status (QUEUED|RUNNING|SUCCEEDED|FAILED)`, `model`, `promptVersion`, `temperature`, `inputHash` (resumeText + requirement set + model + prompt version), `promptTokens`, `completionTokens`, `latencyMs`, `rawOutput`, `actorId`, `companyId`.
+- [x] Evaluations append-only, attached to a run; `Application.latestScoringRunId` is a pointer. → existing scores migrated into one `legacy` run each.
+- [x] Durable queue/workflow (Vercel Workflow/Queues, Inngest, or BullMQ): idempotency by `inputHash`, exponential backoff on 429/5xx, per-tenant + global concurrency caps. → a Postgres queue (the `ScoringRun` table; advisory-locked claims make the caps exact; drained via `after()`, status polls and `/api/cron/scoring`), no new vendor. See `docs/architecture.md` (Scoring pipeline).
+- [x] "Score all unscored for job X" bulk action; UI polls/streams job status instead of blocking `useTransition` (`score-button.tsx:33`).
+- [x] Dedup/cache: skip the LLM when `inputHash` already has a successful run.
+- [ ] (Next, on the same queue pattern.) Same treatment for email: outbox table + queued sender with retries, bounce/complaint webhooks (today `email.ts:64-78` is awaited inline in `auth.ts:80,169,192`, `company.ts:216`).
 
 ### 1.5 Distributed rate limiting & quotas
 `backend/src/rate-limit.ts:6-11` is in-process memory (effective limit ≈ N instances × max, resets on cold start). IP key is the first `x-forwarded-for` value (`actions/auth.ts:28`) — spoofable unless the platform overwrites it.

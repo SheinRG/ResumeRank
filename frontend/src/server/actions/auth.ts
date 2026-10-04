@@ -36,7 +36,7 @@ function tooManyAttempts(retryAfterSeconds: number): string {
 export async function registerAction(
   input: unknown,
 ): Promise<ActionResult<{ email: string }>> {
-  return runAction(async () => {
+  return runAction("register", async () => {
     const parsed = registerCompanySchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -87,7 +87,7 @@ export async function registerAction(
 export async function loginAction(
   input: unknown,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("login", async () => {
     const parsed = loginSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -138,7 +138,7 @@ export async function verifyEmailAction(
   email: string,
   token: string,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("verifyEmail", async () => {
     const ok = await consumeVerificationToken(email, token);
     if (!ok) {
       return actionError(
@@ -152,7 +152,7 @@ export async function verifyEmailAction(
 export async function resendVerificationAction(
   input: unknown,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("resendVerification", async () => {
     const parsed = forgotPasswordSchema.safeParse(input);
     if (!parsed.success) return actionError("Enter a valid email address.");
     const { email } = parsed.data;
@@ -176,7 +176,7 @@ export async function resendVerificationAction(
 export async function forgotPasswordAction(
   input: unknown,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("forgotPassword", async () => {
     const parsed = forgotPasswordSchema.safeParse(input);
     if (!parsed.success) return actionError("Enter a valid email address.");
     const { email } = parsed.data;
@@ -199,7 +199,7 @@ export async function forgotPasswordAction(
 export async function resetPasswordAction(
   input: unknown,
 ): Promise<ActionResult<undefined>> {
-  return runAction(async () => {
+  return runAction("resetPassword", async () => {
     const parsed = resetPasswordSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(

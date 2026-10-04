@@ -15,9 +15,15 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
+/**
+ * `cost` lets one request spend several units (a bulk scoring request costs
+ * one per applicant). A request that would overshoot is refused whole and
+ * spends nothing, so a too-large bulk request doesn't burn the budget.
+ */
 export function rateLimit(
   key: string,
   { max, windowMs }: { max: number; windowMs: number },
+  cost = 1,
 ): RateLimitResult {
   const now = Date.now();
 
@@ -29,17 +35,18 @@ export function rateLimit(
 
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
+    if (cost > max) return { allowed: false, retryAfterSeconds: Math.ceil(windowMs / 1000) };
+    buckets.set(key, { count: cost, resetAt: now + windowMs });
     return { allowed: true, retryAfterSeconds: 0 };
   }
 
-  bucket.count += 1;
-  if (bucket.count > max) {
+  if (bucket.count + cost > max) {
     return {
       allowed: false,
       retryAfterSeconds: Math.ceil((bucket.resetAt - now) / 1000),
     };
   }
+  bucket.count += cost;
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
@@ -58,19 +65,25 @@ function retryMessage(retryAfterSeconds: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-/** Returns an error message when the caller is over quota, otherwise null. */
+/**
+ * Returns an error message when the caller is over quota, otherwise null.
+ * The user window counts requests (a bulk request is one click); the company
+ * window counts the LLM calls a request will make, since that is the spend.
+ */
 export function checkAiQuota({
   userId,
   companyId,
+  calls = 1,
 }: {
   userId: string;
   companyId: string;
+  calls?: number;
 }): string | null {
   const user = rateLimit(`ai:user:${userId}`, AI_USER_LIMIT);
   if (!user.allowed) {
     return `You're using AI features too quickly. Try again in ${retryMessage(user.retryAfterSeconds)}.`;
   }
-  const company = rateLimit(`ai:company:${companyId}`, AI_COMPANY_LIMIT);
+  const company = rateLimit(`ai:company:${companyId}`, AI_COMPANY_LIMIT, calls);
   if (!company.allowed) {
     return `Your workspace has reached its hourly AI limit. Try again in ${retryMessage(company.retryAfterSeconds)}.`;
   }

@@ -57,6 +57,13 @@ enum Verdict {
   MISSING
 }
 
+enum ScoringRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id             String    @id @default(cuid())
   name           String
@@ -82,6 +89,7 @@ model User {
   applicationsCreated Application[]        @relation("ApplicationCreatedBy")
   scorecards          Scorecard[]
   activities          ActivityLog[]
+  scoringRuns         ScoringRun[]
   invitesSent         CompanyInvite[]      @relation("InvitesSent")
 
   @@index([companyId])
@@ -106,6 +114,7 @@ model Company {
   applications Application[]
   activities   ActivityLog[]
   invites      CompanyInvite[]
+  scoringRuns  ScoringRun[]
 }
 
 model CompanyInvite {
@@ -235,25 +244,29 @@ model Candidate {
 }
 
 model Application {
-  id          String    @id @default(cuid())
-  jobId       String
-  candidateId String
-  stage       Stage     @default(NEW)
-  aiScore     Int?
-  aiSummary   String?
-  scoredAt    DateTime?
-  deletedAt   DateTime?
-  companyId   String
-  createdById String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  jobId              String
+  candidateId        String
+  stage              Stage     @default(NEW)
+  // aiScore/aiSummary/scoredAt mirror the latest successful run so lists,
+  // sorting and the dashboard never join through the run history.
+  aiScore            Int?
+  aiSummary          String?
+  scoredAt           DateTime?
+  latestScoringRunId String?   @unique
+  deletedAt          DateTime?
+  companyId          String
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  createdBy   User         @relation("ApplicationCreatedBy", fields: [createdById], references: [id])
-  evaluations Evaluation[]
-  scorecards  Scorecard[]
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  job              Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate        Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdBy        User         @relation("ApplicationCreatedBy", fields: [createdById], references: [id])
+  latestScoringRun ScoringRun?  @relation("LatestScoringRun", fields: [latestScoringRunId], references: [id], onDelete: SetNull)
+  scoringRuns      ScoringRun[] @relation("ApplicationScoringRuns")
+  scorecards       Scorecard[]
 
   @@unique([jobId, candidateId])
   @@index([jobId, deletedAt, stage, aiScore(sort: Desc)])
@@ -261,9 +274,11 @@ model Application {
   @@index([companyId, stage, createdAt(sort: Desc), id])
 }
 
+/// One per requirement per run. Rows are never updated or deleted on rescore:
+/// a new run brings a new set, so every historical score stays explainable.
 model Evaluation {
   id            String            @id @default(cuid())
-  applicationId String
+  scoringRunId  String
   requirementId String?
   criterion     String
   weight        RequirementWeight @default(MUST)
@@ -272,10 +287,53 @@ model Evaluation {
   note          String
   createdAt     DateTime          @default(now())
 
-  application Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  scoringRun  ScoringRun      @relation(fields: [scoringRunId], references: [id], onDelete: Cascade)
   requirement JobRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
 
-  @@index([applicationId])
+  @@index([scoringRunId])
+}
+
+/// One scoring attempt for an application, and the queue entry that drives
+/// it: QUEUED → RUNNING → SUCCEEDED | FAILED, with retryable failures going
+/// back to QUEUED until `nextAttemptAt`. Rows are kept after completion as
+/// the reproducibility record (model, prompt version, input hash, usage).
+model ScoringRun {
+  id               String           @id @default(cuid())
+  companyId        String
+  applicationId    String
+  actorId          String?
+  status           ScoringRunStatus @default(QUEUED)
+  model            String
+  promptVersion    String
+  temperature      Float
+  /// sha256 of everything that shapes the output; equal hashes reuse a result.
+  inputHash        String
+  attempts         Int              @default(0)
+  nextAttemptAt    DateTime         @default(now())
+  lockedAt         DateTime?
+  finishedAt       DateTime?
+  aiScore          Int?
+  aiSummary        String?
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  rawOutput        String?
+  /// User-safe failure reason, shown on the application page.
+  error            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  application Application  @relation("ApplicationScoringRuns", fields: [applicationId], references: [id], onDelete: Cascade)
+  actor       User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  latestFor   Application? @relation("LatestScoringRun")
+  evaluations Evaluation[]
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, status])
+  @@index([applicationId, createdAt(sort: Desc)])
+  @@index([companyId, inputHash])
+  @@index([actorId])
 }
 
 model Scorecard {

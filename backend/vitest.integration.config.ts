@@ -24,8 +24,9 @@ export default defineConfig({
     env: {
       DATABASE_URL: testDatabaseUrl,
       AUTH_SECRET: process.env.AUTH_SECRET ?? "integration-test-secret-value",
-      // Blanked so no test can reach a paid LLM or send a real email.
-      GROQ_API_KEY: "",
+      // Scoring requests need a key to be accepted; this one is invalid, so
+      // nothing can reach a paid LLM — the queue tests inject an evaluator.
+      GROQ_API_KEY: "integration-test-invalid-key",
       RESEND_API_KEY: "",
       SMTP_HOST: "",
     },

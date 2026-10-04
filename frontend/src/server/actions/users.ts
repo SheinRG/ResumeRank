@@ -41,7 +41,7 @@ const updateUserRoleSchema = z.object({
 export async function updateUserRoleAction(
   input: unknown,
 ): Promise<ActionResult<TeamMember>> {
-  return runAction(async () => {
+  return runAction("updateUserRole", async () => {
     const parsed = updateUserRoleSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -61,7 +61,7 @@ export async function updateUserRoleAction(
 export async function removeMemberAction(
   input: unknown,
 ): Promise<ActionResult<TeamMember>> {
-  return runAction(async () => {
+  return runAction("removeMember", async () => {
     const parsed = removeMemberSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -81,7 +81,7 @@ export async function removeMemberAction(
 export async function updateProfileAction(
   input: unknown,
 ): Promise<ActionResult<TeamMember>> {
-  return runAction(async () => {
+  return runAction("updateProfile", async () => {
     const parsed = updateProfileSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -132,7 +132,7 @@ export async function updateProfileAction(
 export async function changePasswordAction(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  return runAction(async () => {
+  return runAction("changePassword", async () => {
     const parsed = changePasswordSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -230,7 +230,7 @@ export async function signOutEverywhereAction(): Promise<void> {
 export async function updateNotificationPreferencesAction(
   input: unknown,
 ): Promise<ActionResult<{ notifyByEmail: boolean }>> {
-  return runAction(async () => {
+  return runAction("updateNotificationPreferences", async () => {
     const parsed = notificationPreferencesSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -255,7 +255,7 @@ export async function updateNotificationPreferencesAction(
 export async function deleteAccountAction(
   input: unknown,
 ): Promise<ActionResult<{ deleted: true }>> {
-  return runAction(async () => {
+  return runAction("deleteAccount", async () => {
     const parsed = deleteAccountSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(

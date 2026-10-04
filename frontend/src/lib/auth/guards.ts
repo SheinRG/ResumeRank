@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
+import { annotateLogContext } from "@resumerank/core/observability/log";
 import type { Role } from "@resumerank/core/validators/enums";
 import type { TenantContext } from "@resumerank/core/services/context";
 
@@ -39,6 +40,7 @@ export async function requireUser(): Promise<CurrentUser> {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) throw new GateError("You need to sign in to do that.");
+  annotateLogContext({ userId: id });
 
   const user = await db.user.findUnique({
     where: { id },
@@ -56,6 +58,7 @@ export async function requireUser(): Promise<CurrentUser> {
   });
   if (!user) throw new GateError("Your account no longer exists.");
   const { company, sessionVersion, ...rest } = user;
+  annotateLogContext({ companyId: user.companyId });
   if (sessionVersion !== session.user.sessionVersion) {
     throw new GateError("Your session has ended. Log in again to continue.");
   }

@@ -900,6 +900,7 @@ async function main(): Promise<void> {
       db.activityLog.deleteMany(),
       db.scorecard.deleteMany(),
       db.evaluation.deleteMany(),
+      db.scoringRun.deleteMany(),
       db.application.deleteMany(),
       db.jobRequirement.deleteMany(),
       db.candidate.deleteMany(),
@@ -1067,6 +1068,7 @@ async function main(): Promise<void> {
         )
       : null;
 
+    const scoredAt = daysAgo(a.createdDaysAgo - 1);
     const created = await db.application.create({
       data: {
         jobId,
@@ -1074,26 +1076,50 @@ async function main(): Promise<void> {
         stage: a.stage,
         aiScore,
         aiSummary: scored ? a.summary : null,
-        scoredAt: scored ? daysAgo(a.createdDaysAgo - 1) : null,
+        scoredAt: scored ? scoredAt : null,
         companyId: company.id,
         createdById: demo.id,
         createdAt: daysAgo(a.createdDaysAgo),
-        evaluations: scored
-          ? {
-              create: evals.map((e) => ({
-                requirementId: requirementIds[e.requirementIndex],
-                criterion: job.requirements[e.requirementIndex].label,
-                weight: job.requirements[e.requirementIndex].weight,
-                verdict: e.verdict,
-                evidence: e.evidence,
-                note: e.note,
-                createdAt: daysAgo(a.createdDaysAgo - 1),
-              })),
-            }
-          : undefined,
       },
     });
     applicationIdByKey.set(`${a.jobKey}/${a.candidateKey}`, created.id);
+
+    if (scored) {
+      // Seeded scores carry a "seed" hash that never matches a real one, so
+      // rescoring a demo applicant always asks the model.
+      const run = await db.scoringRun.create({
+        data: {
+          companyId: company.id,
+          applicationId: created.id,
+          actorId: demo.id,
+          status: "SUCCEEDED",
+          model: "seed",
+          promptVersion: "seed",
+          temperature: 0.2,
+          inputHash: "seed",
+          attempts: 1,
+          aiScore,
+          aiSummary: a.summary,
+          createdAt: scoredAt,
+          finishedAt: scoredAt,
+          evaluations: {
+            create: evals.map((e) => ({
+              requirementId: requirementIds[e.requirementIndex],
+              criterion: job.requirements[e.requirementIndex].label,
+              weight: job.requirements[e.requirementIndex].weight,
+              verdict: e.verdict,
+              evidence: e.evidence,
+              note: e.note,
+              createdAt: scoredAt,
+            })),
+          },
+        },
+      });
+      await db.application.update({
+        where: { id: created.id },
+        data: { latestScoringRunId: run.id },
+      });
+    }
 
     await db.activityLog.create({
       data: {

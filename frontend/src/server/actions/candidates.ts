@@ -21,7 +21,7 @@ import { actionError, actionOk, type ActionResult } from "@resumerank/core/types
 export async function createCandidateAction(
   input: unknown,
 ): Promise<ActionResult<Candidate>> {
-  return runAction(async () => {
+  return runAction("createCandidate", async () => {
     const parsed = candidateCreateSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -42,7 +42,7 @@ export async function createCandidateAction(
 export async function updateCandidateAction(
   input: unknown,
 ): Promise<ActionResult<Candidate>> {
-  return runAction(async () => {
+  return runAction("updateCandidate", async () => {
     const parsed = candidateUpdateSchema.safeParse(input);
     if (!parsed.success) {
       return actionError(
@@ -63,7 +63,7 @@ export async function updateCandidateAction(
 export async function deleteCandidateAction(
   id: string,
 ): Promise<ActionResult<Candidate>> {
-  return runAction(async () => {
+  return runAction("deleteCandidate", async () => {
     const user = await requireWriter();
     const candidate = await deleteCandidate(tenantContext(user), id);
 
@@ -77,7 +77,7 @@ export async function deleteCandidateAction(
 export async function extractCandidateProfileAction(
   resumeText: unknown,
 ): Promise<ActionResult<CandidateProfile>> {
-  return runAction(async () => {
+  return runAction("extractCandidateProfile", async () => {
     const user = await requireWriter();
 
     const parsed = resumeTextSchema.safeParse(resumeText);

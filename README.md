@@ -126,7 +126,7 @@ Full contract and defaults live in `backend/src/env.ts`.
 | `AUTH_GOOGLE_ID`      | No                           | Google OAuth client id. The Google sign-in button hides itself when unset.           |
 | `AUTH_GOOGLE_SECRET`  | No                           | Google OAuth client secret.                                                          |
 | `GROQ_API_KEY`        | No (required for live scoring) | Groq API key. Without it, scoring returns a clear "not configured" message.       |
-| `GROQ_MODEL`          | No (default provided)        | Groq model name. Defaults to `llama-3.3-70b-versatile`.                              |
+| `GROQ_MODEL`          | No (default provided)        | Groq model name. Defaults to `openai/gpt-oss-120b`.                                  |
 | `RESEND_API_KEY`      | No                           | Resend API key. Without it, verification/reset links are logged to the server console. |
 | `EMAIL_FROM`          | No (default provided)        | From address for transactional email.                                                |
 | `NEXT_PUBLIC_APP_URL` | No (default provided)        | Public app URL, used for SEO metadata and links inside emails.                       |

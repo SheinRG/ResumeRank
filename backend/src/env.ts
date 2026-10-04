@@ -11,7 +11,8 @@ const envSchema = z.object({
   AUTH_GOOGLE_ID: z.string().optional(),
   AUTH_GOOGLE_SECRET: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().default("llama-3.3-70b-versatile"),
+  // Groq retires models; llama-3.3-70b-versatile was withdrawn in 2026.
+  GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
   RESEND_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
@@ -19,6 +20,8 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default("ResumeRank <onboarding@resend.dev>"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  /** Bearer token a scheduler sends to /api/cron/scoring; the route is disabled without it. */
+  CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 
 let cached: z.infer<typeof envSchema> | null = null;

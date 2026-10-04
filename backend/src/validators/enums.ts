@@ -46,3 +46,7 @@ export type Stage = z.infer<typeof stageSchema>;
 export const VERDICTS = ["STRONG", "PARTIAL", "MISSING"] as const;
 export const verdictSchema = z.enum(VERDICTS);
 export type Verdict = z.infer<typeof verdictSchema>;
+
+export const SCORING_RUN_STATUSES = ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"] as const;
+export const scoringRunStatusSchema = z.enum(SCORING_RUN_STATUSES);
+export type ScoringRunStatus = z.infer<typeof scoringRunStatusSchema>;
