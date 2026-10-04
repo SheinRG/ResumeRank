@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Application, Prisma } from "../generated/prisma/client";
 import type { CandidateSource, RequirementWeight, Stage, Verdict } from "../validators/enums";
@@ -104,14 +104,14 @@ export async function listApplicationsForJob(
   params: ApplicationListParams,
 ): Promise<Paged<ApplicationListItem>> {
   const where = buildApplicationWhere(ctx.companyId, jobId, params);
-  const total = await db.application.count({ where });
+  const total = await tenantDb(ctx).application.count({ where });
   const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
 
   if (overflow) {
     return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
   }
 
-  const applications = await db.application.findMany({
+  const applications = await tenantDb(ctx).application.findMany({
     where,
     orderBy: buildApplicationOrderBy(params.sort),
     skip,
@@ -128,7 +128,7 @@ export async function listApplicationsForJob(
 
   const applicationIds = applications.map((a) => a.id);
   const verdictGroups = applicationIds.length
-    ? await db.evaluation.groupBy({
+    ? await tenantDb(ctx).evaluation.groupBy({
         by: ["applicationId", "verdict"],
         where: { applicationId: { in: applicationIds } },
         _count: { _all: true },
@@ -172,7 +172,7 @@ export async function getApplication(
   ctx: TenantContext,
   id: string,
 ): Promise<ApplicationDetail | null> {
-  return db.application.findUnique({
+  return tenantDb(ctx).application.findUnique({
     where: { id, companyId: ctx.companyId },
     include: {
       job: { include: { requirements: { orderBy: { order: "asc" } } } },
@@ -194,11 +194,11 @@ export async function createApplication(
   const { jobId, candidateId } = input;
 
   const [job, candidate] = await Promise.all([
-    db.job.findUnique({
+    tenantDb(ctx).job.findUnique({
       where: { id: jobId, companyId: ctx.companyId },
       select: { id: true, title: true, status: true },
     }),
-    db.candidate.findUnique({
+    tenantDb(ctx).candidate.findUnique({
       where: { id: candidateId, companyId: ctx.companyId },
       select: { id: true, name: true },
     }),
@@ -218,7 +218,7 @@ export async function createApplication(
   }
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await tenantDb(ctx).$transaction(async (tx) => {
       const application = await tx.application.create({
         data: { jobId, candidateId, companyId: ctx.companyId, createdById: ctx.actorId },
       });
@@ -250,7 +250,7 @@ export async function updateStage(
   assertCanWrite(ctx);
   const { id, stage } = input;
 
-  return db.$transaction(async (tx) => {
+  return tenantDb(ctx).$transaction(async (tx) => {
     const existing = await tx.application.findUnique({
       where: { id, companyId: ctx.companyId, deletedAt: null },
       select: { stage: true, candidate: { select: { name: true } } },
@@ -286,7 +286,7 @@ export async function setApplicationRemoved(
   assertCanWrite(ctx);
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await tenantDb(ctx).$transaction(async (tx) => {
       const { candidate, ...application } = await tx.application.update({
         where: { id, companyId: ctx.companyId },
         data: { deletedAt: removed ? new Date() : null },

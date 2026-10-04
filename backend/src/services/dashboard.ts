@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { STAGES, type Stage } from "../validators/enums";
 import type { TenantContext } from "./context";
 import {
@@ -117,35 +117,35 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
     recentInRange,
     recentActivityRows,
   ] = await Promise.all([
-    db.job.count({ where: { companyId, status: "OPEN" } }),
-    db.job.count({ where: { companyId } }),
-    db.candidate.count({ where: { companyId } }),
-    db.candidate.count({ where: { companyId, createdAt: { gte: recentSince } } }),
-    db.application.count({
+    tenantDb(ctx).job.count({ where: { companyId, status: "OPEN" } }),
+    tenantDb(ctx).job.count({ where: { companyId } }),
+    tenantDb(ctx).candidate.count({ where: { companyId } }),
+    tenantDb(ctx).candidate.count({ where: { companyId, createdAt: { gte: recentSince } } }),
+    tenantDb(ctx).application.count({
       where: { companyId, deletedAt: null, stage: { in: [...ACTIVE_STAGES] } },
     }),
-    db.application.aggregate({
+    tenantDb(ctx).application.aggregate({
       where: { companyId, deletedAt: null, aiScore: { not: null } },
       _avg: { aiScore: true },
       _count: { aiScore: true },
     }),
-    db.application.groupBy({
+    tenantDb(ctx).application.groupBy({
       by: ["stage"],
       where: { companyId, deletedAt: null },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: number; count: number }>>`
+    tenantDb(ctx).$queryRaw<Array<{ bucket: number; count: number }>>`
       SELECT LEAST(${SCORE_BUCKET_COUNT}, floor("aiScore"::numeric / ${SCORE_BUCKET_WIDTH}) + 1)::int AS bucket,
              count(*)::int AS count
       FROM "Application"
       WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL AND "aiScore" IS NOT NULL
       GROUP BY bucket
     `,
-    db.application.findMany({
+    tenantDb(ctx).application.findMany({
       where: { companyId, deletedAt: null, createdAt: { gte: earliestWeekStart } },
       select: { createdAt: true },
     }),
-    db.activityLog.findMany({
+    tenantDb(ctx).activityLog.findMany({
       where: { companyId },
       take: RECENT_ACTIVITY_LIMIT,
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],

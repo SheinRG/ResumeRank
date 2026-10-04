@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import { checkAiQuota } from "../rate-limit";
 import { requestEvaluation } from "../scoring/engine";
@@ -27,7 +27,7 @@ export async function scoreApplication(
   assertCanWrite(ctx);
   const { companyId } = ctx;
 
-  const application = await db.application.findUnique({
+  const application = await tenantDb(ctx).application.findUnique({
     where: { id: applicationId, companyId },
     select: {
       jobId: true,
@@ -83,7 +83,7 @@ export async function scoreApplication(
     })),
   );
 
-  await db.$transaction(async (tx) => {
+  await tenantDb(ctx).$transaction(async (tx) => {
     // The tenant-scoped update runs first: if the application has left the
     // tenant, it throws and the evaluation writes never happen.
     await tx.application.update({

@@ -39,7 +39,7 @@ Backend modules are imported by name: `@resumerank/core/db`, `@resumerank/core/v
 - Business logic lives in `@resumerank/core/services/*`. Every service function takes a `TenantContext { companyId, actorId, role }` (`@resumerank/core/services/context`) first, re-asserts the role (`assertCanWrite` / `assertCanAdmin`), and throws `DomainError` subclasses (`NotFoundError`, `ForbiddenError`, `ConflictError` from `@resumerank/core/services/errors`) for expected failures.
 - Every mutation: is a service function that writes **and** calls `logActivity(input, tx)` inside the same `db.$transaction`, and returns the mutated record. It is exposed through a server action in `frontend/src/server/actions/` that parses with the shared Zod schema, starts with a guard (`requireWriter()` / `requireAdmin()` from `@/lib/auth/guards`), builds the context with `tenantContext(user)`, calls the service, revalidates, and returns `ActionResult<T>` via `runAction()` (`@/server/run-action`), which maps `DomainError`s to their message.
 - Never trust a client-sent role or id claim; guards re-fetch the user from the DB.
-- **Tenancy is not optional.** Every read or write on a tenant-owned model (`Job`, `Candidate`, `Application`, `ActivityLog`) goes through a service that scopes by `ctx.companyId` (the context comes from `requireMember()` / `requireWriter()` / `requireAdmin()` via `tenantContext()`) — never query one of these models without a company filter. Every create sets `companyId` from the context, not from client input. `logActivity` requires a `companyId` on every call. Cross-tenant ids must behave as if they don't exist (404/not-found, never a leak).
+- **Tenancy is not optional.** Every read or write on a tenant-owned model (`Job`, `Candidate`, `Application`, `ActivityLog`) goes through a service that scopes by `ctx.companyId` (the context comes from `requireMember()` / `requireWriter()` / `requireAdmin()` via `tenantContext()`) — never query one of these models without a company filter. Every create sets `companyId` from the context, not from client input. `logActivity` requires a `companyId` on every call. Cross-tenant ids must behave as if they don't exist (404/not-found, never a leak). Services query through `tenantDb(ctx)` (`backend/src/tenant-db.ts`), a Prisma extension that injects `companyId` into top-level queries on those four models and throws `TenantViolationError` on a mismatch — a backstop, not a substitute: keep the explicit `companyId` filters, and scope nested relation writes and raw SQL yourself.
 - Secrets only via `env()` from `@resumerank/core/env` (server-only). Nothing secret behind `NEXT_PUBLIC_`.
 
 ## Design system
@@ -58,10 +58,10 @@ A two-tone **ink + lime** language. All tokens live in `frontend/src/app/globals
 ## Commands
 
 Run from the repo root; the root scripts fan out to the right workspace.
-- `npm run typecheck` (both workspaces) · `npm run lint` (frontend) · `npm run test` (backend vitest) · `npm run build` (generates the Prisma client, then builds the frontend).
+- `npm run typecheck` (both workspaces) · `npm run lint` (frontend) · `npm run test` (backend vitest) · `npm run test:integration` (backend vitest against a disposable Postgres in `TEST_DATABASE_URL`) · `npm run build` (generates the Prisma client, then builds the frontend).
 - Dev server: `npm run dev -- -p 3005` (port 3000 is taken by another local project).
 - Local DB: Postgres in Docker on port 5433 (see `.env`); `npm run db:migrate`, `npm run db:seed` (proxied to the backend workspace). Demo login: `demo@resumerank.app` / `demo1234`.
-- Backend unit tests live in `backend/tests/unit`; frontend e2e (`npm run test:e2e`) uses Playwright.
+- Backend unit tests live in `backend/tests/unit`, tenant-isolation integration tests in `backend/tests/integration` (add a probe there for every new service that takes an id); frontend e2e (`npm run test:e2e`) uses Playwright.
 
 ## Structure
 

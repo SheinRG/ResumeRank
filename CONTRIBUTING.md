@@ -19,10 +19,22 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run test
+npm run test:integration
 npm run build
 ```
 
-All four must pass — CI runs the same checks on every push and PR.
+All five must pass — CI runs the same checks on every push and PR.
+
+### Integration tests
+
+`npm run test:integration` runs the backend services against a real Postgres and proves tenant isolation: two workspaces are seeded and every service is probed with the other tenant's ids. It needs a **disposable** database in `TEST_DATABASE_URL` (in `.env` or the shell) — the suite applies migrations to it and writes and deletes rows, and it never falls back to `DATABASE_URL`:
+
+```bash
+docker run --name resumerank-test-db   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=resumerank_test   -p 5434:5432 -d postgres:16-alpine
+
+# .env
+TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5434/resumerank_test"
+```
 
 ## Branches & commits
 

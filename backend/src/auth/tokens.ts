@@ -86,6 +86,13 @@ interface CreateCompanyInviteInput {
   invitedById: string;
 }
 
+/** Only the delegate this needs, so a tenant-scoped transaction client fits too. */
+interface InviteWriter {
+  companyInvite: {
+    upsert(args: Prisma.CompanyInviteUpsertArgs): PromiseLike<CompanyInvite>;
+  };
+}
+
 /**
  * Re-inviting the same email replaces the pending invite rather than
  * accumulating rows — the unique [companyId, email] constraint means this is
@@ -94,7 +101,7 @@ interface CreateCompanyInviteInput {
  */
 export async function createCompanyInvite(
   input: CreateCompanyInviteInput,
-  client: Prisma.TransactionClient = db,
+  client: InviteWriter = db,
 ): Promise<{ invite: CompanyInvite; rawToken: string }> {
   const raw = generateToken();
   const invite = await client.companyInvite.upsert({

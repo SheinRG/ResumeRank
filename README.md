@@ -141,6 +141,7 @@ Full contract and defaults live in `backend/src/env.ts`.
 | `npm run lint`        | ESLint (flat config).                       |
 | `npm run typecheck`   | `tsc --noEmit`.                             |
 | `npm run test`        | Unit tests (Vitest, run once).              |
+| `npm run test:integration` | Tenant-isolation tests against `TEST_DATABASE_URL`. |
 | `npm run test:watch`  | Unit tests in watch mode.                   |
 | `npm run test:e2e`    | End-to-end tests (Playwright).              |
 | `npm run db:generate` | Regenerate the Prisma client.               |
@@ -155,6 +156,11 @@ Full contract and defaults live in `backend/src/env.ts`.
 - **Unit** (`backend/tests/unit`, Vitest): scoring math, LLM response parsing /
   reconciliation, validators, role capabilities, and the rate limiter — pure
   logic with no database or network dependency. `npm run test`.
+- **Integration** (`backend/tests/integration`, Vitest): seeds two workspaces in a
+  real Postgres and asserts every service treats the other tenant's ids as
+  not-found, plus the tenant-scoped Prisma client's guarantees. Needs a disposable
+  database in `TEST_DATABASE_URL` (see [CONTRIBUTING](CONTRIBUTING.md)).
+  `npm run test:integration`.
 - **End-to-end** (`frontend/tests/e2e`, Playwright): the golden path — sign in,
   reach the dashboard, and open a job's ranked applicant pipeline — against
   `http://localhost:3105`. Requires a **seeded** database (`npm run db:seed`).
