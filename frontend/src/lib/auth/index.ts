@@ -1,27 +1,47 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { db } from "@resumerank/core/db";
 import { isGoogleAuthEnabled } from "@resumerank/core/env";
 import { verifyPassword } from "@resumerank/core/auth/password";
+import {
+  beginLoginAttempt,
+  clearFailedLogins,
+  recordFailedLogin,
+} from "@resumerank/core/auth/login-throttle";
+import { clientIp } from "@resumerank/core/request-ip";
 import { loginSchema } from "@resumerank/core/validators/auth";
 import { roleSchema } from "@resumerank/core/validators/enums";
+
+export const TOO_MANY_LOGIN_ATTEMPTS = "too_many_attempts";
+
+/** Thrown instead of checking the password while an IP or account is throttled. */
+class TooManyLoginAttempts extends CredentialsSignin {
+  code = TOO_MANY_LOGIN_ATTEMPTS;
+}
 
 const providers = [
   Credentials({
     credentials: { email: {}, password: {} },
-    async authorize(credentials) {
+    // Throttling lives here, not in the login form's action: Auth.js also
+    // exposes this provider at POST /api/auth/callback/credentials, so any
+    // limit outside authorize() could be bypassed by posting there directly.
+    async authorize(credentials, request) {
       const parsed = loginSchema.safeParse(credentials);
       if (!parsed.success) return null;
+      const { email, password } = parsed.data;
 
-      const user = await db.user.findUnique({
-        where: { email: parsed.data.email },
-      });
-      if (!user?.passwordHash) return null;
+      const gate = await beginLoginAttempt(email, clientIp(request.headers));
+      if (!gate.allowed) throw new TooManyLoginAttempts();
 
-      const valid = await verifyPassword(parsed.data.password, user.passwordHash);
-      if (!valid) return null;
+      const user = await db.user.findUnique({ where: { email } });
+      const valid = user?.passwordHash ? await verifyPassword(password, user.passwordHash) : false;
+      if (!user || !valid) {
+        await recordFailedLogin(email);
+        return null;
+      }
+      await clearFailedLogins(email);
 
       return {
         id: user.id,

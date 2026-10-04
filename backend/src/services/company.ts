@@ -1,5 +1,6 @@
 import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
+import { getAiBudget, type AiBudget } from "../ai-budget";
 import type { Prisma } from "../generated/prisma/client";
 import type { UpdateCompanyInput } from "../validators/company";
 import { assertCanAdmin, type TenantContext } from "./context";
@@ -27,6 +28,11 @@ const COMPANY_DETAIL_SELECT = {
   size: true,
   location: true,
 } satisfies Prisma.CompanySelect;
+
+/** Tokens spent on AI over the rolling 30-day budget window, for the settings page. */
+export async function getAiUsage(ctx: TenantContext): Promise<AiBudget> {
+  return getAiBudget(ctx.companyId);
+}
 
 export async function getCompany(ctx: TenantContext): Promise<CompanyDetail | null> {
   return tenantDb(ctx).company.findUnique({

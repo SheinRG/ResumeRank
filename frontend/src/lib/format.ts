@@ -4,6 +4,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
+const numberFormatter = new Intl.NumberFormat("en-US");
+
+export function formatNumber(value: number): string {
+  return numberFormatter.format(value);
+}
+
 const relativeFormatter = new Intl.RelativeTimeFormat("en-US", {
   numeric: "auto",
 });

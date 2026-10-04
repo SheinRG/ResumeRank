@@ -1,6 +1,7 @@
 import { tenantDb } from "../tenant-db";
 import { csvRow } from "../csv";
 import { logActivity } from "../activity";
+import { assertAiBudget, chargeAiTokens } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
 import { extractCandidateProfile, type CandidateProfile } from "../extraction/engine";
 import type { Candidate, Prisma } from "../generated/prisma/client";
@@ -324,7 +325,10 @@ export async function extractProfile(
   resumeText: string,
 ): Promise<CandidateProfile> {
   assertCanWrite(ctx);
-  const overQuota = checkAiQuota({ userId: ctx.actorId, companyId: ctx.companyId });
+  await assertAiBudget(ctx.companyId);
+  const overQuota = await checkAiQuota({ userId: ctx.actorId, companyId: ctx.companyId });
   if (overQuota) throw new DomainError(overQuota);
-  return extractCandidateProfile(resumeText);
+  const { profile, tokens } = await extractCandidateProfile(resumeText);
+  await chargeAiTokens(ctx.companyId, tokens);
+  return profile;
 }

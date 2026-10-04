@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
+import { AI_BUDGET_EXHAUSTED, chargeAiTokens, getAiBudget } from "../ai-budget";
 import { tenantDb } from "../tenant-db";
 import { errorFields, log, withLogContext } from "../observability/log";
 import { DomainError } from "../services/errors";
@@ -191,6 +192,13 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
     return;
   }
 
+  // Re-checked per run: a 200-applicant batch must stop when the budget does.
+  const { remaining } = await getAiBudget(run.companyId);
+  if (remaining <= 0) {
+    await failRun(run, AI_BUDGET_EXHAUSTED);
+    return;
+  }
+
   let outcome: EvaluationOutcome;
   try {
     outcome = await evaluate(job, candidate.resumeText);
@@ -198,6 +206,8 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
     await retryOrFail(run, error);
     return;
   }
+  // The tokens are spent whether or not this worker still owns the run.
+  await chargeAiTokens(run.companyId, (outcome.promptTokens ?? 0) + (outcome.completionTokens ?? 0));
 
   const requirementById = new Map(job.requirements.map((r) => [r.id, r]));
   const aiScore = computeScore(
