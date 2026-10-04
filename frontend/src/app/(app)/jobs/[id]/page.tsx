@@ -19,6 +19,7 @@ import { AddCandidateDialog } from "@/components/jobs/add-candidate-dialog";
 import { ApplicantsTable } from "@/components/jobs/applicants-table";
 import { ApplicantsToolbar } from "@/components/jobs/applicants-toolbar";
 import { JobActionsMenu } from "@/components/jobs/job-actions-menu";
+import { ScoreAllButton } from "@/components/jobs/score-all-button";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import {
   EMPLOYMENT_TYPE_LABELS,
@@ -30,6 +31,10 @@ import { applicationListParamsSchema } from "@resumerank/core/validators/search"
 import { listApplicationsForJob } from "@/server/queries/applications";
 import { listCandidateOptions, type CandidateOption } from "@/server/queries/candidates";
 import { getJob } from "@/server/queries/jobs";
+import { getJobScoringProgress } from "@/server/queries/scoring";
+
+// Bulk scoring requests drain the queue after responding, inside this invocation.
+export const maxDuration = 60;
 
 type JobDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -64,10 +69,12 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
     notFound();
   }
 
-  const [applications, candidates] = await Promise.all([
+  const [applications, candidates, scoringProgress] = await Promise.all([
     listApplicationsForJob(job.id, listParams),
     writer ? listCandidateOptions() : Promise.resolve<CandidateOption[]>([]),
+    getJobScoringProgress(job.id),
   ]);
+  const canScore = writer && job.requirements.length > 0 && scoringProgress !== null;
 
   const hasFilters = listParams.q.trim() !== "" || listParams.stage !== undefined;
   const metaLine = [
@@ -162,7 +169,14 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
                 score.
               </CardDescription>
             </div>
-            {writer ? <AddCandidateDialog jobId={job.id} candidates={candidates} /> : null}
+            {writer ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {canScore && scoringProgress ? (
+                  <ScoreAllButton jobId={job.id} initialProgress={scoringProgress} />
+                ) : null}
+                <AddCandidateDialog jobId={job.id} candidates={candidates} />
+              </div>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

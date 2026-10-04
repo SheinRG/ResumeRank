@@ -3,7 +3,8 @@ import type { Prisma } from "./generated/prisma/client";
 
 interface ActivityInput {
   companyId: string;
-  actorId: string;
+  /** Null for work that outlived its requester, e.g. a queued run whose author was deleted. */
+  actorId: string | null;
   action: string;
   entityType: "job" | "candidate" | "application" | "user";
   entityId: string;

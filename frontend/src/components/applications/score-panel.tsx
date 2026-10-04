@@ -1,10 +1,18 @@
 import { Sparkles } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { ScoreButton, type ScoreBlocker } from "@/components/applications/score-button";
+import {
+  ScoreButton,
+  type ScoreBlocker,
+  type TrackedRun,
+} from "@/components/applications/score-button";
 import { formatDate, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { EvaluationItem } from "@/server/queries/applications";
+import type {
+  ApplicationScoring,
+  EvaluationItem,
+  ScoringHistoryItem,
+} from "@/server/queries/applications";
 
 function ringClasses(score: number): { stroke: string; text: string } {
   if (score >= 70) {
@@ -81,12 +89,52 @@ function TallyChip({
   );
 }
 
+/** Every successful run is kept, so a rescore never erases the score a decision was based on. */
+function ScoreHistory({ history }: { history: ScoringHistoryItem[] }) {
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-3">
+      <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+        Score history
+      </p>
+      <ol className="flex flex-col gap-1">
+        {history.map((run) => (
+          <li key={run.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <span className="font-mono font-semibold tabular-nums text-foreground">
+              {run.aiScore ?? "—"}
+            </span>
+            {run.finishedAt ? (
+              <span className="text-muted-foreground" title={formatDate(run.finishedAt)}>
+                {formatRelative(run.finishedAt)}
+              </span>
+            ) : null}
+            <span className="font-mono text-muted-foreground">{run.model}</span>
+            {run.current ? (
+              <span className="rounded-sm bg-accent/30 px-1.5 font-medium text-foreground">
+                current
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function trackedRun(scoring: ApplicationScoring): TrackedRun | null {
+  const { active } = scoring;
+  if (active && (active.status === "QUEUED" || active.status === "RUNNING")) {
+    return { id: active.id, status: active.status };
+  }
+  return null;
+}
+
 export function ScorePanel({
   applicationId,
   aiScore,
   aiSummary,
   scoredAt,
   evaluations,
+  scoring,
   writer,
   blocker,
 }: {
@@ -95,9 +143,13 @@ export function ScorePanel({
   aiSummary: string | null;
   scoredAt: Date | null;
   evaluations: EvaluationItem[];
+  scoring: ApplicationScoring;
   writer: boolean;
   blocker?: ScoreBlocker;
 }) {
+  const activeRun = trackedRun(scoring);
+  const lastFailure = scoring.lastFailure?.error ?? null;
+
   if (aiScore === null || scoredAt === null) {
     return (
       <Card>
@@ -115,7 +167,13 @@ export function ScorePanel({
             </div>
           </div>
           {writer ? (
-            <ScoreButton applicationId={applicationId} scored={false} blocker={blocker} />
+            <ScoreButton
+              applicationId={applicationId}
+              scored={false}
+              blocker={blocker}
+              activeRun={activeRun}
+              lastFailure={lastFailure}
+            />
           ) : null}
         </CardContent>
       </Card>
@@ -148,10 +206,17 @@ export function ScorePanel({
           {aiSummary ? (
             <p className="max-w-prose text-sm leading-relaxed text-foreground">{aiSummary}</p>
           ) : null}
+          {scoring.history.length > 1 ? <ScoreHistory history={scoring.history} /> : null}
         </div>
         {writer ? (
           <div className="shrink-0">
-            <ScoreButton applicationId={applicationId} scored blocker={blocker} />
+            <ScoreButton
+              applicationId={applicationId}
+              scored
+              blocker={blocker}
+              activeRun={activeRun}
+              lastFailure={lastFailure}
+            />
           </div>
         ) : null}
       </CardContent>

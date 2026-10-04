@@ -7,8 +7,10 @@ export type {
   ApplicationCandidateDetail,
   ApplicationDetail,
   ApplicationListItem,
+  ApplicationScoring,
   EvaluationItem,
   ScorecardItem,
+  ScoringHistoryItem,
 } from "@resumerank/core/services/applications";
 
 export async function listApplicationsForJob(

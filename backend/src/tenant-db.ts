@@ -6,6 +6,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "Candidate",
   "Application",
   "ActivityLog",
+  "ScoringRun",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

@@ -19,6 +19,8 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   EMAIL_FROM: z.string().default("ResumeRank <onboarding@resend.dev>"),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  /** Bearer token a scheduler sends to /api/cron/scoring; the route is disabled without it. */
+  CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 
 let cached: z.infer<typeof envSchema> | null = null;

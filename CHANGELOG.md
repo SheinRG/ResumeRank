@@ -8,6 +8,18 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Added
 
+- Background AI scoring: "Score with AI" queues the work and returns
+  immediately; the page follows the run (Queued, Scoring, result) and picks
+  it back up after a reload. Transient provider failures retry with backoff.
+- "Score all unscored" on a job scores every unscored applicant in one click,
+  with live progress; ranked rows show Queued/Scoring while in flight.
+- Score history: rescoring keeps every earlier score and its evidence, listed
+  on the application page.
+- Unchanged inputs are never rescored: an applicant whose resume, rubric,
+  model and prompt match an earlier result reuses it at no cost.
+- `GET /api/health` for uptime monitors; structured JSON logs and
+  OpenTelemetry traces, including LLM latency and token usage.
+
 - AI autofill on the add-candidate form: an "Autofill from resume" action extracts the candidate's name, email, and a synthesized headline from the pasted resume text via Groq, pre-filling the intake fields for review. Extracted emails are dropped unless they appear verbatim in the resume, matching the scoring engine's anti-hallucination checks.
 
 ## [1.1.0] - 2026-07-23

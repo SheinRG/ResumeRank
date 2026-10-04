@@ -3,11 +3,13 @@
 import { AlertCircle, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
-import { scoreApplicationAction } from "@/server/actions/scoring";
+import { scoringRunStatusSchema } from "@resumerank/core/validators/enums";
+import { requestScoringAction } from "@/server/actions/scoring";
 
 export interface ScoreBlocker {
   message: string;
@@ -15,30 +17,100 @@ export interface ScoreBlocker {
   linkLabel?: string;
 }
 
+export interface TrackedRun {
+  id: string;
+  status: "QUEUED" | "RUNNING";
+}
+
+const POLL_INTERVAL_MS = 2_000;
+const MAX_POLL_FAILURES = 3;
+
+const runSnapshotSchema = z.object({
+  status: scoringRunStatusSchema,
+  aiScore: z.number().nullable(),
+  error: z.string().nullable(),
+});
+
 export function ScoreButton({
   applicationId,
   scored,
   blocker,
+  activeRun,
+  lastFailure,
 }: {
   applicationId: string;
   scored: boolean;
   blocker?: ScoreBlocker;
+  /** A run already in flight when the page rendered; polling resumes on it. */
+  activeRun?: TrackedRun | null;
+  lastFailure?: string | null;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [tracked, setTracked] = useState<TrackedRun | null>(activeRun ?? null);
+  const [error, setError] = useState<string | null>(activeRun ? null : (lastFailure ?? null));
+  const [isRequesting, startTransition] = useTransition();
+  const trackedId = tracked?.id;
+
+  useEffect(() => {
+    if (!trackedId) return;
+    let cancelled = false;
+    let failures = 0;
+
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/scoring/runs/${trackedId}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`status ${response.status}`);
+        const run = runSnapshotSchema.parse(await response.json());
+        failures = 0;
+        if (cancelled) return;
+
+        if (run.status === "SUCCEEDED") {
+          setTracked(null);
+          toast.success(`Scored ${run.aiScore ?? 0}/100.`);
+          router.refresh();
+        } else if (run.status === "FAILED") {
+          const message = run.error ?? "Scoring failed. Try again.";
+          setTracked(null);
+          setError(message);
+          toast.error(message);
+          router.refresh();
+        } else {
+          const status = run.status;
+          setTracked((current) => (current && current.status !== status ? { ...current, status } : current));
+        }
+      } catch {
+        failures += 1;
+        if (!cancelled && failures >= MAX_POLL_FAILURES) {
+          setTracked(null);
+          setError("We couldn't check on this score. Refresh the page to see the latest result.");
+        }
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [trackedId, router]);
 
   function handleScore() {
     setError(null);
     startTransition(async () => {
-      const result = await scoreApplicationAction(applicationId);
+      const result = await requestScoringAction(applicationId);
       if (!result.ok) {
         setError(result.error);
         toast.error(result.error);
         return;
       }
-      toast.success(`Scored ${result.data.aiScore}/100.`);
-      router.refresh();
+      const { outcome, run } = result.data;
+      if (outcome === "reused") {
+        toast.success("Already up to date — nothing changed since this exact resume and rubric were scored.");
+        router.refresh();
+        return;
+      }
+      if (run.status === "QUEUED" || run.status === "RUNNING") {
+        setTracked({ id: run.id, status: run.status });
+      }
     });
   }
 
@@ -67,27 +139,40 @@ export function ScoreButton({
     );
   }
 
+  const busy = isRequesting || tracked !== null;
+  const label = isRequesting
+    ? "Queuing…"
+    : tracked?.status === "RUNNING"
+      ? "Scoring…"
+      : tracked
+        ? "Queued…"
+        : scored
+          ? "Rescore"
+          : "Score with AI";
+
   return (
     <div className="flex flex-col gap-2">
       <Button
         type="button"
         variant={scored ? "outline" : "default"}
         onClick={handleScore}
-        disabled={isPending}
+        disabled={busy}
       >
-        {isPending ? (
+        {busy ? (
           <Loader2 className="animate-spin" aria-hidden="true" />
         ) : (
           <Sparkles aria-hidden="true" />
         )}
-        {isPending ? "Scoring…" : scored ? "Rescore" : "Score with AI"}
+        {label}
       </Button>
-      {isPending ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Scoring — usually takes a few seconds.
-        </p>
-      ) : null}
-      {error && !isPending ? (
+      <p role="status" aria-live="polite" className="max-w-56 text-xs text-muted-foreground">
+        {tracked?.status === "RUNNING"
+          ? "Scoring — usually takes a few seconds."
+          : tracked
+            ? "Waiting for a free scoring slot. You can leave this page; it keeps going."
+            : null}
+      </p>
+      {error && !busy ? (
         <div
           role="alert"
           className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2"

@@ -15,6 +15,9 @@ import { canWrite, requireUser } from "@/lib/auth/guards";
 import { MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
 import { getApplication, type ApplicationDetail } from "@/server/queries/applications";
 
+// Scoring requests drain the queue after responding, inside this invocation.
+export const maxDuration = 60;
+
 export async function generateMetadata({
   params,
 }: {
@@ -103,6 +106,7 @@ export default async function ApplicationPage({
         aiSummary={application.aiSummary}
         scoredAt={application.scoredAt}
         evaluations={application.evaluations}
+        scoring={application.scoring}
         writer={canMutate}
         blocker={resolveBlocker(application)}
       />

@@ -1,7 +1,13 @@
 import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Application, Prisma } from "../generated/prisma/client";
-import type { CandidateSource, RequirementWeight, Stage, Verdict } from "../validators/enums";
+import type {
+  CandidateSource,
+  RequirementWeight,
+  ScoringRunStatus,
+  Stage,
+  Verdict,
+} from "../validators/enums";
 import type { ApplicationCreateInput, ApplicationStageInput } from "../validators/application";
 import { PAGE_SIZE, type ApplicationListParams } from "../validators/search";
 import type { Paged } from "../types/paged";
@@ -10,6 +16,7 @@ import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
 import { resolvePageWindow } from "./pagination";
 import type { JobDetail } from "./jobs";
+import type { ScoringRunView } from "./scoring";
 
 const APPLICATION_NOT_FOUND = "This application no longer exists.";
 
@@ -21,6 +28,8 @@ export interface ApplicationListItem {
   createdAt: Date;
   candidate: { id: string; name: string; email: string; headline: string | null };
   evaluationCounts: { strong: number; partial: number; missing: number };
+  /** Set while a run is queued or in flight, so the row can say so instead of "unscored". */
+  scoringStatus: Extract<ScoringRunStatus, "QUEUED" | "RUNNING"> | null;
 }
 
 export interface EvaluationItem {
@@ -52,6 +61,21 @@ export interface ApplicationCandidateDetail {
   createdAt: Date;
 }
 
+export interface ScoringHistoryItem {
+  id: string;
+  aiScore: number | null;
+  model: string;
+  finishedAt: Date | null;
+  current: boolean;
+}
+
+export interface ApplicationScoring {
+  active: ScoringRunView | null;
+  /** The most recent run, when it failed after the current score was produced. */
+  lastFailure: { error: string; finishedAt: Date | null } | null;
+  history: ScoringHistoryItem[];
+}
+
 export interface ApplicationDetail {
   id: string;
   stage: Stage;
@@ -64,7 +88,10 @@ export interface ApplicationDetail {
   candidate: ApplicationCandidateDetail;
   evaluations: EvaluationItem[];
   scorecards: ScorecardItem[];
+  scoring: ApplicationScoring;
 }
+
+const SCORE_HISTORY_LIMIT = 10;
 
 function buildApplicationWhere(
   companyId: string,
@@ -122,48 +149,53 @@ export async function listApplicationsForJob(
       aiScore: true,
       scoredAt: true,
       createdAt: true,
+      latestScoringRunId: true,
       candidate: { select: { id: true, name: true, email: true, headline: true } },
+      scoringRuns: {
+        where: { status: { in: ["QUEUED", "RUNNING"] } },
+        select: { status: true },
+        take: 1,
+      },
     },
   });
 
-  const applicationIds = applications.map((a) => a.id);
-  const verdictGroups = applicationIds.length
+  const latestRunIds = applications.flatMap((a) =>
+    a.latestScoringRunId ? [a.latestScoringRunId] : [],
+  );
+  const verdictGroups = latestRunIds.length
     ? await tenantDb(ctx).evaluation.groupBy({
-        by: ["applicationId", "verdict"],
-        where: { applicationId: { in: applicationIds } },
+        by: ["scoringRunId", "verdict"],
+        where: { scoringRunId: { in: latestRunIds } },
         _count: { _all: true },
       })
     : [];
 
-  const countsByApplication = new Map<
-    string,
-    { strong: number; partial: number; missing: number }
-  >();
+  const countsByRun = new Map<string, { strong: number; partial: number; missing: number }>();
   for (const group of verdictGroups) {
-    const entry = countsByApplication.get(group.applicationId) ?? {
-      strong: 0,
-      partial: 0,
-      missing: 0,
-    };
+    const entry = countsByRun.get(group.scoringRunId) ?? { strong: 0, partial: 0, missing: 0 };
     if (group.verdict === "STRONG") entry.strong = group._count._all;
     else if (group.verdict === "PARTIAL") entry.partial = group._count._all;
     else entry.missing = group._count._all;
-    countsByApplication.set(group.applicationId, entry);
+    countsByRun.set(group.scoringRunId, entry);
   }
 
-  const items: ApplicationListItem[] = applications.map((a) => ({
-    id: a.id,
-    stage: a.stage,
-    aiScore: a.aiScore,
-    scoredAt: a.scoredAt,
-    createdAt: a.createdAt,
-    candidate: a.candidate,
-    evaluationCounts: countsByApplication.get(a.id) ?? {
-      strong: 0,
-      partial: 0,
-      missing: 0,
-    },
-  }));
+  const items: ApplicationListItem[] = applications.map((a) => {
+    const activeStatus = a.scoringRuns[0]?.status;
+    return {
+      id: a.id,
+      stage: a.stage,
+      aiScore: a.aiScore,
+      scoredAt: a.scoredAt,
+      createdAt: a.createdAt,
+      candidate: a.candidate,
+      evaluationCounts: (a.latestScoringRunId && countsByRun.get(a.latestScoringRunId)) || {
+        strong: 0,
+        partial: 0,
+        missing: 0,
+      },
+      scoringStatus: activeStatus === "QUEUED" || activeStatus === "RUNNING" ? activeStatus : null,
+    };
+  });
 
   return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
 }
@@ -172,18 +204,63 @@ export async function getApplication(
   ctx: TenantContext,
   id: string,
 ): Promise<ApplicationDetail | null> {
-  return tenantDb(ctx).application.findUnique({
+  const application = await tenantDb(ctx).application.findUnique({
     where: { id, companyId: ctx.companyId },
     include: {
       job: { include: { requirements: { orderBy: { order: "asc" } } } },
       candidate: true,
-      evaluations: { orderBy: [{ requirement: { order: "asc" } }, { id: "asc" }] },
+      latestScoringRun: {
+        select: {
+          evaluations: { orderBy: [{ requirement: { order: "asc" } }, { id: "asc" }] },
+        },
+      },
       scorecards: {
         orderBy: { createdAt: "desc" },
         include: { reviewer: { select: { id: true, name: true, image: true } } },
       },
     },
   });
+  if (!application) return null;
+
+  const [active, mostRecent, succeeded] = await Promise.all([
+    tenantDb(ctx).scoringRun.findFirst({
+      where: { applicationId: id, status: { in: ["QUEUED", "RUNNING"] } },
+      select: {
+        id: true,
+        applicationId: true,
+        status: true,
+        aiScore: true,
+        error: true,
+        createdAt: true,
+        finishedAt: true,
+      },
+    }),
+    tenantDb(ctx).scoringRun.findFirst({
+      where: { applicationId: id, status: { in: ["SUCCEEDED", "FAILED"] } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { status: true, error: true, finishedAt: true },
+    }),
+    tenantDb(ctx).scoringRun.findMany({
+      where: { applicationId: id, status: "SUCCEEDED" },
+      orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+      take: SCORE_HISTORY_LIMIT,
+      select: { id: true, aiScore: true, model: true, finishedAt: true },
+    }),
+  ]);
+
+  const { latestScoringRun, latestScoringRunId, ...rest } = application;
+  return {
+    ...rest,
+    evaluations: latestScoringRun?.evaluations ?? [],
+    scoring: {
+      active,
+      lastFailure:
+        mostRecent?.status === "FAILED"
+          ? { error: mostRecent.error ?? "Scoring failed.", finishedAt: mostRecent.finishedAt }
+          : null,
+      history: succeeded.map((run) => ({ ...run, current: run.id === latestScoringRunId })),
+    },
+  };
 }
 
 export async function createApplication(

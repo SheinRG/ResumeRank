@@ -25,15 +25,16 @@ export interface TenantFixture {
   candidateId: string;
   candidateEmail: string;
   applicationId: string;
+  scoringRunId: string;
   inviteId: string;
   userIds: string[];
 }
 
 /**
- * A complete workspace — owner, member, viewer, job, candidate, application,
- * scorecard, invite and the activity they log — built through the real
- * services so the create paths run under the tenant-scoped client too. The
- * random tag keeps fixtures from colliding across runs on a shared database.
+ * A complete workspace — owner, member, viewer, job, candidate, a scored
+ * application, scorecard, invite and the activity they log — built through
+ * the real services so the create paths run under the tenant-scoped client
+ * too. The random tag keeps fixtures from colliding across runs.
  */
 export async function createTenant(label: string): Promise<TenantFixture> {
   const tag = `${label}-${randomUUID().slice(0, 8)}`;
@@ -84,6 +85,41 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     ownerCtx,
     scorecardSchema.parse({ applicationId: application.id, rating: 4 }),
   );
+  // A scored application, as the queue worker would leave it.
+  const run = await db.scoringRun.create({
+    data: {
+      companyId: company.id,
+      applicationId: application.id,
+      actorId: owner.id,
+      status: "SUCCEEDED",
+      model: "fixture",
+      promptVersion: "fixture",
+      temperature: 0.2,
+      inputHash: "fixture",
+      attempts: 1,
+      aiScore: 50,
+      aiSummary: "Fixture score.",
+      finishedAt: new Date(),
+      evaluations: {
+        create: job.requirements.map((r) => ({
+          requirementId: r.id,
+          criterion: r.label,
+          weight: r.weight,
+          verdict: "PARTIAL" as const,
+          note: "Fixture evaluation.",
+        })),
+      },
+    },
+  });
+  await db.application.update({
+    where: { id: application.id },
+    data: {
+      latestScoringRunId: run.id,
+      aiScore: 50,
+      aiSummary: "Fixture score.",
+      scoredAt: new Date(),
+    },
+  });
   const { invite } = await createCompanyInvite({
     companyId: company.id,
     email: `invitee-${tag}@example.test`,
@@ -100,6 +136,7 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     candidateId: candidate.id,
     candidateEmail,
     applicationId: application.id,
+    scoringRunId: run.id,
     inviteId: invite.id,
     userIds: [owner.id, member.id, viewer.id],
   };

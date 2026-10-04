@@ -68,4 +68,28 @@ describe("checkAiQuota", () => {
     expect(checkAiQuota({ userId: "fresh", companyId: "c1" })).toMatch(/hourly AI limit/);
     expect(checkAiQuota({ userId: "fresh", companyId: "c2" })).toBeNull();
   });
+
+  it("charges a bulk request one company unit per LLM call and one user unit", () => {
+    expect(checkAiQuota({ userId: "u1", companyId: "c1", calls: AI_COMPANY_LIMIT.max - 1 })).toBeNull();
+    expect(checkAiQuota({ userId: "u1", companyId: "c1", calls: 2 })).toMatch(/hourly AI limit/);
+    expect(checkAiQuota({ userId: "u1", companyId: "c1", calls: 1 })).toBeNull();
+  });
+});
+
+describe("rateLimit cost", () => {
+  beforeEach(() => {
+    resetRateLimits();
+  });
+
+  it("refuses a request that would overshoot without spending any budget", () => {
+    expect(rateLimit("k", WINDOW, 2).allowed).toBe(true);
+    expect(rateLimit("k", WINDOW, 2).allowed).toBe(false);
+    expect(rateLimit("k", WINDOW, 1).allowed).toBe(true);
+    expect(rateLimit("k", WINDOW, 1).allowed).toBe(false);
+  });
+
+  it("refuses a single request larger than the whole window", () => {
+    expect(rateLimit("big", WINDOW, 4).allowed).toBe(false);
+    expect(rateLimit("big", WINDOW, 3).allowed).toBe(true);
+  });
 });

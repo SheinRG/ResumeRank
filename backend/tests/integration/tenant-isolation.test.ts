@@ -22,7 +22,12 @@ import { getDashboardData } from "../../src/services/dashboard";
 import { NotFoundError } from "../../src/services/errors";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
 import { upsertScorecard } from "../../src/services/scorecards";
-import { scoreApplication } from "../../src/services/scoring";
+import {
+  getJobScoringProgress,
+  getScoringRun,
+  requestJobScoring,
+  requestScoring,
+} from "../../src/services/scoring";
 import {
   listPendingInvites,
   listTeam,
@@ -55,7 +60,7 @@ async function snapshot(tenant: TenantFixture) {
     db.candidate.findUnique({ where: { id: tenant.candidateId } }),
     db.application.findUnique({
       where: { id: tenant.applicationId },
-      include: { scorecards: true, evaluations: true },
+      include: { scorecards: true, scoringRuns: { include: { evaluations: true } } },
     }),
     db.user.findUnique({ where: { id: tenant.memberId } }),
     db.companyInvite.findUnique({ where: { id: tenant.inviteId } }),
@@ -83,6 +88,12 @@ describe("reads never return another tenant's rows", () => {
     expect(await getJob(a.owner, b.jobId)).toBeNull();
     expect(await getCandidate(a.owner, b.candidateId)).toBeNull();
     expect(await getApplication(a.owner, b.applicationId)).toBeNull();
+  });
+
+  it("hides another tenant's scoring runs and job progress", async () => {
+    expect(await getScoringRun(a.owner, b.scoringRunId)).toBeNull();
+    expect(await getJobScoringProgress(a.owner, b.jobId)).toBeNull();
+    expect((await getScoringRun(a.owner, a.scoringRunId))?.id).toBe(a.scoringRunId);
   });
 
   it("returns the caller's own rows by id", async () => {
@@ -228,7 +239,8 @@ describe("writes to another tenant's ids fail as not found", () => {
     await expect(
       upsertScorecard(a.owner, { applicationId: b.applicationId, rating: 1 }),
     ).rejects.toThrow(NotFoundError);
-    await expect(scoreApplication(a.owner, b.applicationId)).rejects.toThrow(NotFoundError);
+    await expect(requestScoring(a.owner, b.applicationId)).rejects.toThrow(NotFoundError);
+    await expect(requestJobScoring(a.owner, b.jobId)).rejects.toThrow(NotFoundError);
   });
 
   it("rejects role changes, removal and invite revocation", async () => {
