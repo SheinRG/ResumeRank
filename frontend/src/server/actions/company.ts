@@ -21,6 +21,7 @@ import {
   inviteMemberSchema,
   updateCompanySchema,
 } from "@resumerank/core/validators/company";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -87,6 +88,7 @@ export async function updateCompanyAction(
     const company = await updateCompany(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/company");
+    expireTenantReads(admin.companyId);
 
     return actionOk(company);
   });
@@ -135,6 +137,7 @@ export async function acceptPendingInviteAction(
     if (!joined) {
       return actionError("This invite is no longer valid.");
     }
+    expireTenantReads(invite.companyId);
 
     return actionOk({ companyId: invite.companyId });
   });
@@ -155,6 +158,7 @@ export async function inviteMemberAction(
     const invite = await inviteMember(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
+    expireTenantReads(admin.companyId);
 
     return actionOk(invite);
   });
@@ -172,6 +176,7 @@ export async function revokeInviteAction(
     const revoked = await revokeInvite(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
+    expireTenantReads(admin.companyId);
 
     return actionOk(revoked);
   });
@@ -234,6 +239,7 @@ export async function acceptInviteAction(
         "This invite link is invalid or has expired. Ask your admin to send a new one.",
       );
     }
+    expireTenantReads(invite.companyId);
 
     try {
       await signIn("credentials", {

@@ -9,6 +9,7 @@ import {
   updateJob,
   type JobDetail,
 } from "@resumerank/core/services/jobs";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
@@ -27,7 +28,7 @@ export async function createJobAction(
     const job = await createJob(tenantContext(user), parsed.data);
 
     revalidatePath("/jobs");
-    revalidatePath("/dashboard");
+    expireTenantReads(user.companyId);
 
     return actionOk(job);
   });
@@ -49,6 +50,7 @@ export async function updateJobAction(
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);
+    expireTenantReads(user.companyId);
 
     return actionOk(job);
   });
@@ -61,7 +63,7 @@ export async function archiveJobAction(id: string): Promise<ActionResult<JobDeta
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);
-    revalidatePath("/dashboard");
+    expireTenantReads(user.companyId);
 
     return actionOk(job);
   });
@@ -74,7 +76,7 @@ export async function reopenJobAction(id: string): Promise<ActionResult<JobDetai
 
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${job.id}`);
-    revalidatePath("/dashboard");
+    expireTenantReads(user.companyId);
 
     return actionOk(job);
   });

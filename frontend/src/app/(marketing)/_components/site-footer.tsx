@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cacheLife } from "next/cache";
 
 // lucide-react dropped its brand logos, so the GitHub mark is inlined here.
 function GithubMark() {
@@ -14,8 +15,16 @@ function GithubMark() {
   );
 }
 
-export function SiteFooter() {
-  const year = new Date().getFullYear();
+// Cached so the marketing page stays fully prerendered; a daily lifetime
+// rolls the year over on its own.
+async function copyrightYear(): Promise<number> {
+  "use cache";
+  cacheLife("days");
+  return new Date().getFullYear();
+}
+
+export async function SiteFooter() {
+  const year = await copyrightYear();
 
   return (
     <footer className="bg-brand-night px-6 pt-[110px] text-brand-cream">

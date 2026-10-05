@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
@@ -31,12 +33,16 @@ export interface CompanyUser extends CurrentUser {
 }
 
 /**
- * Resolves the signed-in user fresh from the database on every call, so a
+ * Resolves the signed-in user fresh from the database once per request, so a
  * role demotion takes effect on the next request — the JWT is never the
  * authorization source of truth. A token whose session version is behind the
  * user's has been revoked and is rejected the same way.
+ *
+ * Memoized per render with React `cache()`: the layout, the page and every
+ * query it calls share one session read and one user lookup. Server actions
+ * and route handlers run outside a render, so there it simply runs each call.
  */
-export async function requireUser(): Promise<CurrentUser> {
+export const requireUser = cache(async (): Promise<CurrentUser> => {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) throw new GateError("You need to sign in to do that.");
@@ -67,7 +73,7 @@ export async function requireUser(): Promise<CurrentUser> {
     companyName: company?.name ?? null,
     companyLogoUrl: company?.logoUrl ?? null,
   };
-}
+});
 
 /** Narrows to a user who has a company — onboarding must run before this passes. */
 export async function requireMember(): Promise<CompanyUser> {

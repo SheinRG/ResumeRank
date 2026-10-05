@@ -15,6 +15,7 @@ import {
   updateCandidate,
 } from "@resumerank/core/services/candidates";
 import type { CandidateProfile } from "@resumerank/core/extraction/engine";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
@@ -33,7 +34,7 @@ export async function createCandidateAction(
     const candidate = await createCandidate(tenantContext(user), parsed.data);
 
     revalidatePath("/candidates");
-    revalidatePath("/dashboard");
+    expireTenantReads(user.companyId);
 
     return actionOk(candidate);
   });
@@ -55,6 +56,7 @@ export async function updateCandidateAction(
 
     revalidatePath("/candidates");
     revalidatePath(`/candidates/${candidate.id}`);
+    expireTenantReads(user.companyId);
 
     return actionOk(candidate);
   });
@@ -68,7 +70,7 @@ export async function deleteCandidateAction(
     const candidate = await deleteCandidate(tenantContext(user), id);
 
     revalidatePath("/candidates");
-    revalidatePath("/dashboard");
+    expireTenantReads(user.companyId);
 
     return actionOk(candidate);
   });

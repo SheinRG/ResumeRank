@@ -153,9 +153,10 @@ describe("the worker", () => {
     const { run } = await requestScoring(a.owner, applicationId);
     const { evaluate, calls } = fakeEvaluator("STRONG");
 
-    const { processed } = await drainScoringQueue({ evaluate, lanes: 1 });
+    const { processed, companyIds } = await drainScoringQueue({ evaluate, lanes: 1 });
 
     expect(processed).toBe(1);
+    expect(companyIds).toHaveLength(1);
     expect(calls).toHaveLength(1);
     const stored = await runOf(run.id);
     expect(stored).toMatchObject({
