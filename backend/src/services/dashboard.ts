@@ -79,17 +79,6 @@ function lastNWeekStarts(n: number): Date[] {
   return starts;
 }
 
-function bucketByWeek(dates: Date[], weekStarts: Date[]): WeekPoint[] {
-  return weekStarts.map((weekStart, index) => {
-    const nextStart =
-      index + 1 < weekStarts.length
-        ? weekStarts[index + 1]
-        : new Date(weekStart.getTime() + MS_PER_WEEK);
-    const count = dates.filter((d) => d >= weekStart && d < nextStart).length;
-    return { weekStart, count };
-  });
-}
-
 // Human label for score-histogram bucket `index` (0-based). Counts are filled
 // from a SQL GROUP BY so the full (unbounded) scored set never enters memory.
 function scoreBucketLabel(index: number): string {
@@ -114,7 +103,7 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
     scoreAggregate,
     stageGroups,
     scoreBucketRows,
-    recentInRange,
+    weekRows,
     recentActivityRows,
   ] = await Promise.all([
     tenantDb(ctx).job.count({ where: { companyId, status: "OPEN" } }),
@@ -141,10 +130,14 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
       WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL AND "aiScore" IS NOT NULL
       GROUP BY bucket
     `,
-    tenantDb(ctx).application.findMany({
-      where: { companyId, deletedAt: null, createdAt: { gte: earliestWeekStart } },
-      select: { createdAt: true },
-    }),
+    // date_trunc('week') is the ISO (Monday) week, matching startOfIsoWeek;
+    // timestamps are stored as UTC, so both sides bucket in UTC.
+    tenantDb(ctx).$queryRaw<Array<{ weekStart: Date; count: number }>>`
+      SELECT date_trunc('week', "createdAt") AS "weekStart", count(*)::int AS count
+      FROM "Application"
+      WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL AND "createdAt" >= ${earliestWeekStart}
+      GROUP BY 1
+    `,
     tenantDb(ctx).activityLog.findMany({
       where: { companyId },
       take: RECENT_ACTIVITY_LIMIT,
@@ -171,10 +164,11 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
     (_, i) => ({ bucket: scoreBucketLabel(i), count: countByBucket.get(i + 1) ?? 0 }),
   );
 
-  const applicationsOverTime = bucketByWeek(
-    recentInRange.map((a) => a.createdAt),
-    weekStarts,
-  );
+  const countByWeek = new Map(weekRows.map((r) => [r.weekStart.getTime(), r.count]));
+  const applicationsOverTime: WeekPoint[] = weekStarts.map((weekStart) => ({
+    weekStart,
+    count: countByWeek.get(weekStart.getTime()) ?? 0,
+  }));
 
   return {
     stats: {

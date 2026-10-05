@@ -1,6 +1,6 @@
 import { tenantDb } from "../tenant-db";
 import { logActivity } from "../activity";
-import type { Prisma } from "../generated/prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import type { EmploymentType, JobStatus, RequirementWeight } from "../validators/enums";
 import type { JobCreateInput, JobUpdateInput } from "../validators/job";
 import { PAGE_SIZE, type JobListParams } from "../validators/search";
@@ -8,7 +8,16 @@ import type { Paged } from "../types/paged";
 import { assertCanWrite, type TenantContext } from "./context";
 import { NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
-import { resolvePageWindow } from "./pagination";
+import {
+  countCapped,
+  createdAtSort,
+  keysetPage,
+  parseStringKey,
+  past,
+  through,
+  type KeysetQuery,
+  type KeysetSort,
+} from "./pagination";
 
 export interface JobListItem {
   id: string;
@@ -63,10 +72,47 @@ function buildJobWhere(companyId: string, params: JobListParams): Prisma.JobWher
   };
 }
 
-function buildJobOrderBy(sort: JobListParams["sort"]): Prisma.JobOrderByWithRelationInput[] {
-  if (sort === "oldest") return [{ createdAt: "asc" }, { id: "asc" }];
-  if (sort === "title") return [{ title: "asc" }, { id: "asc" }];
-  return [{ createdAt: "desc" }, { id: "asc" }];
+const jobListSelect = {
+  id: true,
+  title: true,
+  location: true,
+  employmentType: true,
+  status: true,
+  createdAt: true,
+  _count: {
+    select: {
+      requirements: true,
+      applications: { where: { deletedAt: null } },
+    },
+  },
+} satisfies Prisma.JobSelect;
+
+type JobListRow = Prisma.JobGetPayload<{ select: typeof jobListSelect }>;
+const titleSort: KeysetSort<string, Prisma.JobWhereInput, Prisma.JobOrderByWithRelationInput[], JobListRow> = {
+  direction: "asc",
+  parseKey: parseStringKey,
+  seekWhere: (key, id, scan) => ({
+    title: through(scan, key),
+    OR: [{ title: past(scan, key) }, { title: key, id: past(scan, id) }],
+  }),
+  orderBy: (scan) => [{ title: scan }, { id: scan }],
+  keyOf: (row) => row.title,
+};
+
+function listJobsPage(
+  ctx: TenantContext,
+  params: JobListParams,
+  where: Prisma.JobWhereInput,
+) {
+  const fetch = (query: KeysetQuery<Prisma.JobWhereInput, Prisma.JobOrderByWithRelationInput[]>) =>
+    tenantDb(ctx).job.findMany({
+      where: query.where ? { AND: [where, query.where] } : where,
+      orderBy: query.orderBy,
+      take: query.take,
+      select: jobListSelect,
+    });
+  if (params.sort === "title") return keysetPage(titleSort, params, fetch);
+  return keysetPage(createdAtSort<JobListRow>(params.sort === "oldest" ? "asc" : "desc"), params, fetch);
 }
 
 export async function listJobs(
@@ -74,33 +120,11 @@ export async function listJobs(
   params: JobListParams,
 ): Promise<Paged<JobListItem>> {
   const where = buildJobWhere(ctx.companyId, params);
-  const total = await tenantDb(ctx).job.count({ where });
-  const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
-
-  if (overflow) {
-    return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
-  }
-
-  const jobs = await tenantDb(ctx).job.findMany({
-    where,
-    orderBy: buildJobOrderBy(params.sort),
-    skip,
-    take,
-    select: {
-      id: true,
-      title: true,
-      location: true,
-      employmentType: true,
-      status: true,
-      createdAt: true,
-      _count: {
-        select: {
-          requirements: true,
-          applications: { where: { deletedAt: null } },
-        },
-      },
-    },
-  });
+  const [{ total, totalCapped }, page] = await Promise.all([
+    countCapped((take) => tenantDb(ctx).job.count({ where, take })),
+    listJobsPage(ctx, params, where),
+  ]);
+  const jobs = page.items;
 
   const jobIds = jobs.map((job) => job.id);
   const scoreGroups = jobIds.length
@@ -134,7 +158,14 @@ export async function listJobs(
     };
   });
 
-  return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
+  return {
+    items,
+    total,
+    totalCapped,
+    pageSize: PAGE_SIZE,
+    nextCursor: page.nextCursor,
+    prevCursor: page.prevCursor,
+  };
 }
 
 export async function getJob(ctx: TenantContext, id: string): Promise<JobDetail | null> {
@@ -217,13 +248,27 @@ export async function updateJob(ctx: TenantContext, input: JobUpdateInput): Prom
       await tx.jobRequirement.deleteMany({ where: { jobId: id, id: { in: toDelete } } });
     }
 
-    for (const [index, requirement] of requirements.entries()) {
-      const data = { label: requirement.label, weight: requirement.weight, order: index };
-      if (requirement.id && existingIds.has(requirement.id)) {
-        await tx.jobRequirement.update({ where: { id: requirement.id, jobId: id }, data });
-      } else {
-        await tx.jobRequirement.create({ data: { ...data, jobId: id } });
-      }
+    const ordered = requirements.map((r, index) => ({ ...r, order: index }));
+    const updates = ordered.flatMap((r) => (r.id && existingIds.has(r.id) ? [{ ...r, id: r.id }] : []));
+    const creates = ordered.filter((r) => !(r.id && existingIds.has(r.id)));
+
+    // One statement for every edited row instead of a round trip each; the
+    // jobId match keeps it inside the job checked above.
+    if (updates.length) {
+      const rows = updates.map((r) => Prisma.sql`(${r.id}, ${r.label}, ${r.weight}, ${r.order})`);
+      await tx.$executeRaw`
+        UPDATE "JobRequirement" AS r
+        SET "label" = v.label,
+            "weight" = v.weight::"RequirementWeight",
+            "order" = v.ord::int
+        FROM (VALUES ${Prisma.join(rows)}) AS v(id, label, weight, ord)
+        WHERE r."id" = v.id AND r."jobId" = ${id}
+      `;
+    }
+    if (creates.length) {
+      await tx.jobRequirement.createMany({
+        data: creates.map((r) => ({ jobId: id, label: r.label, weight: r.weight, order: r.order })),
+      });
     }
 
     const job = await tx.job.findUniqueOrThrow({

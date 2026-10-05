@@ -25,11 +25,10 @@ import {
   EMPLOYMENT_TYPE_LABELS,
   REQUIREMENT_WEIGHT_LABELS,
 } from "@/components/jobs/labels";
-import { formatDate } from "@/lib/format";
+import { formatCount, formatDate } from "@/lib/format";
 import { canWrite, requireUser } from "@/lib/auth/guards";
 import { applicationListParamsSchema } from "@resumerank/core/validators/search";
 import { listApplicationsForJob } from "@/server/queries/applications";
-import { listCandidateOptions, type CandidateOption } from "@/server/queries/candidates";
 import { getJob } from "@/server/queries/jobs";
 import { getJobScoringProgress } from "@/server/queries/scoring";
 
@@ -58,7 +57,8 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
     q: typeof raw.q === "string" ? raw.q : undefined,
     stage: typeof raw.stage === "string" ? raw.stage : undefined,
     sort: typeof raw.sort === "string" ? raw.sort : undefined,
-    page: typeof raw.page === "string" ? raw.page : undefined,
+    after: typeof raw.after === "string" ? raw.after : undefined,
+    before: typeof raw.before === "string" ? raw.before : undefined,
   });
 
   const user = await requireUser();
@@ -69,9 +69,8 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
     notFound();
   }
 
-  const [applications, candidates, scoringProgress] = await Promise.all([
+  const [applications, scoringProgress] = await Promise.all([
     listApplicationsForJob(job.id, listParams),
-    writer ? listCandidateOptions() : Promise.resolve<CandidateOption[]>([]),
     getJobScoringProgress(job.id),
   ]);
   const canScore = writer && job.requirements.length > 0 && scoringProgress !== null;
@@ -165,8 +164,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             <div className="flex flex-col gap-1.5">
               <CardTitle>Applicants</CardTitle>
               <CardDescription>
-                {applications.total} applicant{applications.total === 1 ? "" : "s"}, ranked by
-                score.
+                {formatCount(applications, "applicant")}, ranked by score.
               </CardDescription>
             </div>
             {writer ? (
@@ -174,7 +172,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
                 {canScore && scoringProgress ? (
                   <ScoreAllButton jobId={job.id} initialProgress={scoringProgress} />
                 ) : null}
-                <AddCandidateDialog jobId={job.id} candidates={candidates} />
+                <AddCandidateDialog jobId={job.id} />
               </div>
             ) : null}
           </div>
@@ -221,7 +219,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
                 description="Attach a candidate to start scoring them against this job's requirements."
                 action={
                   writer ? (
-                    <AddCandidateDialog jobId={job.id} candidates={candidates} />
+                    <AddCandidateDialog jobId={job.id} />
                   ) : undefined
                 }
               />
@@ -229,7 +227,10 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
           ) : (
             <>
               <ApplicantsTable items={applications.items} canWrite={writer} />
-              <PaginationControl page={applications.page} pageCount={applications.pageCount} />
+              <PaginationControl
+                nextCursor={applications.nextCursor}
+                prevCursor={applications.prevCursor}
+              />
             </>
           )}
         </CardContent>

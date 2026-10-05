@@ -32,7 +32,8 @@ export function useListFilters(currentQuery: string) {
   function replaceParams(mutate: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
     mutate(params);
-    params.delete("page");
+    params.delete("after");
+    params.delete("before");
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   }

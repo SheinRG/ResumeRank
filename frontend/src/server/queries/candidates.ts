@@ -1,6 +1,9 @@
 import { requireMember, requireWriter, tenantContext } from "@/lib/auth/guards";
 import * as candidates from "@resumerank/core/services/candidates";
-import type { CandidateListParams } from "@resumerank/core/validators/search";
+import type {
+  CandidateListParams,
+  CandidateOptionParams,
+} from "@resumerank/core/validators/search";
 import type { Paged } from "@resumerank/core/types/paged";
 
 export type {
@@ -23,9 +26,13 @@ export async function getCandidate(id: string): Promise<candidates.CandidateDeta
   return candidates.getCandidate(tenantContext(user), id);
 }
 
-export async function listCandidateOptions(): Promise<candidates.CandidateOption[]> {
-  const user = await requireMember();
-  return candidates.listCandidateOptions(tenantContext(user));
+/** Only writers can attach candidates, so only they get the picker's search. */
+export async function searchCandidateOptions(
+  jobId: string,
+  params: CandidateOptionParams,
+): Promise<candidates.CandidateOption[]> {
+  const user = await requireWriter();
+  return candidates.searchCandidateOptions(tenantContext(user), jobId, params);
 }
 
 export async function exportCandidatesCsv(

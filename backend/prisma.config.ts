@@ -8,8 +8,11 @@ config({ path: resolve(process.cwd(), "../.env") });
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
+  // Migrations need a session-level connection (advisory locks, DDL), which a
+  // transaction-mode pooler can't give; DIRECT_URL bypasses it when set.
   datasource: {
-    url: process.env.DATABASE_URL,
+    url: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
   migrations: {
     path: "prisma/migrations",

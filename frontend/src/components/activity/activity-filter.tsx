@@ -30,7 +30,8 @@ export function ActivityFilter({ value }: { value: string }) {
     } else {
       params.set("entity", next);
     }
-    params.delete("page");
+    params.delete("after");
+    params.delete("before");
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   }

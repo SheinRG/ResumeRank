@@ -10,7 +10,6 @@ export async function GET(request: Request): Promise<Response> {
     q: url.searchParams.get("q") ?? undefined,
     source: url.searchParams.get("source") ?? undefined,
     sort: url.searchParams.get("sort") ?? undefined,
-    page: url.searchParams.get("page") ?? undefined,
   });
 
   let stream: ReadableStream<Uint8Array>;

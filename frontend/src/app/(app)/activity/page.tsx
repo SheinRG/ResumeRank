@@ -18,8 +18,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ActivityFilter } from "@/components/activity/activity-filter";
-import { ActivityPagination } from "@/components/activity/activity-pagination";
-import { formatDate, formatRelative, initials } from "@/lib/format";
+import { PaginationControl } from "@/components/shared/pagination-control";
+import { formatCount, formatDate, formatRelative, initials } from "@/lib/format";
+import { cursorParamSchema } from "@resumerank/core/validators/search";
 import { listActivity, type ActivityEntityType } from "@/server/queries/activity";
 
 export const metadata: Metadata = { title: "Activity" };
@@ -27,7 +28,8 @@ export const metadata: Metadata = { title: "Activity" };
 const ENTITY_VALUES = ["all", "job", "candidate", "application", "user"] as const;
 const searchParamsSchema = z.object({
   entity: z.enum(ENTITY_VALUES).catch("all"),
-  page: z.coerce.number().int().min(1).catch(1),
+  after: cursorParamSchema,
+  before: cursorParamSchema,
 });
 
 const ENTITY_LABELS: Record<ActivityEntityType, string> = {
@@ -45,11 +47,12 @@ export default async function ActivityPage({
   const raw = await searchParams;
   const parsed = searchParamsSchema.parse({
     entity: typeof raw.entity === "string" ? raw.entity : undefined,
-    page: typeof raw.page === "string" ? raw.page : undefined,
+    after: typeof raw.after === "string" ? raw.after : undefined,
+    before: typeof raw.before === "string" ? raw.before : undefined,
   });
 
   const entityType = parsed.entity === "all" ? undefined : parsed.entity;
-  const result = await listActivity({ entityType, page: parsed.page });
+  const result = await listActivity({ entityType, after: parsed.after, before: parsed.before });
   const hasFilter = parsed.entity !== "all";
 
   return (
@@ -65,7 +68,7 @@ export default async function ActivityPage({
             <ActivityFilter value={parsed.entity} />
             {result.total > 0 ? (
               <p className="text-sm text-muted-foreground">
-                {result.total} event{result.total === 1 ? "" : "s"}
+                {formatCount(result, "event")}
               </p>
             ) : null}
           </div>
@@ -135,7 +138,7 @@ export default async function ActivityPage({
                   ))}
                 </TableBody>
               </Table>
-              <ActivityPagination page={result.page} pageCount={result.pageCount} />
+              <PaginationControl nextCursor={result.nextCursor} prevCursor={result.prevCursor} />
             </>
           )}
         </CardContent>

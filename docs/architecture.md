@@ -152,12 +152,59 @@ client through the `@prisma/adapter-pg` driver adapter and caches a single
 instance on `globalThis` in development to survive hot reload:
 
 ```ts
-function createClient(): PrismaClient {
-  const adapter = new PrismaPg({ connectionString: env().DATABASE_URL });
-  return new PrismaClient({ adapter });
-}
-export const db = globalForPrisma.prisma ?? createClient();
+const adapter = new PrismaPg({
+  connectionString: config.DATABASE_URL,
+  max: config.DATABASE_POOL_MAX ?? (serverless ? 3 : 10),
+  connectionTimeoutMillis: 10_000,
+  statement_timeout: config.DATABASE_STATEMENT_TIMEOUT_MS, // omitted when 0
+});
 ```
+
+**Connections.** Every serverless instance holds its own pool, so the pool is
+small on Vercel (3) and the database is reached through a transaction-mode
+pooler (PgBouncer / Neon `-pooler`) in `DATABASE_URL`. Migrations need a
+session connection, so `prisma.config.ts` prefers `DIRECT_URL` when set;
+`backend/src/db.ts` warns at startup on Vercel when it isn't. The app holds no
+session state across statements (the scoring queue uses
+`pg_advisory_xact_lock`, which is transaction-scoped), so transaction pooling
+is safe. `statement_timeout` (default 15s) stops a runaway query from pinning
+a connection; it travels as a startup parameter, so set
+`DATABASE_STATEMENT_TIMEOUT_MS=0` and put it on the database role instead if
+a pooler rejects it.
+
+**Lists use keyset pagination.** Every list (jobs, candidates, applicants,
+activity) pages with opaque `after` / `before` cursors that encode the sort key
+and id of the edge row (`backend/src/services/pagination.ts`), never
+`OFFSET`, so page 400 costs the same as page 1. Each sort has a `KeysetSort`:
+its direction, a cursor-key parser, the "strictly past this row" condition and
+the `ORDER BY`. The id tie-breaker always sorts in the key's direction, so one
+index serves both the forward scan (Next) and the reversed scan (Prev, whose
+rows are flipped back afterwards). Every list sort has a matching index ending
+in `id`; the applicant score index is `aiScore DESC NULLS LAST` (hand-edited
+in the migration, since Prisma can't express null ordering) and partial on
+`deletedAt IS NULL`, like the other Application list indexes. A stale or
+hand-edited cursor restarts the list at page one. Totals are counted up to
+`COUNT_CAP` (1,000) and then shown as "1,000+", so a page never counts a whole
+large tenant.
+
+**Search.** Name, email, headline and job-title search use `ILIKE`, served by
+`pg_trgm` GIN indexes. Candidate search also matches resume text through
+`Candidate.resumeTsv`, a `tsvector` column the database generates from
+`resumeText` (GIN-indexed, queried with `websearch_to_tsquery`). Prisma can't
+filter on that column, so the candidate list selects ids with raw SQL (scoped
+to `companyId` by hand, since the tenant extension can't see into raw SQL)
+and then loads the rows with Prisma. The "Add candidate" picker on a job is a
+server-side typeahead (`GET /api/jobs/[id]/candidate-options`, 20 matches per
+query) instead of a list of every candidate.
+
+**Deletion policy, per entity.**
+
+| Entity | Policy | Why |
+| --- | --- | --- |
+| Application | Soft delete (`deletedAt`), restorable | Removing someone from a pipeline is often a mistake; restore brings back scores, runs and scorecards. Every application read filters `deletedAt: null` except the detail page, which shows a restore banner. |
+| Job | Never deleted; archived through `status = ARCHIVED` | A job anchors its applications and their scoring history; archived jobs drop out of the open-job pickers and refuse new applications. |
+| Candidate | Hard delete, cascading to applications, runs and evaluations | A candidate is personal data; deletion has to actually erase it (GDPR erasure). The activity log keeps only the entry's summary and id. |
+| User | Hard delete; authored activity is kept with a null actor ("Deleted user") | The audit trail outlives the account. |
 
 Requirements are first-class rows (`JobRequirement`), not a JSON blob on
 `Job`, so an `Evaluation` can foreign-key the exact requirement it judged and

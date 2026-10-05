@@ -10,6 +10,15 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
+/** "1 job", "25 jobs", or "1,000+ jobs" once a list stops counting exactly. */
+export function formatCount(
+  count: { total: number; totalCapped: boolean },
+  noun: string,
+): string {
+  const plural = count.total !== 1 || count.totalCapped;
+  return `${formatNumber(count.total)}${count.totalCapped ? "+" : ""} ${noun}${plural ? "s" : ""}`;
+}
+
 const relativeFormatter = new Intl.RelativeTimeFormat("en-US", {
   numeric: "auto",
 });
