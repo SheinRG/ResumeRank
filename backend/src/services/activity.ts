@@ -3,7 +3,7 @@ import { PAGE_SIZE } from "../validators/search";
 import type { Prisma } from "../generated/prisma/client";
 import type { Paged } from "../types/paged";
 import type { TenantContext } from "./context";
-import { resolvePageWindow } from "./pagination";
+import { countCapped, createdAtSort, keysetPage, type PageParams } from "./pagination";
 
 export type ActivityEntityType = "job" | "candidate" | "application" | "user";
 
@@ -24,9 +24,8 @@ export function toActivityActor(actor: ActivityActor | null): ActivityActor {
   return actor ?? DELETED_ACTOR;
 }
 
-export interface ActivityListParams {
+export interface ActivityListParams extends PageParams {
   entityType?: ActivityEntityType;
-  page: number;
 }
 
 export interface ActivityItem {
@@ -40,6 +39,8 @@ export interface ActivityItem {
   actor: ActivityActor;
 }
 
+type ActivityRow = Prisma.ActivityLogGetPayload<{ include: typeof activityActorInclude }>;
+
 export async function listActivity(
   ctx: TenantContext,
   params: ActivityListParams,
@@ -48,21 +49,25 @@ export async function listActivity(
     companyId: ctx.companyId,
     entityType: params.entityType,
   };
-  const total = await tenantDb(ctx).activityLog.count({ where });
-  const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
+  const [{ total, totalCapped }, page] = await Promise.all([
+    countCapped((take) => tenantDb(ctx).activityLog.count({ where, take })),
+    keysetPage(createdAtSort<ActivityRow>("desc"), params, (query) =>
+      tenantDb(ctx).activityLog.findMany({
+        where: query.where ? { AND: [where, query.where] } : where,
+        orderBy: query.orderBy,
+        take: query.take,
+        include: activityActorInclude,
+      }),
+    ),
+  ]);
+  const items = page.items.map((row) => ({ ...row, actor: toActivityActor(row.actor) }));
 
-  if (overflow) {
-    return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
-  }
-
-  const rows = await tenantDb(ctx).activityLog.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-    skip,
-    take,
-    include: activityActorInclude,
-  });
-  const items = rows.map((row) => ({ ...row, actor: toActivityActor(row.actor) }));
-
-  return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
+  return {
+    items,
+    total,
+    totalCapped,
+    pageSize: PAGE_SIZE,
+    nextCursor: page.nextCursor,
+    prevCursor: page.prevCursor,
+  };
 }

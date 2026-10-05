@@ -36,6 +36,8 @@ docker run --name resumerank-test-db   -e POSTGRES_PASSWORD=postgres -e POSTGRES
 TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5434/resumerank_test"
 ```
 
+When a migration needs hand edits Prisma can't express (generated columns, `NULLS LAST` indexes), declare the matching shape in `schema.prisma` and check for drift with `npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --script` (from `backend/`, with an empty scratch database in `SHADOW_DATABASE_URL`); it should report an empty migration.
+
 ## Branches & commits
 
 - Branch from `main`: `feat/short-name`, `fix/short-name`, `docs/short-name`.

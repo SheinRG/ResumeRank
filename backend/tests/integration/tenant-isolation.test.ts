@@ -13,8 +13,8 @@ import {
   deleteCandidate,
   exportCandidatesCsv,
   getCandidate,
-  listCandidateOptions,
   listCandidates,
+  searchCandidateOptions,
   updateCandidate,
 } from "../../src/services/candidates";
 import { getCompany } from "../../src/services/company";
@@ -113,8 +113,19 @@ describe("reads never return another tenant's rows", () => {
     const candidates = await listCandidates(a.owner, candidateListParamsSchema.parse({}));
     expect(candidates.items.map((c) => c.id)).toEqual([a.candidateId]);
 
-    const candidateOptions = await listCandidateOptions(a.owner);
-    expect(candidateOptions.map((c) => c.id)).toEqual([a.candidateId]);
+    const searched = await listCandidates(
+      a.owner,
+      candidateListParamsSchema.parse({ q: b.candidateEmail }),
+    );
+    expect(searched.items).toEqual([]);
+  });
+
+  it("offers only the caller's candidates to attach, whatever job id is passed", async () => {
+    const forOwnJob = await searchCandidateOptions(a.owner, a.jobId, { q: "" });
+    expect(forOwnJob).toEqual([]);
+
+    const forOtherJob = await searchCandidateOptions(a.owner, b.jobId, { q: "" });
+    expect(forOtherJob.map((c) => c.id)).toEqual([a.candidateId]);
   });
 
   it("returns an empty pipeline for another tenant's job", async () => {
@@ -138,7 +149,7 @@ describe("reads never return another tenant's rows", () => {
   it("reads only the caller's company and activity", async () => {
     expect((await getCompany(a.owner))?.id).toBe(a.companyId);
 
-    const activity = await listActivity(a.owner, { page: 1 });
+    const activity = await listActivity(a.owner, {});
     const ownTotal = await db.activityLog.count({ where: { companyId: a.companyId } });
     expect(activity.total).toBe(ownTotal);
     const otherTenantIds = new Set([b.jobId, b.candidateId, b.applicationId]);

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { CandidateToolbar } from "@/components/candidates/candidate-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
-import { formatDate } from "@/lib/format";
+import { formatCount, formatDate } from "@/lib/format";
 import { canWrite, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@resumerank/core/validators/search";
 import { listCandidates } from "@/server/queries/candidates";
@@ -43,7 +43,8 @@ export default async function CandidatesPage({
     q: typeof raw.q === "string" ? raw.q : undefined,
     source: typeof raw.source === "string" ? raw.source : undefined,
     sort: typeof raw.sort === "string" ? raw.sort : undefined,
-    page: typeof raw.page === "string" ? raw.page : undefined,
+    after: typeof raw.after === "string" ? raw.after : undefined,
+    before: typeof raw.before === "string" ? raw.before : undefined,
   });
 
   const [user, result] = await Promise.all([requireUser(), listCandidates(params)]);
@@ -81,7 +82,7 @@ export default async function CandidatesPage({
             <CandidateToolbar q={params.q} source={params.source} sort={params.sort} />
             {result.total > 0 ? (
               <p className="shrink-0 text-sm text-muted-foreground">
-                {result.total} candidate{result.total === 1 ? "" : "s"}
+                {formatCount(result, "candidate")}
               </p>
             ) : null}
           </div>
@@ -153,7 +154,7 @@ export default async function CandidatesPage({
                   ))}
                 </TableBody>
               </Table>
-              <PaginationControl page={result.page} pageCount={result.pageCount} />
+              <PaginationControl nextCursor={result.nextCursor} prevCursor={result.prevCursor} />
             </>
           )}
         </CardContent>

@@ -18,7 +18,7 @@ import {
 import { JobsToolbar } from "@/components/jobs/jobs-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { EMPLOYMENT_TYPE_LABELS } from "@/components/jobs/labels";
-import { formatDate } from "@/lib/format";
+import { formatCount, formatDate } from "@/lib/format";
 import { canWrite, requireUser } from "@/lib/auth/guards";
 import { jobListParamsSchema } from "@resumerank/core/validators/search";
 import { listJobs } from "@/server/queries/jobs";
@@ -35,7 +35,8 @@ export default async function JobsPage({
     q: typeof raw.q === "string" ? raw.q : undefined,
     status: typeof raw.status === "string" ? raw.status : undefined,
     sort: typeof raw.sort === "string" ? raw.sort : undefined,
-    page: typeof raw.page === "string" ? raw.page : undefined,
+    after: typeof raw.after === "string" ? raw.after : undefined,
+    before: typeof raw.before === "string" ? raw.before : undefined,
   });
 
   const user = await requireUser();
@@ -66,7 +67,7 @@ export default async function JobsPage({
             <JobsToolbar q={params.q} status={params.status} sort={params.sort} />
             {result.total > 0 ? (
               <p className="shrink-0 text-sm text-muted-foreground">
-                {result.total} job{result.total === 1 ? "" : "s"}
+                {formatCount(result, "job")}
               </p>
             ) : null}
           </div>
@@ -151,7 +152,7 @@ export default async function JobsPage({
                   ))}
                 </TableBody>
               </Table>
-              <PaginationControl page={result.page} pageCount={result.pageCount} />
+              <PaginationControl nextCursor={result.nextCursor} prevCursor={result.prevCursor} />
             </>
           )}
         </CardContent>

@@ -14,7 +14,15 @@ import type { Paged } from "../types/paged";
 import { assertCanWrite, type TenantContext } from "./context";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
-import { resolvePageWindow } from "./pagination";
+import {
+  countCapped,
+  createdAtSort,
+  keysetPage,
+  parseNullableNumberKey,
+  past,
+  type KeysetQuery,
+  type KeysetSort,
+} from "./pagination";
 import type { JobDetail } from "./jobs";
 import type { ScoringRunView } from "./scoring";
 
@@ -57,7 +65,8 @@ export interface ApplicationCandidateDetail {
   email: string;
   headline: string | null;
   source: CandidateSource;
-  resumeText: string;
+  /** Trimmed resume length; the page only needs to know whether it's scorable, not the text. */
+  resumeLength: number;
   createdAt: Date;
 }
 
@@ -117,12 +126,79 @@ function buildApplicationWhere(
   };
 }
 
-function buildApplicationOrderBy(
-  sort: ApplicationListParams["sort"],
-): Prisma.ApplicationOrderByWithRelationInput[] {
-  if (sort === "newest") return [{ createdAt: "desc" }, { id: "asc" }];
-  if (sort === "oldest") return [{ createdAt: "asc" }, { id: "asc" }];
-  return [{ aiScore: { sort: "desc", nulls: "last" } }, { id: "asc" }];
+const applicationListSelect = {
+  id: true,
+  stage: true,
+  aiScore: true,
+  scoredAt: true,
+  createdAt: true,
+  latestScoringRunId: true,
+  candidate: { select: { id: true, name: true, email: true, headline: true } },
+  scoringRuns: {
+    where: { status: { in: ["QUEUED", "RUNNING"] } },
+    select: { status: true },
+    take: 1,
+  },
+} satisfies Prisma.ApplicationSelect;
+
+type ApplicationListRow = Prisma.ApplicationGetPayload<{ select: typeof applicationListSelect }>;
+type ApplicationQuery = KeysetQuery<
+  Prisma.ApplicationWhereInput,
+  Prisma.ApplicationOrderByWithRelationInput[]
+>;
+
+/**
+ * Highest score first, unscored last — so on the reversed scan a Prev page
+ * takes, unscored rows come first and every scored row is "past" a null key.
+ */
+const scoreSort: KeysetSort<
+  number | null,
+  Prisma.ApplicationWhereInput,
+  Prisma.ApplicationOrderByWithRelationInput[],
+  ApplicationListRow
+> = {
+  direction: "desc",
+  parseKey: parseNullableNumberKey,
+  seekWhere: (key, id, scan) => {
+    const nullsLast = scan === "desc";
+    if (key === null) {
+      return nullsLast
+        ? { aiScore: null, id: past(scan, id) }
+        : { OR: [{ aiScore: { not: null } }, { aiScore: null, id: past(scan, id) }] };
+    }
+    return {
+      OR: [
+        { aiScore: past(scan, key) },
+        { aiScore: key, id: past(scan, id) },
+        ...(nullsLast ? [{ aiScore: null }] : []),
+      ],
+    };
+  },
+  orderBy: (scan) => [
+    { aiScore: { sort: scan, nulls: scan === "desc" ? "last" : "first" } },
+    { id: scan },
+  ],
+  keyOf: (row) => row.aiScore,
+};
+
+function listApplicationsPage(
+  ctx: TenantContext,
+  params: ApplicationListParams,
+  where: Prisma.ApplicationWhereInput,
+) {
+  const fetch = (query: ApplicationQuery) =>
+    tenantDb(ctx).application.findMany({
+      where: query.where ? { AND: [where, query.where] } : where,
+      orderBy: query.orderBy,
+      take: query.take,
+      select: applicationListSelect,
+    });
+  if (params.sort === "score") return keysetPage(scoreSort, params, fetch);
+  return keysetPage(
+    createdAtSort<ApplicationListRow>(params.sort === "oldest" ? "asc" : "desc"),
+    params,
+    fetch,
+  );
 }
 
 export async function listApplicationsForJob(
@@ -131,33 +207,11 @@ export async function listApplicationsForJob(
   params: ApplicationListParams,
 ): Promise<Paged<ApplicationListItem>> {
   const where = buildApplicationWhere(ctx.companyId, jobId, params);
-  const total = await tenantDb(ctx).application.count({ where });
-  const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
-
-  if (overflow) {
-    return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
-  }
-
-  const applications = await tenantDb(ctx).application.findMany({
-    where,
-    orderBy: buildApplicationOrderBy(params.sort),
-    skip,
-    take,
-    select: {
-      id: true,
-      stage: true,
-      aiScore: true,
-      scoredAt: true,
-      createdAt: true,
-      latestScoringRunId: true,
-      candidate: { select: { id: true, name: true, email: true, headline: true } },
-      scoringRuns: {
-        where: { status: { in: ["QUEUED", "RUNNING"] } },
-        select: { status: true },
-        take: 1,
-      },
-    },
-  });
+  const [{ total, totalCapped }, page] = await Promise.all([
+    countCapped((take) => tenantDb(ctx).application.count({ where, take })),
+    listApplicationsPage(ctx, params, where),
+  ]);
+  const applications = page.items;
 
   const latestRunIds = applications.flatMap((a) =>
     a.latestScoringRunId ? [a.latestScoringRunId] : [],
@@ -197,7 +251,14 @@ export async function listApplicationsForJob(
     };
   });
 
-  return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
+  return {
+    items,
+    total,
+    totalCapped,
+    pageSize: PAGE_SIZE,
+    nextCursor: page.nextCursor,
+    prevCursor: page.prevCursor,
+  };
 }
 
 export async function getApplication(
@@ -208,7 +269,9 @@ export async function getApplication(
     where: { id, companyId: ctx.companyId },
     include: {
       job: { include: { requirements: { orderBy: { order: "asc" } } } },
-      candidate: true,
+      candidate: {
+        select: { id: true, name: true, email: true, headline: true, source: true, createdAt: true },
+      },
       latestScoringRun: {
         select: {
           evaluations: { orderBy: [{ requirement: { order: "asc" } }, { id: "asc" }] },
@@ -222,7 +285,7 @@ export async function getApplication(
   });
   if (!application) return null;
 
-  const [active, mostRecent, succeeded] = await Promise.all([
+  const [active, mostRecent, succeeded, resume] = await Promise.all([
     tenantDb(ctx).scoringRun.findFirst({
       where: { applicationId: id, status: { in: ["QUEUED", "RUNNING"] } },
       select: {
@@ -246,11 +309,17 @@ export async function getApplication(
       take: SCORE_HISTORY_LIMIT,
       select: { id: true, aiScore: true, model: true, finishedAt: true },
     }),
+    tenantDb(ctx).$queryRaw<Array<{ length: number }>>`
+      SELECT char_length(btrim("resumeText", ' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13)))::int AS length
+      FROM "Candidate"
+      WHERE "id" = ${application.candidateId} AND "companyId" = ${ctx.companyId}
+    `,
   ]);
 
-  const { latestScoringRun, latestScoringRunId, ...rest } = application;
+  const { latestScoringRun, latestScoringRunId, candidate, ...rest } = application;
   return {
     ...rest,
+    candidate: { ...candidate, resumeLength: resume[0]?.length ?? 0 },
     evaluations: latestScoringRun?.evaluations ?? [],
     scoring: {
       active,

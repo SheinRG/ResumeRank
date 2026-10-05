@@ -130,9 +130,16 @@ describe("jobListParamsSchema", () => {
       q: 42,
       status: "NOT_A_STATUS",
       sort: "bogus",
-      page: "-3",
+      after: "not a cursor!",
+      before: "x".repeat(600),
     });
-    expect(out).toEqual({ q: "", status: undefined, sort: "newest", page: 1 });
+    expect(out).toEqual({
+      q: "",
+      status: undefined,
+      sort: "newest",
+      after: undefined,
+      before: undefined,
+    });
   });
 });
 

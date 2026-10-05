@@ -6,6 +6,18 @@ import { z } from "zod";
  */
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  /**
+   * Direct (unpooled) connection for migrations, read by prisma.config.ts.
+   * When it is set, DATABASE_URL should be the pooled (PgBouncer/Neon) one.
+   */
+  DIRECT_URL: z.string().optional(),
+  /** Connections per app instance; defaults to 3 on Vercel, where every function instance has its own pool. */
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().optional(),
+  /**
+   * Server-side cap on any one statement. Sent as a startup parameter; set 0
+   * for a pooler that rejects those, and set it on the database role instead.
+   */
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(15_000),
   AUTH_SECRET: z.string().min(16, "AUTH_SECRET must be at least 16 characters"),
   AUTH_URL: z.string().url().optional(),
   AUTH_GOOGLE_ID: z.string().optional(),

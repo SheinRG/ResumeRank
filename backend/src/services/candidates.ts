@@ -4,15 +4,29 @@ import { logActivity } from "../activity";
 import { assertAiBudget, chargeAiTokens } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
 import { extractCandidateProfile, type CandidateProfile } from "../extraction/engine";
-import type { Candidate, Prisma } from "../generated/prisma/client";
+import { Prisma, type Candidate } from "../generated/prisma/client";
 import type { CandidateSource, JobStatus, Stage } from "../validators/enums";
 import type { CandidateCreateInput, CandidateUpdateInput } from "../validators/candidate";
-import { PAGE_SIZE, type CandidateListParams } from "../validators/search";
+import {
+  CANDIDATE_OPTION_LIMIT,
+  PAGE_SIZE,
+  type CandidateListParams,
+  type CandidateOptionParams,
+} from "../validators/search";
 import type { Paged } from "../types/paged";
 import { assertCanWrite, type TenantContext } from "./context";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
-import { resolvePageWindow } from "./pagination";
+import {
+  COUNT_CAP,
+  keysetPage,
+  parseDateKey,
+  parseStringKey,
+  type CursorKey,
+  type KeysetQuery,
+  type KeysetSort,
+  type SortDirection,
+} from "./pagination";
 
 const CSV_EXPORT_BATCH = 500;
 const CSV_HEADER = ["name", "email", "headline", "source", "applications", "createdAt"];
@@ -64,32 +78,88 @@ export interface CandidateCsvExport {
   stream: ReadableStream<Uint8Array>;
 }
 
-function buildCandidateWhere(
-  companyId: string,
-  params: CandidateListParams,
-): Prisma.CandidateWhereInput {
+/** `q` is matched literally: escape LIKE's wildcards (backslash is the default escape). */
+function containsPattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * The candidate filter as SQL, because search reaches the resume through the
+ * generated `resumeTsv` column, which Prisma can't query. Name, email and
+ * headline ILIKEs are served by trigram indexes; the resume by its GIN index.
+ * Scoped to the tenant here — the tenant client can't see inside raw SQL.
+ */
+function candidateFilterSql(companyId: string, params: CandidateListParams): Prisma.Sql {
+  const conditions = [Prisma.sql`"companyId" = ${companyId}`];
+  if (params.source) {
+    conditions.push(Prisma.sql`"source" = ${params.source}::"CandidateSource"`);
+  }
   const q = params.q.trim();
+  if (q) {
+    const pattern = containsPattern(q);
+    conditions.push(Prisma.sql`(
+      "name" ILIKE ${pattern}
+      OR "email" ILIKE ${pattern}
+      OR "headline" ILIKE ${pattern}
+      OR "resumeTsv" @@ websearch_to_tsquery('english', ${q})
+    )`);
+  }
+  return Prisma.join(conditions, " AND ");
+}
+
+interface CandidateKeyRow {
+  id: string;
+  name: string;
+  createdAt: Date;
+}
+
+type CandidateSort = KeysetSort<Date | string, Prisma.Sql, Prisma.Sql, CandidateKeyRow>;
+
+/** Row-value comparison seeks the (key, id) index directly; both columns sort the same way. */
+function sqlSort(
+  column: "createdAt" | "name",
+  direction: SortDirection,
+  parseKey: (raw: CursorKey) => Date | string | undefined,
+): CandidateSort {
+  const col = Prisma.raw(`"${column}"`);
   return {
-    companyId,
-    source: params.source,
-    ...(q
-      ? {
-          OR: [
-            { name: { contains: q, mode: "insensitive" as const } },
-            { email: { contains: q, mode: "insensitive" as const } },
-            { headline: { contains: q, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
+    direction,
+    parseKey,
+    seekWhere: (key, id, scan) =>
+      scan === "desc" ? Prisma.sql`(${col}, "id") < (${key}, ${id})` : Prisma.sql`(${col}, "id") > (${key}, ${id})`,
+    orderBy: (scan) => {
+      const dir = Prisma.raw(scan === "desc" ? "DESC" : "ASC");
+      return Prisma.sql`${col} ${dir}, "id" ${dir}`;
+    },
+    keyOf: (row) => row[column],
   };
 }
 
-function buildCandidateOrderBy(
-  sort: CandidateListParams["sort"],
-): Prisma.CandidateOrderByWithRelationInput[] {
-  if (sort === "oldest") return [{ createdAt: "asc" }, { id: "asc" }];
-  if (sort === "name") return [{ name: "asc" }, { id: "asc" }];
-  return [{ createdAt: "desc" }, { id: "asc" }];
+function candidateSort(sort: CandidateListParams["sort"]): CandidateSort {
+  if (sort === "name") return sqlSort("name", "asc", parseStringKey);
+  return sqlSort("createdAt", sort === "oldest" ? "asc" : "desc", parseDateKey);
+}
+
+function fetchCandidateKeys(
+  ctx: TenantContext,
+  filter: Prisma.Sql,
+  query: KeysetQuery<Prisma.Sql, Prisma.Sql>,
+): Promise<CandidateKeyRow[]> {
+  const seek = query.where ? Prisma.sql`AND ${query.where}` : Prisma.empty;
+  return tenantDb(ctx).$queryRaw<CandidateKeyRow[]>`
+    SELECT "id", "name", "createdAt" FROM "Candidate"
+    WHERE ${filter} ${seek}
+    ORDER BY ${query.orderBy}
+    LIMIT ${query.take}
+  `;
+}
+
+async function countCandidates(ctx: TenantContext, filter: Prisma.Sql): Promise<number> {
+  const rows = await tenantDb(ctx).$queryRaw<Array<{ count: number }>>`
+    SELECT count(*)::int AS count
+    FROM (SELECT 1 FROM "Candidate" WHERE ${filter} LIMIT ${COUNT_CAP + 1}) AS capped
+  `;
+  return rows[0]?.count ?? 0;
 }
 
 const listSelect = {
@@ -102,25 +172,32 @@ const listSelect = {
   _count: { select: { applications: { where: { deletedAt: null } } } },
 } satisfies Prisma.CandidateSelect;
 
+type CandidateListRow = Prisma.CandidateGetPayload<{ select: typeof listSelect }>;
+
+/** Loads the full rows for a page of keys, in the keys' order. */
+async function loadCandidateRows(
+  ctx: TenantContext,
+  keys: CandidateKeyRow[],
+): Promise<CandidateListRow[]> {
+  if (keys.length === 0) return [];
+  const rows = await tenantDb(ctx).candidate.findMany({
+    where: { companyId: ctx.companyId, id: { in: keys.map((k) => k.id) } },
+    select: listSelect,
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return keys.flatMap((k) => byId.get(k.id) ?? []);
+}
+
 export async function listCandidates(
   ctx: TenantContext,
   params: CandidateListParams,
 ): Promise<Paged<CandidateListItem>> {
-  const where = buildCandidateWhere(ctx.companyId, params);
-  const total = await tenantDb(ctx).candidate.count({ where });
-  const { pageCount, skip, take, effectivePage, overflow } = resolvePageWindow(params.page, total);
-
-  if (overflow) {
-    return { items: [], total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
-  }
-
-  const candidates = await tenantDb(ctx).candidate.findMany({
-    where,
-    orderBy: buildCandidateOrderBy(params.sort),
-    skip,
-    take,
-    select: listSelect,
-  });
+  const filter = candidateFilterSql(ctx.companyId, params);
+  const [counted, page] = await Promise.all([
+    countCandidates(ctx, filter),
+    keysetPage(candidateSort(params.sort), params, (query) => fetchCandidateKeys(ctx, filter, query)),
+  ]);
+  const candidates = await loadCandidateRows(ctx, page.items);
 
   const items: CandidateListItem[] = candidates.map((c) => ({
     id: c.id,
@@ -132,7 +209,14 @@ export async function listCandidates(
     applicationCount: c._count.applications,
   }));
 
-  return { items, total, page: effectivePage, pageSize: PAGE_SIZE, pageCount };
+  return {
+    items,
+    total: Math.min(counted, COUNT_CAP),
+    totalCapped: counted > COUNT_CAP,
+    pageSize: PAGE_SIZE,
+    nextCursor: page.nextCursor,
+    prevCursor: page.prevCursor,
+  };
 }
 
 export async function getCandidate(
@@ -151,11 +235,33 @@ export async function getCandidate(
   });
 }
 
-export async function listCandidateOptions(ctx: TenantContext): Promise<CandidateOption[]> {
+/**
+ * Typeahead for attaching candidates to a job: a bounded page of matches, so
+ * the picker never ships the whole talent pool. Candidates already in the
+ * job's pipeline (removed ones included — they come back by restore) are left out.
+ */
+export async function searchCandidateOptions(
+  ctx: TenantContext,
+  jobId: string,
+  params: CandidateOptionParams,
+): Promise<CandidateOption[]> {
+  const q = params.q.trim();
   return tenantDb(ctx).candidate.findMany({
-    where: { companyId: ctx.companyId },
+    where: {
+      companyId: ctx.companyId,
+      applications: { none: { jobId } },
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" as const } },
+              { email: { contains: q, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
+    },
     select: { id: true, name: true, email: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: CANDIDATE_OPTION_LIMIT,
   });
 }
 
@@ -172,9 +278,11 @@ export async function exportCandidatesCsv(
 ): Promise<CandidateCsvExport> {
   assertCanWrite(ctx);
 
-  const where = buildCandidateWhere(ctx.companyId, params);
-  const orderBy = buildCandidateOrderBy(params.sort);
-  const rowCount = await tenantDb(ctx).candidate.count({ where });
+  const filter = candidateFilterSql(ctx.companyId, params);
+  const sort = candidateSort(params.sort);
+  const [{ count: rowCount }] = await tenantDb(ctx).$queryRaw<[{ count: number }]>`
+    SELECT count(*)::int AS count FROM "Candidate" WHERE ${filter}
+  `;
 
   await logActivity({
     companyId: ctx.companyId,
@@ -187,7 +295,7 @@ export async function exportCandidatesCsv(
   });
 
   const encoder = new TextEncoder();
-  let cursor: string | null = null;
+  let last: CandidateKeyRow | null = null;
   let headerSent = false;
 
   const stream = new ReadableStream<Uint8Array>({
@@ -198,13 +306,14 @@ export async function exportCandidatesCsv(
         return;
       }
 
-      const batch = await tenantDb(ctx).candidate.findMany({
-        where,
-        orderBy,
+      const keys = await fetchCandidateKeys(ctx, filter, {
+        where: last
+          ? sort.seekWhere(params.sort === "name" ? last.name : last.createdAt, last.id, sort.direction)
+          : undefined,
+        orderBy: sort.orderBy(sort.direction),
         take: CSV_EXPORT_BATCH,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: listSelect,
       });
+      const batch = await loadCandidateRows(ctx, keys);
 
       if (batch.length > 0) {
         const lines = batch.map((c) =>
@@ -218,9 +327,9 @@ export async function exportCandidatesCsv(
           ]),
         );
         controller.enqueue(encoder.encode(`${lines.join("\n")}\n`));
-        cursor = batch[batch.length - 1].id;
       }
-      if (batch.length < CSV_EXPORT_BATCH) {
+      last = keys.length > 0 ? keys[keys.length - 1] : last;
+      if (keys.length < CSV_EXPORT_BATCH) {
         controller.close();
       }
     },

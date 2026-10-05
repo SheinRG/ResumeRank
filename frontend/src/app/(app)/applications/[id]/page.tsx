@@ -33,7 +33,7 @@ export async function generateMetadata({
 }
 
 function resolveBlocker(application: ApplicationDetail): ScoreBlocker | undefined {
-  if (application.candidate.resumeText.trim().length < MIN_RESUME_LENGTH) {
+  if (application.candidate.resumeLength < MIN_RESUME_LENGTH) {
     return {
       message: `Add at least ${MIN_RESUME_LENGTH} characters of resume text before scoring.`,
       href: `/candidates/${application.candidate.id}/edit`,
