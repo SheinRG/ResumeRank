@@ -8,6 +8,7 @@ import {
   type JobScoringRequestResult,
   type ScoringRequestResult,
 } from "@resumerank/core/services/scoring";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { scheduleScoringDrain } from "@/server/scoring-drain";
 import { actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -24,6 +25,7 @@ export async function requestScoringAction(
     } else {
       scheduleScoringDrain();
     }
+    expireTenantReads(user.companyId);
     return actionOk(result);
   });
 }
@@ -37,6 +39,7 @@ export async function requestJobScoringAction(
 
     if (result.queued > 0) scheduleScoringDrain();
     revalidatePath(`/jobs/${jobId}`);
+    expireTenantReads(user.companyId);
     return actionOk(result);
   });
 }

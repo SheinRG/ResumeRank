@@ -2,6 +2,7 @@ import { after } from "next/server";
 
 import { errorFields, log } from "@resumerank/core/observability/log";
 import { drainScoringQueue } from "@resumerank/core/scoring/queue";
+import { expireScoredTenants } from "@/server/cache-tags";
 
 /**
  * Works the scoring queue after the response is sent, inside the same
@@ -12,7 +13,8 @@ import { drainScoringQueue } from "@resumerank/core/scoring/queue";
 export function scheduleScoringDrain(): void {
   after(async () => {
     try {
-      await drainScoringQueue();
+      const { companyIds } = await drainScoringQueue();
+      expireScoredTenants(companyIds);
     } catch (error) {
       log.error("scoring.drain_failed", errorFields(error));
     }

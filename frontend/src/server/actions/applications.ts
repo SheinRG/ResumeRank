@@ -12,14 +12,15 @@ import {
   setApplicationRemoved,
   updateStage,
 } from "@resumerank/core/services/applications";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
 function revalidateApplication(application: Application): void {
   revalidatePath(`/jobs/${application.jobId}`);
   revalidatePath(`/applications/${application.id}`);
-  revalidatePath("/dashboard");
   revalidatePath(`/candidates/${application.candidateId}`);
+  expireTenantReads(application.companyId);
 }
 
 export async function createApplicationAction(

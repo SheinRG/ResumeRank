@@ -210,6 +210,65 @@ Requirements are first-class rows (`JobRequirement`), not a JSON blob on
 `Job`, so an `Evaluation` can foreign-key the exact requirement it judged and
 weighting/reordering stays queryable rather than requiring a JSON migration.
 
+## Rendering and caching
+
+**Cache Components is on** (`cacheComponents: true`). Every route prerenders
+a static shell and streams whatever depends on the request:
+
+- The signed-in layout wraps the session check in `<Suspense>` with
+  `AppShellSkeleton`, a frame with the same sidebar, top bar and content
+  column, so the app renders instantly and swaps the real shell in.
+- The `(auth)` layout does the same with a card-shaped skeleton, since those
+  pages read the session or a token from the URL.
+- The marketing page is fully static; its footer year comes from a
+  `use cache` helper with a daily lifetime.
+- `GET` route handlers that branch before reading the request call
+  `await connection()` first, or the build would prerender that branch.
+  `/api/cron/scoring` needs it: without `CRON_SECRET` at build time it
+  returned its 404 without touching the request, and was prerendered as a
+  static 404.
+
+**One user lookup per request.** `requireUser` (and so `requireMember` /
+`requireWriter` / `requireAdmin`) is wrapped in React `cache()`, so the
+layout, the page, `generateMetadata` and every query they call share one
+session read and one user query. Server actions and route handlers run
+outside a render, where `cache()` is a pass-through, so each call there
+still re-checks the database.
+
+**The dashboard is cached per user and tenant.** `server/queries/dashboard.ts`
+runs the guard, then calls a `use cache` function whose argument is the
+tenant context, so the user and company are part of the cache key and an
+entry is only ever served back to whoever built it. Entries carry the tag
+`company:<id>:dashboard` (`server/cache-tags.ts`):
+
+- Every server action that writes activity calls `expireTenantReads(companyId)`,
+  which runs `updateTag`, so the actor's next dashboard load waits for fresh
+  data. That covers every mutation, since the dashboard shows the recent
+  activity feed.
+- The scoring drain returns the tenants whose runs it processed. Its
+  callers, `after()` and the cron route, expire those tags with
+  `revalidateTag(tag, { expire: 0 })`, because `updateTag` only works inside
+  server actions.
+- Page-level `revalidatePath` calls stay, since they refresh the page the
+  user is on. Only the path-wide `revalidatePath("/dashboard")` calls became
+  tags.
+
+**Limits of the default cache.** `use cache` stores entries in each server
+instance's memory, and tag expiry only reaches the instance that handled the
+mutation. Two consequences:
+
+- On serverless, entries rarely survive between requests, so the cache mostly
+  helps self-hosted and long-lived instances.
+- With several instances, another instance can serve a copy older than a
+  mutation. The dashboard's lifetime (`revalidate` 30s, `expire` 60s) bounds
+  that window.
+
+Sharing entries and tag expiry across instances needs a `cacheHandlers`
+implementation, or `use cache: remote` on a platform that provides one.
+Until then, only aggregates that tolerate a minute of staleness belong in
+`use cache`. Lists and detail pages stay uncached: their keys (filters,
+cursors, ids) rarely repeat, and they must reflect writes immediately.
+
 ## Scoring pipeline
 
 Scoring is asynchronous. A request never waits on the LLM: it records a

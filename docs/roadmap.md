@@ -89,8 +89,8 @@ Scoring is synchronous: `scoring.ts:45` awaits up to two sequential Groq calls (
 ### 1.7 Caching
 No `use cache` / `cacheTag` / `cacheComponents` anywhere; dashboard fires ~10 queries per load; layout calls `auth()` then `requireUser()` (another `auth()` + DB hit) and the page repeats it.
 
-- [ ] Wrap guards in React `cache()` so one request = one user lookup.
-- [ ] Enable Cache Components; `use cache` + `cacheTag(\`company:${id}:dashboard\`)` etc.; `updateTag` from mutations instead of path-wide `revalidatePath`.
+- [x] Wrap guards in React `cache()` so one request = one user lookup. → `requireUser` is `cache()`d, so the layout, page, metadata and queries share one session read and user query; the layout's separate `auth()` call is gone.
+- [x] Enable Cache Components; `use cache` + `cacheTag(\`company:${id}:dashboard\`)` etc.; `updateTag` from mutations instead of path-wide `revalidatePath`. → Every route now prerenders a shell (signed-in and auth layouts stream behind matching skeletons). The dashboard is `use cache`d per user and tenant under `company:<id>:dashboard`; every activity-writing action `updateTag`s it, and the scoring drain `revalidateTag`s the tenants it scored. The lifetime is 30–60s because the default cache is per instance: shared invalidation needs a cache handler (see `docs/architecture.md`, Rendering and caching). Lists and detail pages stay uncached on purpose.
 
 ### 1.8 CI/CD & environments
 `.github/workflows/ci.yml:48-52` runs `db:deploy` against an empty CI DB only; README says to migrate prod by hand.

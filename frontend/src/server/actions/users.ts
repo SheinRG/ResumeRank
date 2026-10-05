@@ -14,6 +14,7 @@ import {
   updateProfileSchema,
 } from "@resumerank/core/validators/user";
 import { hashPassword, verifyPassword } from "@resumerank/core/auth/password";
+import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -53,6 +54,7 @@ export async function updateUserRoleAction(
     const user = await updateMemberRole(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
+    expireTenantReads(admin.companyId);
 
     return actionOk(user);
   });
@@ -73,6 +75,7 @@ export async function removeMemberAction(
     const user = await removeMember(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");
+    expireTenantReads(admin.companyId);
 
     return actionOk(user);
   });
@@ -124,6 +127,7 @@ export async function updateProfileAction(
 
     revalidatePath("/settings/team");
     revalidatePath("/settings");
+    expireTenantReads(companyId);
 
     return actionOk(user);
   });
@@ -196,6 +200,7 @@ export async function changePasswordAction(
       }
     });
     await refreshSession({});
+    expireTenantReads(companyId);
 
     return actionOk({ id: currentUser.id });
   });
@@ -224,6 +229,7 @@ export async function signOutEverywhereAction(): Promise<void> {
       );
     }
   });
+  expireTenantReads(companyId);
   await signOut({ redirectTo: "/login" });
 }
 
@@ -331,6 +337,7 @@ export async function deleteAccountAction(
       }
       await tx.user.delete({ where: { id: currentUser.id } });
     });
+    expireTenantReads(companyId);
 
     return actionOk({ deleted: true });
   });

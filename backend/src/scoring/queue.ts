@@ -289,13 +289,20 @@ export interface DrainOptions {
  * spent. Safe to call from anywhere and as often as wanted — after an
  * enqueue, from a status poll, from a cron — because claiming is atomic.
  */
-export async function drainScoringQueue(options: DrainOptions = {}): Promise<{ processed: number }> {
+export interface DrainResult {
+  processed: number;
+  /** Tenants whose runs were processed, so callers can expire their cached reads. */
+  companyIds: string[];
+}
+
+export async function drainScoringQueue(options: DrainOptions = {}): Promise<DrainResult> {
   const { budgetMs = DEFAULT_DRAIN_BUDGET_MS, lanes = DEFAULT_LANES, evaluate } = options;
   const deadline = Date.now() + budgetMs;
 
   return withLogContext({ worker: "scoring" }, async () => {
     await recoverStaleRuns();
     let processed = 0;
+    const companyIds = new Set<string>();
 
     async function lane(): Promise<void> {
       while (Date.now() < deadline) {
@@ -310,11 +317,12 @@ export async function drainScoringQueue(options: DrainOptions = {}): Promise<{ p
           }
         });
         processed += 1;
+        companyIds.add(run.companyId);
       }
     }
 
     await Promise.all(Array.from({ length: lanes }, lane));
     if (processed > 0) log.info("scoring.drained", { processed });
-    return { processed };
+    return { processed, companyIds: [...companyIds] };
   });
 }

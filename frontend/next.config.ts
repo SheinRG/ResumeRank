@@ -32,6 +32,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@resumerank/core"],
+  cacheComponents: true,
   // Pin the monorepo root so file tracing spans backend + frontend and does not
   // latch onto an unrelated lockfile higher up the filesystem.
   turbopack: { root: resolve(process.cwd(), "..") },
