@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { CandidateForm } from "@/components/candidates/candidate-form";
+import { canWrite, requireUser } from "@/lib/auth/guards";
 import { getCandidate } from "@/server/queries/candidates";
 
 export async function generateMetadata({
@@ -24,6 +25,10 @@ export default async function EditCandidatePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const user = await requireUser();
+  if (!canWrite(user.role)) {
+    redirect(`/candidates/${id}`);
+  }
   const candidate = await getCandidate(id);
   if (!candidate) notFound();
 

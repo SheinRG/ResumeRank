@@ -4,7 +4,14 @@ import { z } from "zod";
  * Server-only environment contract. Fails fast with a named variable instead
  * of a mystery crash deep in a request. Never import from client components.
  */
+export const APP_ENVS = ["development", "test", "preview", "staging", "production"] as const;
+
 const envSchema = z.object({
+  /**
+   * Which deployment tier this is, independent of NODE_ENV (a staging or
+   * preview build still runs with NODE_ENV=production). Stamped on every log line.
+   */
+  APP_ENV: z.enum(APP_ENVS).default("development"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
   /**
    * Direct (unpooled) connection for migrations, read by prisma.config.ts.

@@ -412,9 +412,23 @@ locally never needs to touch email at all.
   evidence reconciliation (`scoring-parse.test.ts`), the rate limiter
   (`rate-limit.test.ts`), and shared Zod validators (`validators.test.ts`).
   These run fast and don't need a database.
-- **End-to-end** (`tests/e2e`, Playwright, `playwright.config.ts`) drives the
-  real app on port 3105 and boots the dev server itself via `webServer` when
-  one isn't already running, so `npm run test:e2e` works standalone in CI.
+- **Integration** (`backend/tests/integration`, Vitest against a real
+  Postgres) proves tenant isolation, the tenant-scoped client, the scoring
+  queue, rate limits and the keyset pagination paths.
+- **End-to-end** (`frontend/tests/e2e`, Playwright, `playwright.config.ts`)
+  drives the real app on port 3105:
+  - the golden path and avatar upload;
+  - viewer permissions (write affordances hidden, write-only routes redirect);
+  - an admin inviting and revoking, and an invitee joining through the emailed
+    link with the invited role;
+  - scoring's named failure when no model is configured;
+  - another tenant's records rendering as not-found.
+
+  Fixtures in `tests/e2e/support` write state the UI can't produce in a test
+  (a second tenant, an invite whose token is known) straight to the
+  database, and clean up after themselves. In CI the suite runs against the
+  production build (`next start`), so prerendered shells and the cache layer
+  are what get tested. Locally it boots `next dev`.
 
 ## Observability
 

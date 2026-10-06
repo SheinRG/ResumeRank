@@ -1,0 +1,34 @@
+{
+  "advisories": [
+    {
+      "id": "GHSA-ggr8-5vv4-36mx",
+      "package": "deepmerge-ts",
+      "reason": "Pulled in by the Prisma CLI's config loader (@prisma/config), which merges our own prisma.config.ts at migrate/generate time only; never loaded by the app server, and its input is not attacker-controlled. The only fix offered is downgrading to Prisma 6.",
+      "reviewBy": "2027-01-06"
+    },
+    {
+      "id": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "reason": "Dependency of the Prisma CLI's local dev server (@prisma/dev); this project uses Postgres and never opens a MySQL connection. The only fix offered is downgrading to Prisma 6.",
+      "reviewBy": "2027-01-06"
+    },
+    {
+      "id": "GHSA-p6gq-j5cr-w38f",
+      "package": "nodemailer",
+      "reason": "nodemailer@8 installed only as Auth.js's optional peer for its email-login provider, which is not configured. App email goes through backend/src/email.ts on nodemailer@10, which is patched.",
+      "reviewBy": "2027-01-06"
+    },
+    {
+      "id": "GHSA-2x7j-588g-ccc2",
+      "package": "nodemailer",
+      "reason": "Same unused Auth.js optional peer as GHSA-p6gq-j5cr-w38f; the app's own sender is on the patched nodemailer@10.",
+      "reviewBy": "2027-01-06"
+    },
+    {
+      "id": "GHSA-v53p-9fqp-m79j",
+      "package": "nodemailer",
+      "reason": "Same unused Auth.js optional peer as GHSA-p6gq-j5cr-w38f; the app's own sender is on the patched nodemailer@10.",
+      "reviewBy": "2027-01-06"
+    }
+  ]
+}

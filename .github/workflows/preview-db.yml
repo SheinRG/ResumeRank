@@ -1,0 +1,57 @@
+name: Preview database
+
+# One Neon branch per pull request: a copy-on-write clone of the parent
+# branch's data with this PR's migrations applied, so a migration is proven
+# against production-shaped data before it merges. Deleted when the PR closes.
+# Inert until the NEON_PROJECT_ID variable and NEON_API_KEY secret are set.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-db-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-preview:
+    if: vars.NEON_PROJECT_ID != '' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Create or reuse the PR's Neon branch
+        id: branch
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch_name: preview/pr-${{ github.event.pull_request.number }}
+          role: ${{ vars.NEON_DB_ROLE || 'neondb_owner' }}
+          database: ${{ vars.NEON_DB_NAME || 'neondb' }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply this PR's migrations to the preview branch
+        run: npm run db:deploy
+        env:
+          DIRECT_URL: ${{ steps.branch.outputs.db_url }}
+      - name: Check the migrated branch matches the schema
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+        working-directory: backend
+        env:
+          DIRECT_URL: ${{ steps.branch.outputs.db_url }}
+
+  delete-preview:
+    if: vars.NEON_PROJECT_ID != '' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch: preview/pr-${{ github.event.pull_request.number }}
