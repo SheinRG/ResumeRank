@@ -3,9 +3,9 @@ import { db } from "../db";
 import type { CompanyInvite, Prisma } from "../generated/prisma/client";
 import type { Role } from "../generated/prisma/enums";
 
-const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
-const RESET_TTL_MS = 30 * 60 * 1000;
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+export const RESET_TTL_MS = 30 * 60 * 1000;
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Tokens are stored hashed so a database leak never exposes usable links. */
 function sha256(value: string): string {
@@ -16,10 +16,14 @@ function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-export async function createVerificationToken(email: string): Promise<string> {
+/** Takes a transaction client so the token and the email carrying it commit together. */
+export async function createVerificationToken(
+  email: string,
+  client: Pick<Prisma.TransactionClient, "verificationToken"> = db,
+): Promise<string> {
   const raw = generateToken();
-  await db.verificationToken.deleteMany({ where: { identifier: email } });
-  await db.verificationToken.create({
+  await client.verificationToken.deleteMany({ where: { identifier: email } });
+  await client.verificationToken.create({
     data: {
       identifier: email,
       token: sha256(raw),
@@ -48,12 +52,15 @@ export async function consumeVerificationToken(
   return true;
 }
 
-export async function createPasswordResetToken(userId: string): Promise<string> {
+export async function createPasswordResetToken(
+  userId: string,
+  client: Pick<Prisma.TransactionClient, "passwordResetToken"> = db,
+): Promise<string> {
   const raw = generateToken();
-  await db.passwordResetToken.deleteMany({
+  await client.passwordResetToken.deleteMany({
     where: { userId, usedAt: null },
   });
-  await db.passwordResetToken.create({
+  await client.passwordResetToken.create({
     data: {
       userId,
       tokenHash: sha256(raw),

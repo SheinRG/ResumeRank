@@ -12,7 +12,7 @@ import {
   createPasswordResetToken,
   createVerificationToken,
 } from "@resumerank/core/auth/tokens";
-import { sendPasswordResetEmail, sendVerificationEmail } from "@resumerank/core/email";
+import { queuePasswordResetEmail, queueVerificationEmail } from "@resumerank/core/email/messages";
 import { loginBlocked } from "@resumerank/core/auth/login-throttle";
 import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
 import { clientIp as resolveClientIp } from "@resumerank/core/request-ip";
@@ -22,6 +22,7 @@ import {
   resetPasswordSchema,
 } from "@resumerank/core/validators/auth";
 import { registerCompanySchema } from "@resumerank/core/validators/company";
+import { scheduleEmailDrain } from "@/server/email-drain";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
@@ -80,11 +81,11 @@ export async function registerAction(
             companyId: company.id,
           },
         });
+        const token = await createVerificationToken(email, tx);
+        await queueVerificationEmail(email, token, tx);
       }),
     );
-
-    const token = await createVerificationToken(email);
-    await sendVerificationEmail(email, token);
+    scheduleEmailDrain();
 
     return actionOk({ email });
   });
@@ -175,8 +176,11 @@ export async function resendVerificationAction(
     const user = await db.user.findUnique({ where: { email } });
     // Always report success so this endpoint can't be used to probe accounts.
     if (user && !user.emailVerified) {
-      const token = await createVerificationToken(email);
-      await sendVerificationEmail(email, token);
+      await db.$transaction(async (tx) => {
+        const token = await createVerificationToken(email, tx);
+        await queueVerificationEmail(email, token, tx);
+      });
+      scheduleEmailDrain();
     }
     return actionOk(undefined);
   });
@@ -198,8 +202,11 @@ export async function forgotPasswordAction(
 
     const user = await db.user.findUnique({ where: { email } });
     if (user) {
-      const token = await createPasswordResetToken(user.id);
-      await sendPasswordResetEmail(email, token);
+      await db.$transaction(async (tx) => {
+        const token = await createPasswordResetToken(user.id, tx);
+        await queuePasswordResetEmail(email, token, tx);
+      });
+      scheduleEmailDrain();
     }
     return actionOk(undefined);
   });

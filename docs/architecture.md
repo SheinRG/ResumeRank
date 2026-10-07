@@ -439,12 +439,68 @@ at most the requests already in flight. Settings, Company shows the usage.
 
 ## Email
 
-`src/lib/email.ts` sends verification and password-reset email through
-Resend when `RESEND_API_KEY` is set. When it isn't, `send()` logs the
-recipient, subject, and action link to the server console instead of
-throwing — local development and CI never block on having an email provider
-configured. Seeded demo users are pre-verified so a reviewer running the demo
-locally never needs to touch email at all.
+Transactional email (verification, invites, password resets) goes through
+a Postgres outbox (`backend/src/email/`), on the same pattern as the
+scoring queue. No request waits on an email provider, and no email is lost
+to a provider blip.
+
+**Queueing.** `queueVerificationEmail`, `queueInviteEmail` and
+`queuePasswordResetEmail` (`email/messages.ts`) render the message and
+write an `EmailMessage` row through whatever transaction client they are
+given, so the row commits with the token or invite it carries, or not at
+all. Registration, resend-verification and forgot-password do this in a
+`db.$transaction`. `inviteMember` does it inside its
+`tenantTransaction`, where the tenant role has `INSERT` but not
+`SELECT` on the table, so the insert uses `createMany` (no
+`RETURNING`). Forgot-password now responds just as fast whether or not
+the account exists, because nothing is sent inline.
+
+**Payload confidentiality.** The rendered message contains a raw token,
+which the token tables deliberately never store. The payload is sealed with
+AES-256-GCM under an HKDF subkey of `AUTH_SECRET`
+(`email/sealed.ts`). The row id and recipient are the associated data, so
+a payload copied to another row, or a `to` edited to redirect a reset
+link, fails to open and the message fails instead of going out. Every
+terminal status nulls `payload`, and terminal rows are pruned after 30
+days. Rotating `AUTH_SECRET` makes still-queued messages fail as
+unreadable, and users can request a fresh link.
+
+**Delivery** (`email/outbox.ts`):
+
+1. `claimNextEmail` moves one due `QUEUED` row to `SENDING` with
+   `FOR UPDATE SKIP LOCKED`, so overlapping drains never double-send.
+2. A message whose link has expired is marked `EXPIRED`. One to a
+   suppressed address is marked `SUPPRESSED`.
+3. `deliverEmail` (`email/transport.ts`) picks Resend, then SMTP, then
+   a log line, as before. Resend calls carry the idempotency key
+   `email-outbox/<id>`, so re-sending after a lost response is a no-op
+   at Resend.
+4. Failures are classified. For Resend, 429, 5xx, quota and network errors
+   are retried. For SMTP, 4xx replies and connection errors are retried,
+   while 5xx replies and bad credentials are not. Retries back off
+   exponentially (30s doubling, capped at 30 min, +/-20% jitter) for up to
+   6 attempts, and never past the link's own expiry. Otherwise the message
+   is `FAILED` with the provider's reason.
+5. `recoverStaleEmails` puts rows stuck in `SENDING` for more than 2
+   minutes back in the queue.
+
+`scheduleEmailDrain()` (`frontend/src/server/email-drain.ts`) drains
+after the response of every action that queues mail. `GET /api/cron/email`
+(bearer `CRON_SECRET`, shared with the scoring cron through
+`server/cron-auth.ts`) picks up retries; schedule it every minute.
+
+**Bounces and complaints.** `POST /api/webhooks/resend` is enabled by
+`RESEND_WEBHOOK_SECRET` together with `RESEND_API_KEY`. It verifies the
+Svix signature over the raw body, rejecting stale timestamps, before
+anything is parsed. A permanent bounce or a complaint adds the address to
+`EmailSuppression` and marks the message `BOUNCED` / `COMPLAINED`. A
+transient bounce is recorded but doesn't suppress, and a delivery sets
+`deliveredAt`. SMTP has no webhook equivalent. To un-suppress an address,
+delete its `EmailSuppression` row.
+
+With no provider configured, the action link is written to the server log
+(`email.logged`), so local development and CI never block on email.
+Seeded demo users are pre-verified.
 
 ## Testing strategy
 

@@ -1,7 +1,7 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import { createCompanyInvite } from "../auth/tokens";
-import { sendInviteEmail } from "../email";
+import { queueInviteEmail } from "../email/messages";
 import { AUTH_LIMIT, rateLimit } from "../rate-limit";
 import type { Prisma } from "../generated/prisma/client";
 import type { InviteMemberInput } from "../validators/company";
@@ -173,8 +173,9 @@ export async function removeMember(
 }
 
 /**
- * The invite row and its audit entry commit before the email is sent, so a
- * failed send leaves a valid, logged invite the admin can simply re-send.
+ * The invite row, its audit entry and the queued email commit together, so
+ * every invite that exists has its email on the way; the outbox retries a
+ * failed send, and an admin can still re-send to mint a fresh link.
  */
 export async function inviteMember(
   ctx: TenantContext,
@@ -207,9 +208,13 @@ export async function inviteMember(
     throw new ConflictError("That person already belongs to a company.");
   }
 
-  const { invite, rawToken } = await tenantTransaction(ctx, async (tx) => {
+  const invite = await tenantTransaction(ctx, async (tx) => {
     const created = await createCompanyInvite(
       { companyId: ctx.companyId, email, role, invitedById: ctx.actorId },
+      tx,
+    );
+    await queueInviteEmail(
+      { to: email, token: created.rawToken, companyName: company.name, inviterName: inviter.name },
       tx,
     );
     await logActivity(
@@ -223,14 +228,7 @@ export async function inviteMember(
       },
       tx,
     );
-    return created;
-  });
-
-  await sendInviteEmail({
-    to: email,
-    token: rawToken,
-    companyName: company.name,
-    inviterName: inviter.name,
+    return created.invite;
   });
 
   return {
