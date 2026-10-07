@@ -139,10 +139,27 @@ export function forTenant(companyId: string) {
   });
 }
 
-export type TenantDb = ReturnType<typeof forTenant>;
+type ScopedClient = ReturnType<typeof forTenant>;
+
+/**
+ * The tenant client for single statements. `$transaction` is left off so
+ * every transaction goes through `tenantTransaction`, which adds RLS.
+ */
+export type TenantDb = Omit<ScopedClient, "$transaction">;
+
+export type TenantTx = Parameters<Parameters<ScopedClient["$transaction"]>[0]>[0];
 
 const MAX_CACHED_TENANTS = 1_000;
-const tenantClients = new Map<string, TenantDb>();
+const tenantClients = new Map<string, ScopedClient>();
+
+function scopedClient(companyId: string): ScopedClient {
+  const cached = tenantClients.get(companyId);
+  if (cached) return cached;
+  if (tenantClients.size >= MAX_CACHED_TENANTS) tenantClients.clear();
+  const client = forTenant(companyId);
+  tenantClients.set(companyId, client);
+  return client;
+}
 
 /**
  * Memoised `forTenant`: services call this per query, so reuse the extended
@@ -150,10 +167,29 @@ const tenantClients = new Map<string, TenantDb>();
  * growing without bound across many tenants.
  */
 export function tenantDb({ companyId }: { companyId: string }): TenantDb {
-  const cached = tenantClients.get(companyId);
-  if (cached) return cached;
-  if (tenantClients.size >= MAX_CACHED_TENANTS) tenantClients.clear();
-  const client = forTenant(companyId);
-  tenantClients.set(companyId, client);
-  return client;
+  return scopedClient(companyId);
+}
+
+/** The role the RLS policies bind; see the `tenant_row_level_security` migration. */
+const TENANT_ROLE = "resumerank_tenant";
+
+/**
+ * Runs `fn` in one interactive transaction as the RLS-bound tenant role,
+ * pinned to `companyId`, so Postgres enforces the tenant on everything inside
+ * it — including the nested relation writes and raw SQL the extension can't
+ * see. Both settings are transaction-local, so the pooled connection goes
+ * back as the owner on commit or rollback.
+ *
+ * Single reads stay on `tenantDb`: wrapping each in a transaction would cost
+ * extra round trips, and RLS stops non-leakproof search operators (ILIKE,
+ * full-text match) using their GIN indexes.
+ */
+export function tenantTransaction<T>(
+  { companyId }: { companyId: string },
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  return scopedClient(companyId).$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('role', ${TENANT_ROLE}, true), set_config('app.company_id', ${companyId}, true)`;
+    return fn(tx);
+  });
 }

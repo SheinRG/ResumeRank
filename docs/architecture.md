@@ -105,6 +105,47 @@ this way, an id belonging to another company simply doesn't match the query
 and behaves as if it doesn't exist — there is no separate "is this mine?"
 check to forget.
 
+**Two backstops sit under the explicit filters** (`backend/src/tenant-db.ts`):
+
+- `tenantDb(ctx)` is a Prisma client extension that injects `companyId` into
+  top-level queries on the tenant-owned models and throws
+  `TenantViolationError` when a query names another tenant. It can't see
+  nested relation writes or raw SQL.
+- `tenantTransaction(ctx, fn)` closes that gap with Postgres row-level
+  security. It opens one interactive transaction and, in a single statement,
+  sets the transaction-local `role` to `resumerank_tenant` and
+  `app.company_id` to the tenant. The policies
+  (`20261007090000_tenant_row_level_security`) bind only that role:
+  `Company`, `CompanyInvite`, `Job`, `Candidate`, `Application`, `ScoringRun`
+  and `ActivityLog` match on `companyId` (`id` for `Company`), and
+  `JobRequirement`, `Scorecard` and `Evaluation` match through their parent,
+  which is itself filtered. Foreign-key checks ignore RLS, so the
+  `Application` and `ScoringRun` policies also require their parents to be
+  visible — a row can't be attached to another tenant's job or candidate.
+  The role only has `SELECT, INSERT` on `ActivityLog` and `Evaluation`, so
+  the audit trail and scoring evidence are append-only from the app.
+  Without the setting, no row matches.
+
+Every service mutation runs in `tenantTransaction` (`tenantDb` deliberately
+has no `$transaction`). Single reads stay on `tenantDb` outside a
+transaction. Wrapping each one would add round trips, and RLS quals act as a
+security barrier: non-leakproof search operators (`ILIKE`, full-text `@@`)
+couldn't use their GIN indexes. Connections that never switch role (auth,
+onboarding, the cross-tenant scoring claim, seeds, migrations) run as the
+table owner, which RLS doesn't apply to. Both settings are `SET LOCAL`, so a
+pooled connection (including PgBouncer transaction mode) goes back as the
+owner on commit or rollback.
+
+The migration creates the role and grants it to the migrating role, so
+`SET ROLE` works there. If production connects as a different role than
+migrations do, grant `resumerank_tenant` to that role too. `User` has no
+policy: users are identities rather than tenant data, removing a member sets
+their `companyId` to null, and invites look up users by email across
+workspaces. `backend/tests/integration/rls.test.ts` fails if a new table with
+a `companyId` lands without a policy. A new table that a tenant transaction
+touches needs a `GRANT` in its migration, or the transaction fails with
+`permission denied`.
+
 **Membership lifecycle.** There are three ways to end up with a `companyId`:
 
 1. **Register** (`/register`, `registerAction` in

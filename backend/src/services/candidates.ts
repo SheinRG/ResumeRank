@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { csvRow } from "../csv";
 import { logActivity } from "../activity";
 import { assertAiBudget, chargeAiTokens } from "../ai-budget";
@@ -345,7 +345,7 @@ export async function createCandidate(
   assertCanWrite(ctx);
 
   try {
-    return await tenantDb(ctx).$transaction(async (tx) => {
+    return await tenantTransaction(ctx, async (tx) => {
       const candidate = await tx.candidate.create({
         data: { ...input, companyId: ctx.companyId, createdById: ctx.actorId },
       });
@@ -376,7 +376,7 @@ export async function updateCandidate(
   const { id, ...fields } = input;
 
   try {
-    return await tenantDb(ctx).$transaction(async (tx) => {
+    return await tenantTransaction(ctx, async (tx) => {
       const candidate = await tx.candidate.update({
         where: { id, companyId: ctx.companyId },
         data: fields,
@@ -405,7 +405,7 @@ export async function deleteCandidate(ctx: TenantContext, id: string): Promise<C
   assertCanWrite(ctx);
 
   try {
-    return await tenantDb(ctx).$transaction(async (tx) => {
+    return await tenantTransaction(ctx, async (tx) => {
       const candidate = await tx.candidate.delete({
         where: { id, companyId: ctx.companyId },
       });
