@@ -1,0 +1,90 @@
+name: Deploy
+
+# Schema first, then code: migrations run against staging (a rehearsal on
+# production-shaped data) and then production, and only after both succeed is
+# the build deployed. Everything is inert until its secrets exist; see
+# docs/operations.md for the one-time setup.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never interleave two deploys: a second push waits instead of racing.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        if: env.DIRECT_URL != ''
+        run: npm ci
+      - name: Apply migrations to staging
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "::notice::staging DIRECT_URL secret not set; skipping staging migrations."
+            exit 0
+          fi
+          npm run db:deploy
+
+  migrate-production:
+    needs: migrate-staging
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment to gate production on approval.
+    environment: production
+    env:
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        if: env.DIRECT_URL != ''
+        run: npm ci
+      - name: Apply migrations to production
+        run: |
+          if [ -z "$DIRECT_URL" ]; then
+            echo "::notice::production DIRECT_URL secret not set; skipping production migrations."
+            exit 0
+          fi
+          npm run db:deploy
+
+  deploy-production:
+    needs: migrate-production
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build and deploy to Vercel production
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice::VERCEL_TOKEN not set; production is deployed by Vercel's Git integration instead."
+            exit 0
+          fi
+          npm ci
+          npx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx vercel@latest build --prod --token="$VERCEL_TOKEN"
+          npx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"

@@ -22,7 +22,12 @@ describe("log", () => {
     log.info("thing.happened", { count: 2 });
 
     const [entry] = captured(out);
-    expect(entry).toMatchObject({ level: "info", event: "thing.happened", count: 2 });
+    expect(entry).toMatchObject({
+      level: "info",
+      event: "thing.happened",
+      count: 2,
+      appEnv: "development",
+    });
     expect(typeof entry.time).toBe("string");
   });
 
