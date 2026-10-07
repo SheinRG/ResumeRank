@@ -26,6 +26,8 @@ const envSchema = z.object({
   // Groq retires models; llama-3.3-70b-versatile was withdrawn in 2026.
   GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
   RESEND_API_KEY: z.string().optional(),
+  /** Signing secret (whsec_…) of the Resend webhook pointed at /api/webhooks/resend; bounce and complaint handling is off without it. */
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
@@ -41,7 +43,7 @@ const envSchema = z.object({
   TRUSTED_IP_HEADER: z.string().trim().toLowerCase().optional(),
   /** Set by Vercel on every deployment. */
   VERCEL: z.string().optional(),
-  /** Bearer token a scheduler sends to /api/cron/scoring; the route is disabled without it. */
+  /** Bearer token a scheduler sends to /api/cron/scoring and /api/cron/email; both are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 

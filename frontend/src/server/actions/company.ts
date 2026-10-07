@@ -22,6 +22,7 @@ import {
   updateCompanySchema,
 } from "@resumerank/core/validators/company";
 import { expireTenantReads } from "@/server/cache-tags";
+import { scheduleEmailDrain } from "@/server/email-drain";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -156,6 +157,7 @@ export async function inviteMemberAction(
     }
     const admin = await requireAdmin();
     const invite = await inviteMember(tenantContext(admin), parsed.data);
+    scheduleEmailDrain();
 
     revalidatePath("/settings/team");
     expireTenantReads(admin.companyId);
