@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import { Prisma } from "../generated/prisma/client";
 import type { EmploymentType, JobStatus, RequirementWeight } from "../validators/enums";
@@ -187,7 +187,7 @@ export async function createJob(ctx: TenantContext, input: JobCreateInput): Prom
   assertCanWrite(ctx);
   const { requirements, ...jobFields } = input;
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const job = await tx.job.create({
       data: {
         ...jobFields,
@@ -228,7 +228,7 @@ export async function updateJob(ctx: TenantContext, input: JobUpdateInput): Prom
   assertCanWrite(ctx);
   const { id, requirements, ...jobFields } = input;
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     try {
       await tx.job.update({ where: { id, companyId: ctx.companyId }, data: jobFields });
     } catch (error) {
@@ -299,7 +299,7 @@ export async function setJobStatus(
 ): Promise<JobDetail> {
   assertCanWrite(ctx);
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     let job: JobDetail;
     try {
       job = await tx.job.update({

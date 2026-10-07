@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import { getAiBudget, type AiBudget } from "../ai-budget";
 import type { Prisma } from "../generated/prisma/client";
@@ -48,7 +48,7 @@ export async function updateCompany(
   assertCanAdmin(ctx);
   const { name, logoUrl, website, description, industry, size, location } = input;
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const company = await tx.company.update({
       where: { id: ctx.companyId },
       data: {

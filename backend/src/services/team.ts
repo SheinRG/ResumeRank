@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import { createCompanyInvite } from "../auth/tokens";
 import { sendInviteEmail } from "../email";
@@ -89,7 +89,7 @@ export async function updateMemberRole(
     throw new ForbiddenError("Only an owner can assign the owner role.");
   }
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const target = await tx.user.findFirst({
       where: { id: userId, companyId: ctx.companyId },
       select: { role: true },
@@ -139,7 +139,7 @@ export async function removeMember(
     );
   }
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const target = await tx.user.findFirst({
       where: { id: userId, companyId: ctx.companyId },
       select: { role: true },
@@ -207,7 +207,7 @@ export async function inviteMember(
     throw new ConflictError("That person already belongs to a company.");
   }
 
-  const { invite, rawToken } = await tenantDb(ctx).$transaction(async (tx) => {
+  const { invite, rawToken } = await tenantTransaction(ctx, async (tx) => {
     const created = await createCompanyInvite(
       { companyId: ctx.companyId, email, role, invitedById: ctx.actorId },
       tx,
@@ -247,7 +247,7 @@ export async function revokeInvite(
 ): Promise<{ id: string }> {
   assertCanAdmin(ctx);
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const { count } = await tx.companyInvite.deleteMany({
       where: { id: inviteId, companyId: ctx.companyId },
     });

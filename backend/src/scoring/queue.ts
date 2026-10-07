@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
 import { AI_BUDGET_EXHAUSTED, chargeAiTokens, getAiBudget } from "../ai-budget";
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { errorFields, log, withLogContext } from "../observability/log";
 import { DomainError } from "../services/errors";
 import { MIN_RESUME_LENGTH } from "../validators/candidate";
@@ -219,7 +219,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
   const settings = currentScoringSettings();
   const finishedAt = new Date();
 
-  await scoped.$transaction(async (tx) => {
+  await tenantTransaction(run, async (tx) => {
     const { count } = await tx.scoringRun.updateMany({
       where: ownedBy(run),
       data: {

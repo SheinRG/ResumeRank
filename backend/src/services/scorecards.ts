@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Scorecard } from "../generated/prisma/client";
 import type { ScorecardInput } from "../validators/application";
@@ -13,7 +13,7 @@ export async function upsertScorecard(
   assertCanWrite(ctx);
   const { applicationId, rating, notes } = input;
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const application = await tx.application.findUnique({
       where: { id: applicationId, companyId: ctx.companyId, deletedAt: null },
       select: { id: true, candidate: { select: { name: true } } },

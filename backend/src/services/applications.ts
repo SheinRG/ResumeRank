@@ -1,4 +1,4 @@
-import { tenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Application, Prisma } from "../generated/prisma/client";
 import type {
@@ -364,7 +364,7 @@ export async function createApplication(
   }
 
   try {
-    return await tenantDb(ctx).$transaction(async (tx) => {
+    return await tenantTransaction(ctx, async (tx) => {
       const application = await tx.application.create({
         data: { jobId, candidateId, companyId: ctx.companyId, createdById: ctx.actorId },
       });
@@ -396,7 +396,7 @@ export async function updateStage(
   assertCanWrite(ctx);
   const { id, stage } = input;
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const existing = await tx.application.findUnique({
       where: { id, companyId: ctx.companyId, deletedAt: null },
       select: { stage: true, candidate: { select: { name: true } } },
@@ -432,7 +432,7 @@ export async function setApplicationRemoved(
   assertCanWrite(ctx);
 
   try {
-    return await tenantDb(ctx).$transaction(async (tx) => {
+    return await tenantTransaction(ctx, async (tx) => {
       const { candidate, ...application } = await tx.application.update({
         where: { id, companyId: ctx.companyId },
         data: { deletedAt: removed ? new Date() : null },

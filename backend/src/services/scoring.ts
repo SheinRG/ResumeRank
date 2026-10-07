@@ -1,4 +1,4 @@
-import { tenantDb, type TenantDb } from "../tenant-db";
+import { tenantDb, tenantTransaction, type TenantTx } from "../tenant-db";
 import { logActivity } from "../activity";
 import { assertAiBudget } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
@@ -63,15 +63,13 @@ const RUN_VIEW_SELECT = {
   finishedAt: true,
 } as const;
 
-type ScopedTx = Parameters<Parameters<TenantDb["$transaction"]>[0]>[0];
-
 /**
  * Row locks serialise concurrent requests for the same applications (two
  * clicks, a click racing a bulk request), so the "is a run already active?"
  * check below can't be raced into a duplicate run. Ids are locked in a fixed
  * order so overlapping requests can't deadlock.
  */
-async function lockApplications(tx: ScopedTx, companyId: string, ids: string[]): Promise<Set<string>> {
+async function lockApplications(tx: TenantTx, companyId: string, ids: string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const rows = await tx.$queryRaw<Array<{ id: string }>>`
     SELECT "id" FROM "Application"
@@ -140,7 +138,7 @@ export async function requestScoring(
   assertScoringConfigured();
   const settings = currentScoringSettings();
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const locked = await lockApplications(tx, ctx.companyId, [applicationId]);
     if (!locked.has(applicationId)) throw new NotFoundError(APPLICATION_NOT_FOUND);
 
@@ -241,7 +239,7 @@ export async function requestJobScoring(
   assertScoringConfigured();
   const settings = currentScoringSettings();
 
-  return tenantDb(ctx).$transaction(async (tx) => {
+  return tenantTransaction(ctx, async (tx) => {
     const job = await tx.job.findUnique({
       where: { id: jobId },
       select: {
