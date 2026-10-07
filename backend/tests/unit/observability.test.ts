@@ -93,7 +93,7 @@ describe("errorFields", () => {
 });
 
 describe("traceLlmCall", () => {
-  const info = { operation: "scoring" as const, model: "test-model", attempt: 1 };
+  const info = { operation: "scoring" as const, provider: "groq", model: "test-model", attempt: 1 };
 
   it("returns the completion with token usage and logs the call", async () => {
     const out = vi.spyOn(console, "log").mockImplementation(() => {});

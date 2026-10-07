@@ -77,7 +77,9 @@ function fakeEvaluator(verdict: Verdict = "STRONG"): { evaluate: Evaluator; call
         evaluations: job.requirements.map((r) => ({
           requirementId: r.id,
           verdict,
-          evidence: null,
+          modelVerdict: verdict,
+          evidence: verdict === "MISSING" ? null : "Fake quote.",
+          evidenceStatus: verdict === "MISSING" ? ("NONE" as const) : ("VERIFIED" as const),
           note: "Fake note.",
         })),
       },
@@ -87,6 +89,7 @@ function fakeEvaluator(verdict: Verdict = "STRONG"): { evaluate: Evaluator; call
       completionTokens: 20,
       latencyMs: 5,
       rawOutput: "{}",
+      injectionSignals: [],
     };
   };
   return { evaluate, calls };
@@ -182,6 +185,44 @@ describe("the worker", () => {
         where: { companyId: a.companyId, entityId: applicationId, action: "application.score" },
       }),
     ).toBe(1);
+  });
+
+  it("records evidence checks and injection signals, and never shows an unverified quote", async () => {
+    const { applicationId } = await addApplicant(a);
+    await requestScoring(a.owner, applicationId);
+    const evaluate: Evaluator = async (job) => ({
+      result: {
+        summary: "Mixed.",
+        evaluations: job.requirements.map((r, index) => ({
+          requirementId: r.id,
+          verdict: index === 0 ? "PARTIAL" : "STRONG",
+          modelVerdict: "STRONG",
+          evidence: index === 0 ? "Invented quote." : "Real quote.",
+          evidenceStatus: index === 0 ? "UNVERIFIED" : "VERIFIED",
+          note: "n",
+        })),
+      },
+      model: currentScoringSettings().model,
+      attempts: 1,
+      promptTokens: 1,
+      completionTokens: 1,
+      latencyMs: 1,
+      rawOutput: "{}",
+      injectionSignals: ["ignore-instructions"],
+    });
+
+    await drainScoringQueue({ evaluate, lanes: 1 });
+
+    const detail = await getApplication(a.owner, applicationId);
+    expect(detail?.evaluations.map((e) => [e.verdict, e.modelVerdict, e.evidenceStatus, e.evidence])).toEqual([
+      ["PARTIAL", "STRONG", "UNVERIFIED", null],
+      ["STRONG", "STRONG", "VERIFIED", "Real quote."],
+    ]);
+    expect(detail?.scoring.injectionSignals).toEqual(["ignore-instructions"]);
+    const stored = await db.evaluation.findFirstOrThrow({
+      where: { scoringRun: { applicationId }, evidenceStatus: "UNVERIFIED" },
+    });
+    expect(stored.evidence).toBe("Invented quote.");
   });
 
   it("keeps earlier runs and their evaluations when an application is rescored", async () => {

@@ -374,13 +374,57 @@ while work is outstanding, and from `GET /api/cron/scoring` (bearer
 watching). Each drain claims for 15s; with two 20s-bounded LLM attempts the
 worst case fits the 60s `maxDuration` those routes declare.
 
-**The engine** (`engine.ts`) treats resume text strictly as data, calls Groq
-with `response_format: { type: "json_object" }` and one corrective retry
-when the output fails validation; the SDK's own retries are off because the
-queue owns them. `parse.ts::reconcileResult` enforces exactly one evaluation
-per known requirement id and strips any evidence quote that doesn't appear
-verbatim in the resume. `math.ts::computeScore` is the weighted match: MUST
-counts double, STRONG earns full credit, PARTIAL half, MISSING none.
+**Provider layer** (`backend/src/ai/llm.ts`). Scoring and extraction both
+call `completeJson`, which:
+
+- sends one bounded request through an `LlmProvider` (Groq today: one
+  pooled client, the SDK's own retries off, a per-request timeout) and
+  traces it with `traceLlmCall`;
+- feeds a validation failure back to the model once;
+- falls through to `GROQ_FALLBACK_MODEL` on a transient or model-not-found
+  failure;
+- skips a model whose per-process circuit is open (5 consecutive provider
+  failures, 30s cooldown, then half-open). If every circuit is open it throws
+  `ProviderUnavailableError`, which the queue treats as transient.
+
+The model that actually answered is recorded on the run and goes into its
+input hash.
+
+**Untrusted input** (`backend/src/ai/untrusted.ts`). Every field the
+model reads that someone else wrote goes in its own block: the job title,
+description, requirement labels (one per line, so a label can't fake a
+row) and the resume. Each block is `<<<ID:NAME>>> … <<<ID:END>>>`, where
+`ID` is a hash of the content, so text can't contain its own closing
+marker. Runs of `<<<`/`>>>` inside the text are defused and invisible
+characters are stripped. `detectInjection` flags resumes that look written
+to steer the model: requests to ignore instructions, role changes, fake
+system lines, score requests, forged JSON, block markers and hidden
+characters. The signals are stored on the run (`injectionSignals`) and
+shown on the application page as a warning. They never change the score. A
+live check with an injected resume produced unchanged verdicts and four
+signals.
+
+**Evidence** (`scoring/parse.ts`). `reconcileResult` enforces exactly one
+evaluation per known requirement id, then checks every quote against the
+resume. Matching keeps only letters and digits after NFKC normalization, so
+ligatures, curly quotes, bullets and hyphenated line breaks from PDF text
+don't fail a real quote, while the words still have to appear in order. Each
+evaluation stores `evidenceStatus` (`VERIFIED` / `UNVERIFIED` / `NONE`),
+the quote as cited, and `modelVerdict`. STRONG means "the resume
+explicitly demonstrates it", so a STRONG without a verified quote is stored
+and counted as PARTIAL. Pages only ever receive verified quotes. An
+unverified one is reported by status, with a note explaining a capped
+verdict.
+
+**Determinism.** Temperature 0 and a fixed seed (both recorded on the run
+and part of the input hash). In a live check, identical inputs gave
+identical verdicts and evidence statuses, though the free-text notes still
+varied slightly, which is why the hash-based reuse of a successful run
+matters. The score history shows the range when runs on an application
+disagree.
+
+`math.ts::computeScore` is the weighted match: MUST counts double, STRONG
+earns full credit, PARTIAL half, MISSING none.
 
 **UI.** The score button queues and then polls the run every 2s (resuming
 after a reload), showing *Queued* / *Scoring*; a failed run shows its reason

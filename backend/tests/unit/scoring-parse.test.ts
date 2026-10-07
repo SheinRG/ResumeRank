@@ -75,10 +75,53 @@ describe("reconcileResult", () => {
       requirements,
       resume,
     );
-    expect(out.evaluations[0].evidence).not.toBeNull();
+    expect(out.evaluations[0].evidenceStatus).toBe("VERIFIED");
   });
 
-  it("strips fabricated quotes instead of showing them", () => {
+  it("matches quotes through PDF artifacts: ligatures, curly quotes, hyphenated line breaks", () => {
+    const pdfResume = "Led the “Atlas” platform — a ﬁve-person team.\nShipped data-engi-\nneering pipelines.";
+    const out = reconcileResult(
+      result([
+        {
+          requirementId: "r1",
+          verdict: "STRONG",
+          evidence: 'Led the "Atlas" platform - a five-person team.',
+          note: "n",
+        },
+        { requirementId: "r2", verdict: "PARTIAL", evidence: "Shipped data-engineering pipelines.", note: "n" },
+      ]),
+      requirements,
+      pdfResume,
+    );
+    expect(out.evaluations.map((e) => e.evidenceStatus)).toEqual(["VERIFIED", "VERIFIED"]);
+  });
+
+  it("caps STRONG at PARTIAL when no quote backs it, keeping what the model said", () => {
+    const out = reconcileResult(
+      result([
+        { requirementId: "r1", verdict: "STRONG", evidence: null, note: "n" },
+        { requirementId: "r2", verdict: "PARTIAL", evidence: null, note: "n" },
+      ]),
+      requirements,
+      resume,
+    );
+    expect(out.evaluations[0]).toMatchObject({ verdict: "PARTIAL", modelVerdict: "STRONG", evidenceStatus: "NONE" });
+    expect(out.evaluations[1]).toMatchObject({ verdict: "PARTIAL", modelVerdict: "PARTIAL" });
+  });
+
+  it("treats a quote with no letters or digits as no quote", () => {
+    const out = reconcileResult(
+      result([
+        { requirementId: "r1", verdict: "MISSING", evidence: "—", note: "n" },
+        { requirementId: "r2", verdict: "MISSING", evidence: null, note: "n" },
+      ]),
+      requirements,
+      resume,
+    );
+    expect(out.evaluations[0]).toMatchObject({ evidence: null, evidenceStatus: "NONE", verdict: "MISSING" });
+  });
+
+  it("flags fabricated quotes and caps their verdict", () => {
     const out = reconcileResult(
       result([
         {
@@ -92,7 +135,11 @@ describe("reconcileResult", () => {
       requirements,
       resume,
     );
-    expect(out.evaluations[0].evidence).toBeNull();
+    expect(out.evaluations[0]).toMatchObject({
+      evidenceStatus: "UNVERIFIED",
+      verdict: "PARTIAL",
+      modelVerdict: "STRONG",
+    });
   });
 
   it("orders evaluations by the requirement list, not model order", () => {

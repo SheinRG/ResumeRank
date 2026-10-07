@@ -6,8 +6,8 @@ import {
 } from "groq-sdk";
 import { describe, expect, it, vi } from "vitest";
 
+import { classifyProviderFailure } from "../../src/ai/llm";
 import {
-  classifyProviderFailure,
   SCORING_PROMPT_VERSION,
   scoringInputHash,
   type ScoringJob,
@@ -28,7 +28,7 @@ const JOB: ScoringJob = {
     { id: "r2", label: "Postgres", weight: "NICE" },
   ],
 };
-const SETTINGS: ScoringSettings = { model: "m1", promptVersion: "p1", temperature: 0.2 };
+const SETTINGS: ScoringSettings = { model: "m1", promptVersion: "p1", temperature: 0, seed: 7 };
 const RESUME = "Eight years of TypeScript and Postgres.";
 
 describe("scoringInputHash", () => {
@@ -52,7 +52,8 @@ describe("scoringInputHash", () => {
       scoringInputHash({ ...JOB, requirements: [...JOB.requirements].reverse() }, RESUME, SETTINGS),
       scoringInputHash(JOB, RESUME, { ...SETTINGS, model: "m2" }),
       scoringInputHash(JOB, RESUME, { ...SETTINGS, promptVersion: "p2" }),
-      scoringInputHash(JOB, RESUME, { ...SETTINGS, temperature: 0 }),
+      scoringInputHash(JOB, RESUME, { ...SETTINGS, temperature: 0.2 }),
+      scoringInputHash(JOB, RESUME, { ...SETTINGS, seed: 8 }),
     ];
     expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
   });

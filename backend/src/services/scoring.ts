@@ -226,6 +226,7 @@ function newRunData(
     model: settings.model,
     promptVersion: settings.promptVersion,
     temperature: settings.temperature,
+    seed: settings.seed,
     inputHash,
   };
 }

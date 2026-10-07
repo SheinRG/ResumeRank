@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { ShieldAlert, Sparkles } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -89,12 +89,52 @@ function TallyChip({
   );
 }
 
+const INJECTION_SIGNALS: Record<string, string> = {
+  "ignore-instructions": "asks the AI to ignore its instructions",
+  "role-override": "tries to give the AI a new role",
+  "role-marker": "contains fake system or assistant messages",
+  "score-steering": "asks for a particular score",
+  "output-forgery": "contains text shaped like the AI's answer",
+  delimiter: "contains the markers that fence off the resume",
+  "hidden-text": "contains invisible characters",
+};
+
+/**
+ * The resume is fenced off as data and the score is not adjusted, but text
+ * written to steer the AI is worth a human look before trusting the result.
+ */
+function InjectionWarning({ signals }: { signals: string[] }) {
+  return (
+    <div
+      role="note"
+      className="flex items-start gap-2 rounded-lg border border-verdict-partial/40 bg-verdict-partial/10 p-3 text-sm"
+    >
+      <ShieldAlert className="mt-0.5 size-4 shrink-0 text-verdict-partial" aria-hidden="true" />
+      <div className="flex flex-col gap-1">
+        <p className="font-medium text-foreground">This resume may be trying to influence the AI</p>
+        <p className="text-muted-foreground">
+          It {signals.map((signal) => INJECTION_SIGNALS[signal] ?? signal).join("; ")}. Check the
+          quoted evidence against the resume before relying on this score.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /** Every successful run is kept, so a rescore never erases the score a decision was based on. */
 function ScoreHistory({ history }: { history: ScoringHistoryItem[] }) {
+  const scores = history.flatMap((run) => (run.aiScore === null ? [] : [run.aiScore]));
+  const low = Math.min(...scores);
+  const high = Math.max(...scores);
   return (
     <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-      <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+      <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-xs uppercase tracking-wide text-muted-foreground">
         Score history
+        {scores.length > 1 && high > low ? (
+          <span className="normal-case tracking-normal">
+            ranged {low}–{high} across {scores.length} runs
+          </span>
+        ) : null}
       </p>
       <ol className="flex flex-col gap-1">
         {history.map((run) => (
@@ -205,6 +245,9 @@ export function ScorePanel({
           </div>
           {aiSummary ? (
             <p className="max-w-prose text-sm leading-relaxed text-foreground">{aiSummary}</p>
+          ) : null}
+          {scoring.injectionSignals.length > 0 ? (
+            <InjectionWarning signals={scoring.injectionSignals} />
           ) : null}
           {scoring.history.length > 1 ? <ScoreHistory history={scoring.history} /> : null}
         </div>

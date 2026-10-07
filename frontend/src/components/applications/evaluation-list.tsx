@@ -1,4 +1,4 @@
-import { ListChecks } from "lucide-react";
+import { Info, ListChecks } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +12,34 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { VerdictBadge } from "@/components/shared/status-badges";
 import { cn } from "@/lib/utils";
 import type { EvaluationItem } from "@/server/queries/applications";
+
+/**
+ * Why a verdict isn't what the model said, or why its quote is hidden. Null
+ * when the evaluation is exactly as the model returned it, with a real quote.
+ */
+function evidenceCaveat(evaluation: EvaluationItem): string | null {
+  const capped = evaluation.modelVerdict === "STRONG" && evaluation.verdict !== "STRONG";
+  if (evaluation.evidenceStatus === "UNVERIFIED") {
+    return capped
+      ? "The AI rated this Strong but quoted text that isn't in the resume, so the quote is hidden and the verdict counts as Partial."
+      : "The AI quoted text that isn't in the resume, so the quote is hidden.";
+  }
+  if (capped) {
+    return "The AI rated this Strong without quoting the resume, so the verdict counts as Partial.";
+  }
+  return null;
+}
+
+function EvidenceCaveat({ evaluation }: { evaluation: EvaluationItem }) {
+  const caveat = evidenceCaveat(evaluation);
+  if (!caveat) return null;
+  return (
+    <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
+      <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      {caveat}
+    </p>
+  );
+}
 
 export function EvaluationList({
   evaluations,
@@ -68,6 +96,7 @@ export function EvaluationList({
                   </blockquote>
                 ) : null}
                 <p className="text-sm leading-relaxed text-foreground">{evaluation.note}</p>
+                <EvidenceCaveat evaluation={evaluation} />
               </li>
             ))}
           </ul>
