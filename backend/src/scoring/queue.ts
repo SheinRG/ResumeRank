@@ -6,8 +6,8 @@ import { errorFields, log, withLogContext } from "../observability/log";
 import { DomainError } from "../services/errors";
 import { MIN_RESUME_LENGTH } from "../validators/candidate";
 import type { ScoringRun } from "../generated/prisma/client";
+import { classifyProviderFailure } from "../ai/llm";
 import {
-  classifyProviderFailure,
   currentScoringSettings,
   requestEvaluation,
   scoringInputHash,
@@ -235,6 +235,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         completionTokens: outcome.completionTokens,
         latencyMs: outcome.latencyMs,
         rawOutput: outcome.rawOutput,
+        injectionSignals: outcome.injectionSignals,
       },
     });
     if (count === 0) {
@@ -250,7 +251,9 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
           criterion: requirement?.label ?? "",
           weight: requirement?.weight ?? "NICE",
           verdict: e.verdict,
+          modelVerdict: e.modelVerdict,
           evidence: e.evidence,
+          evidenceStatus: e.evidenceStatus,
           note: e.note,
         };
       }),

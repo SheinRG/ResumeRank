@@ -59,6 +59,13 @@ enum Verdict {
   MISSING
 }
 
+/// Whether an evaluation's quote was found in the resume it was scored against.
+enum EvidenceStatus {
+  VERIFIED
+  UNVERIFIED
+  NONE
+}
+
 enum ScoringRunStatus {
   QUEUED
   RUNNING
@@ -319,15 +326,20 @@ model Application {
 /// One per requirement per run. Rows are never updated or deleted on rescore:
 /// a new run brings a new set, so every historical score stays explainable.
 model Evaluation {
-  id            String            @id @default(cuid())
-  scoringRunId  String
-  requirementId String?
-  criterion     String
-  weight        RequirementWeight @default(MUST)
-  verdict       Verdict
-  evidence      String?
-  note          String
-  createdAt     DateTime          @default(now())
+  id             String            @id @default(cuid())
+  scoringRunId   String
+  requirementId  String?
+  criterion      String
+  weight         RequirementWeight @default(MUST)
+  /// After the evidence rule: STRONG without a verified quote is capped at PARTIAL.
+  verdict        Verdict
+  /// What the model answered; null on runs scored before the evidence rule.
+  modelVerdict   Verdict?
+  /// The quote as the model cited it. Only VERIFIED quotes are ever shown.
+  evidence       String?
+  evidenceStatus EvidenceStatus    @default(NONE)
+  note           String
+  createdAt      DateTime          @default(now())
 
   scoringRun  ScoringRun      @relation(fields: [scoringRunId], references: [id], onDelete: Cascade)
   requirement JobRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
@@ -349,6 +361,7 @@ model ScoringRun {
   model            String
   promptVersion    String
   temperature      Float
+  seed             Int?
   /// sha256 of everything that shapes the output; equal hashes reuse a result.
   inputHash        String
   attempts         Int              @default(0)
@@ -361,6 +374,8 @@ model ScoringRun {
   completionTokens Int?
   latencyMs        Int?
   rawOutput        String?
+  /// Heuristic prompt-injection signals found in the resume, shown to recruiters.
+  injectionSignals String[]         @default([])
   /// User-safe failure reason, shown on the application page.
   error            String?
   createdAt        DateTime         @default(now())

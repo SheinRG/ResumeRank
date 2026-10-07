@@ -5,6 +5,8 @@ export type LlmOperation = "scoring" | "extraction";
 
 export interface LlmCallInfo {
   operation: LlmOperation;
+  /** The provider's GenAI system name, e.g. "groq". */
+  provider: string;
   model: string;
   attempt: number;
 }
@@ -46,7 +48,7 @@ export async function traceLlmCall<T extends CompletionLike>(
 ): Promise<TracedCompletion<T>> {
   return tracer.startActiveSpan(`llm.${info.operation}`, async (span) => {
     span.setAttributes({
-      "gen_ai.system": "groq",
+      "gen_ai.system": info.provider,
       "gen_ai.operation.name": "chat",
       "gen_ai.request.model": info.model,
       "resumerank.llm.attempt": info.attempt,

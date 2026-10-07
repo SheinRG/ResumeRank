@@ -3,6 +3,7 @@ import { logActivity } from "../activity";
 import type { Application, Prisma } from "../generated/prisma/client";
 import type {
   CandidateSource,
+  EvidenceStatus,
   RequirementWeight,
   ScoringRunStatus,
   Stage,
@@ -46,7 +47,11 @@ export interface EvaluationItem {
   criterion: string;
   weight: RequirementWeight;
   verdict: Verdict;
+  /** What the model answered, when the evidence rule capped it; null on older runs. */
+  modelVerdict: Verdict | null;
+  /** Only verified quotes are sent to the page; an unverified one is reported by status alone. */
   evidence: string | null;
+  evidenceStatus: EvidenceStatus;
   note: string;
   createdAt: Date;
 }
@@ -83,6 +88,8 @@ export interface ApplicationScoring {
   /** The most recent run, when it failed after the current score was produced. */
   lastFailure: { error: string; finishedAt: Date | null } | null;
   history: ScoringHistoryItem[];
+  /** Prompt-injection signals the current score's resume raised. */
+  injectionSignals: string[];
 }
 
 export interface ApplicationDetail {
@@ -274,6 +281,7 @@ export async function getApplication(
       },
       latestScoringRun: {
         select: {
+          injectionSignals: true,
           evaluations: { orderBy: [{ requirement: { order: "asc" } }, { id: "asc" }] },
         },
       },
@@ -320,7 +328,10 @@ export async function getApplication(
   return {
     ...rest,
     candidate: { ...candidate, resumeLength: resume[0]?.length ?? 0 },
-    evaluations: latestScoringRun?.evaluations ?? [],
+    evaluations: (latestScoringRun?.evaluations ?? []).map((evaluation) => ({
+      ...evaluation,
+      evidence: evaluation.evidenceStatus === "VERIFIED" ? evaluation.evidence : null,
+    })),
     scoring: {
       active,
       lastFailure:
@@ -328,6 +339,7 @@ export async function getApplication(
           ? { error: mostRecent.error ?? "Scoring failed.", finishedAt: mostRecent.finishedAt }
           : null,
       history: succeeded.map((run) => ({ ...run, current: run.id === latestScoringRunId })),
+      injectionSignals: latestScoringRun?.injectionSignals ?? [],
     },
   };
 }
