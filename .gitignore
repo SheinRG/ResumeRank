@@ -48,3 +48,6 @@ playwright-report/
 *.tsbuildinfo
 next-env.d.ts
 resumerank/
+
+# scoring eval output (the committed baseline lives next to the golden set)
+backend/evals/scoring/reports/

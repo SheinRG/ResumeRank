@@ -553,9 +553,58 @@ Seeded demo users are pre-verified.
   evidence reconciliation (`scoring-parse.test.ts`), the rate limiter
   (`rate-limit.test.ts`), and shared Zod validators (`validators.test.ts`).
   These run fast and don't need a database.
+- **Scoring eval** (`backend/evals/scoring`, `npm run eval:scoring`) measures
+  the model, not the code: see below.
 - **End-to-end** (`tests/e2e`, Playwright, `playwright.config.ts`) drives the
   real app on port 3105 and boots the dev server itself via `webServer` when
   one isn't already running, so `npm run test:e2e` works standalone in CI.
+
+### Scoring eval
+
+Unit tests can prove the pipeline handles whatever the model returns. They
+can't tell whether its verdicts are any good, so the eval measures that
+against human labels.
+
+- **Golden set** (`golden.json`, versioned). 16 synthetic cases, 41
+  judgments, across engineering, healthcare, support, sales and security.
+  Each requirement is labelled STRONG/PARTIAL/MISSING, and every supporting
+  label lists the resume passages that justify it. Three cases are
+  injection attempts. A case belongs only if two careful recruiters would
+  agree on every label. `dataset.ts` validates the file (every requirement
+  labelled once, spans present and really in the resume) in the unit
+  suite, so a labelling mistake fails fast without a model call. The
+  injection detector's recall and false-positive rate on the set are also
+  unit-tested, since it is deterministic.
+- **Metrics** (`metrics.ts`, unit-tested):
+  - Cohen's κ and accuracy of final verdicts against labels, plus a
+    confusion matrix.
+  - Evidence precision (cited quotes found in the resume), relevance
+    (verified quotes that cite a labelled passage) and STRONG evidence
+    recall.
+  - Score MAE against the score the labels imply.
+  - Injection recall and false positives.
+  - Stability: requirements whose verdict was identical across
+    `--repeats`.
+- **Gate.** κ ≥ 0.6, evidence precision ≥ 0.9, every injection case
+  flagged, no clean case flagged, and κ no more than 0.08 below the
+  committed `baseline.json` when the golden set version matches. With
+  nothing changed, single passes measured 0.04 apart, so the tolerance sits
+  above that noise, and CI pools two passes as the baseline does. The
+  report lists every verdict that moved since the baseline.
+- **CI** (`.github/workflows/scoring-eval.yml`) runs on PRs touching the
+  engine, `ai/*`, the scoring schema or the eval itself. It writes the
+  report to the job summary and uploads the full per-judgment JSON. Without
+  a `GROQ_API_KEY` secret (e.g. fork PRs) it is skipped with a notice. The
+  runner waits out provider rate limits, which free-tier keys hit within
+  one pass.
+
+**Baseline** (`openai/gpt-oss-120b`, prompt `576b4a5b7910`, two passes):
+κ 0.884, accuracy 92.7%, evidence precision, relevance and STRONG recall
+all 100%, score MAE 4.9, injection recall 100% with no false positives,
+95.1% stability. Every miss is a PARTIAL label scored MISSING: the model
+under-credits adjacent experience (an AWS Associate certification against
+a Professional requirement, Oracle RAC against PostgreSQL operations).
+That is the first thing a prompt change should target.
 
 ## Observability
 

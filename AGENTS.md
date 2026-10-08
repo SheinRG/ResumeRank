@@ -63,7 +63,8 @@ A two-tone **ink + lime** language. All tokens live in `frontend/src/app/globals
 ## Commands
 
 Run from the repo root; the root scripts fan out to the right workspace.
-- `npm run typecheck` (both workspaces) · `npm run lint` (frontend) · `npm run test` (backend vitest) · `npm run test:integration` (backend vitest against a disposable Postgres in `TEST_DATABASE_URL`) · `npm run build` (generates the Prisma client, then builds the frontend).
+- `npm run typecheck` (both workspaces) · `npm run lint` (frontend) · `npm run test` (backend vitest) · `npm run test:integration` (backend vitest against a disposable Postgres in `TEST_DATABASE_URL`) · `npm run build` (generates the Prisma client, then builds the frontend) · `npm run eval:scoring` (scores the golden set in `backend/evals/scoring` against the live model and gates on the committed baseline; needs `GROQ_API_KEY`).
+- **Scoring changes are measured, not eyeballed.** Any change to the prompt, the engine, `ai/*` or the model runs `npm run eval:scoring -- --repeats 2` (CI does this on PRs touching those paths). Refresh the baseline with `--write-baseline` only when the change is intended and the report says why; changing a label or case bumps `version` in `golden.json`. A label belongs in the golden set only if two careful recruiters would agree on it under the rubric.
 - Dev server: `npm run dev -- -p 3005` (port 3000 is taken by another local project).
 - Local DB: Postgres in Docker on port 5433 (see `.env`); `npm run db:migrate`, `npm run db:seed` (proxied to the backend workspace). Demo login: `demo@resumerank.app` / `demo1234`.
 - Backend unit tests live in `backend/tests/unit`, tenant-isolation integration tests in `backend/tests/integration` (add a probe there for every new service that takes an id); frontend e2e (`npm run test:e2e`) uses Playwright.

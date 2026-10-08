@@ -1,0 +1,62 @@
+name: Scoring eval
+
+# Scores the golden set against the live model and gates on agreement with
+# the labels and with the committed baseline. Runs only when something that
+# shapes a score changes, because every run spends real tokens.
+on:
+  pull_request:
+    paths:
+      - "backend/src/scoring/**"
+      - "backend/src/ai/**"
+      - "backend/src/validators/scoring.ts"
+      - "backend/evals/**"
+      - ".github/workflows/scoring-eval.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: scoring-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: ${{ vars.GROQ_MODEL || 'openai/gpt-oss-120b' }}
+      # The engine reads the shared env contract; nothing here touches a database.
+      DATABASE_URL: postgresql://unused:unused@localhost:5432/unused
+      AUTH_SECRET: scoring-eval-only-secret-not-used
+    steps:
+      - name: Skip without a model key
+        if: env.GROQ_API_KEY == ''
+        run: echo "::notice::GROQ_API_KEY is not set (e.g. a fork PR), so the scoring eval was skipped."
+
+      - uses: actions/checkout@v4
+        if: env.GROQ_API_KEY != ''
+
+      - uses: actions/setup-node@v4
+        if: env.GROQ_API_KEY != ''
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: env.GROQ_API_KEY != ''
+        run: npm ci
+
+      # Two pooled passes, like the baseline, so run-to-run noise doesn't fail the gate.
+      - name: Score the golden set
+        if: env.GROQ_API_KEY != ''
+        run: npm run eval:scoring -- --repeats 2
+
+      - name: Upload the full report
+        if: always() && env.GROQ_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoring-eval-report
+          path: backend/evals/scoring/reports/latest.json
+          if-no-files-found: ignore
