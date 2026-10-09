@@ -27,16 +27,14 @@ export function errorFields(error: unknown): LogFields {
   return { errorName: typeof error, errorMessage: String(error) };
 }
 
-// Read directly rather than through env(): a logger must work even while the
-// environment is invalid, which is exactly when env() throws.
-const appEnv = process.env.APP_ENV ?? "development";
-
 function serialize(level: Level, event: string, fields: LogFields): string {
   const entry = {
     level,
     event,
     time: new Date().toISOString(),
-    appEnv,
+    // Read directly rather than through env(): a logger must work even while the
+    // environment is invalid, which is exactly when env() throws.
+    appEnv: process.env.APP_ENV ?? "development",
     ...contextStore.getStore(),
     ...fields,
   };
