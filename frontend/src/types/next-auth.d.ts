@@ -7,6 +7,7 @@ declare module "next-auth" {
       id: string;
       role: Role;
       sessionVersion: number;
+      viaSso: boolean;
     } & DefaultSession["user"];
   }
 
@@ -21,5 +22,6 @@ declare module "@auth/core/jwt" {
     id?: string;
     role?: Role;
     sessionVersion?: number;
+    viaSso?: boolean;
   }
 }

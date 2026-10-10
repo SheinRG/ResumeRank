@@ -22,6 +22,8 @@ import { getDashboardData } from "../../src/services/dashboard";
 import { NotFoundError } from "../../src/services/errors";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
 import { upsertScorecard } from "../../src/services/scorecards";
+import { getSsoSettings, removeDomain, setDomainAutoJoin, verifyDomain } from "../../src/services/sso";
+import { closeSso } from "../../src/sso/jackson";
 import {
   getJobScoringProgress,
   getScoringRun,
@@ -52,7 +54,7 @@ import {
 
 /** Everything tenant A's probes could conceivably touch in tenant B. */
 async function snapshot(tenant: TenantFixture) {
-  const [job, candidate, application, member, invite, activityCount] = await Promise.all([
+  const [job, candidate, application, member, invite, domain, activityCount] = await Promise.all([
     db.job.findUnique({
       where: { id: tenant.jobId },
       include: { requirements: { orderBy: { order: "asc" } } },
@@ -64,9 +66,10 @@ async function snapshot(tenant: TenantFixture) {
     }),
     db.user.findUnique({ where: { id: tenant.memberId } }),
     db.companyInvite.findUnique({ where: { id: tenant.inviteId } }),
+    db.companyDomain.findUnique({ where: { id: tenant.domainId } }),
     db.activityLog.count({ where: { companyId: tenant.companyId } }),
   ]);
-  return { job, candidate, application, member, invite, activityCount };
+  return { job, candidate, application, member, invite, domain, activityCount };
 }
 
 let a: TenantFixture;
@@ -80,6 +83,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all([a, b].filter(Boolean).map(destroyTenant));
+  await closeSso();
   await db.$disconnect();
 });
 
@@ -144,6 +148,11 @@ describe("reads never return another tenant's rows", () => {
 
     const invites = await listPendingInvites(a.owner);
     expect(invites.map((i) => i.id)).toEqual([a.inviteId]);
+  });
+
+  it("lists only the caller's SSO domains", async () => {
+    const settings = await getSsoSettings(a.owner);
+    expect(settings.domains.map((d) => d.id)).toEqual([a.domainId]);
   });
 
   it("reads only the caller's company and activity", async () => {
@@ -260,6 +269,17 @@ describe("writes to another tenant's ids fail as not found", () => {
     ).rejects.toThrow(NotFoundError);
     await expect(removeMember(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(revokeInvite(a.owner, b.inviteId)).rejects.toThrow(NotFoundError);
+  });
+
+  it("rejects verifying, auto-joining or removing another tenant's domain", async () => {
+    const published = async () => [[`resumerank-domain-verification=${b.domainId}`]];
+    await expect(verifyDomain(a.owner, { domainId: b.domainId }, published)).rejects.toThrow(
+      NotFoundError,
+    );
+    await expect(
+      setDomainAutoJoin(a.owner, { domainId: b.domainId, autoJoin: false }),
+    ).rejects.toThrow(NotFoundError);
+    await expect(removeDomain(a.owner, { domainId: b.domainId })).rejects.toThrow(NotFoundError);
   });
 
   it("leaves every row of the other tenant exactly as it was", async () => {

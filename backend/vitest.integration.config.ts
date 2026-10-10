@@ -27,6 +27,7 @@ export default defineConfig({
       // Scoring requests need a key to be accepted; this one is invalid, so
       // nothing can reach a paid LLM — the queue tests inject an evaluator.
       GROQ_API_KEY: "integration-test-invalid-key",
+      SSO_ENCRYPTION_KEY: "integration-test-sso-encryption-key",
       RESEND_API_KEY: "",
       SMTP_HOST: "",
     },

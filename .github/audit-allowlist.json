@@ -29,6 +29,12 @@
       "package": "nodemailer",
       "reason": "Same unused Auth.js optional peer as GHSA-p6gq-j5cr-w38f; the app's own sender is on the patched nodemailer@10.",
       "reviewBy": "2027-01-06"
+    },
+    {
+      "id": "GHSA-86w9-cpqp-85rv",
+      "package": "node-forge",
+      "reason": "No fixed release yet. The embedded SSO service (@boxyhq/saml-jackson) uses node-forge only to generate and sign its own SP certificate (dist/saml/x509.js); it never verifies a signature with it. IdP signatures are checked by xml-crypto on Node's crypto, which the SSO integration suite exercises with tampered and forged assertions.",
+      "reviewBy": "2027-01-11"
     }
   ]
 }

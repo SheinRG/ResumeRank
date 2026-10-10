@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { AuthError, CredentialsSignin } from "next-auth";
 import { db } from "@resumerank/core/db";
-import { signIn, signOut, TOO_MANY_LOGIN_ATTEMPTS } from "@/lib/auth";
+import { signIn, signOut, SSO_REQUIRED, TOO_MANY_LOGIN_ATTEMPTS } from "@/lib/auth";
 import { hashPassword } from "@resumerank/core/auth/password";
 import { withUniqueCompanySlug } from "@resumerank/core/company";
 import {
@@ -121,6 +121,9 @@ export async function loginAction(
       if (error instanceof CredentialsSignin && error.code === TOO_MANY_LOGIN_ATTEMPTS) {
         const { retryAfterSeconds } = await loginBlocked(parsed.data.email, ip);
         return actionError(tooManyLoginAttempts(retryAfterSeconds));
+      }
+      if (error instanceof CredentialsSignin && error.code === SSO_REQUIRED) {
+        return actionError("Your company requires single sign-on. Use “Continue with SSO” instead.");
       }
       if (error instanceof AuthError) {
         return actionError("Wrong email or password.");

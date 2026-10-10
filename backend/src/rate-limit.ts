@@ -148,6 +148,12 @@ export async function clearRateLimit(key: string): Promise<void> {
 export const AUTH_LIMIT: RateLimit = { max: 5, windowMs: 15 * 60 * 1000 };
 
 /**
+ * Each SSO login start writes a pending session. Looser than the login limit
+ * because a whole office behind one NAT address signs in at the same hour.
+ */
+export const SSO_START_LIMIT: RateLimit = { max: 200, windowMs: 15 * 60 * 1000 };
+
+/**
  * Every AI call is a paid LLM request. The per-user window stops one person
  * (or a stuck script) from hammering it; the per-company window caps a whole
  * tenant's call rate. Generous enough for a recruiter scoring a full pipeline.

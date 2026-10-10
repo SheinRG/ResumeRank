@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
 import { annotateLogContext } from "@resumerank/core/observability/log";
+import { requiresSso } from "@resumerank/core/sso/policy";
 import type { Role } from "@resumerank/core/validators/enums";
 import type { TenantContext } from "@resumerank/core/services/context";
 
@@ -14,6 +15,13 @@ export { canAdmin, canWrite };
 
 /** Raised by guards; the action runner converts it into a typed ActionResult. */
 export class GateError extends Error {}
+
+/** A live session that didn't come through SSO, in a company that now requires it. */
+export class SsoRequiredError extends GateError {
+  constructor() {
+    super("Your company requires single sign-on. Log in with SSO to continue.");
+  }
+}
 
 export interface CurrentUser {
   id: string;
@@ -36,7 +44,8 @@ export interface CompanyUser extends CurrentUser {
  * Resolves the signed-in user fresh from the database once per request, so a
  * role demotion takes effect on the next request — the JWT is never the
  * authorization source of truth. A token whose session version is behind the
- * user's has been revoked and is rejected the same way.
+ * user's has been revoked and is rejected the same way, as is a password or
+ * Google session once the user's company requires single sign-on.
  *
  * Memoized per render with React `cache()`: the layout, the page and every
  * query it calls share one session read and one user lookup. Server actions
@@ -59,7 +68,7 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
       emailVerified: true,
       image: true,
       companyId: true,
-      company: { select: { name: true, logoUrl: true } },
+      company: { select: { name: true, logoUrl: true, ssoEnforced: true } },
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
@@ -67,6 +76,12 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
   annotateLogContext({ companyId: user.companyId });
   if (sessionVersion !== session.user.sessionVersion) {
     throw new GateError("Your session has ended. Log in again to continue.");
+  }
+  if (
+    !session.user.viaSso &&
+    requiresSso({ role: user.role, ssoEnforced: company?.ssoEnforced ?? false })
+  ) {
+    throw new SsoRequiredError();
   }
   return {
     ...rest,

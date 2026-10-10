@@ -133,6 +133,9 @@ model Company {
   location      String?
   /// Overrides the default AI token budget (AI_TOKEN_BUDGET) per rolling 30 days.
   aiTokenBudget Int?
+  /// Members must sign in through the company's SSO connection. Owners keep
+  /// their password as the way back in if the identity provider breaks.
+  ssoEnforced   Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -143,6 +146,28 @@ model Company {
   activities   ActivityLog[]
   invites      CompanyInvite[]
   scoringRuns  ScoringRun[]
+  domains      CompanyDomain[]
+}
+
+/// An email domain a company claims. A DNS TXT record proves control; only a
+/// verified domain routes SSO sign-ins to the company or lets its identity
+/// provider vouch for an address.
+model CompanyDomain {
+  id                String    @id @default(cuid())
+  companyId         String
+  domain            String
+  verificationToken String
+  verifiedAt        DateTime?
+  /// People who sign in through the company's SSO with this domain join as
+  /// members without an invite.
+  autoJoin          Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, domain])
+  // Any company may claim a domain, but only one can verify it.
+  @@unique([domain], map: "CompanyDomain_verified_domain_key", where: raw("\"verifiedAt\" IS NOT NULL"))
 }
 
 model CompanyInvite {
@@ -478,4 +503,35 @@ model EmailSuppression {
   email     String   @id
   reason    String
   createdAt DateTime @default(now())
+}
+
+/// Key-value records for the embedded SSO service (SAML/OIDC connections,
+/// in-flight logins, its signing certificate). Values arrive already
+/// encrypted with SSO_ENCRYPTION_KEY; see backend/src/sso/store.ts.
+model SsoRecord {
+  key        String    @id
+  namespace  String
+  value      String
+  iv         String?
+  tag        String?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  modifiedAt DateTime  @updatedAt
+
+  indexes SsoRecordIndex[]
+
+  @@index([namespace, createdAt(sort: Desc)])
+  @@index([expiresAt])
+}
+
+/// Secondary lookups (e.g. connections by tenant) into SsoRecord.
+model SsoRecordIndex {
+  id        String @id @default(cuid())
+  key       String
+  recordKey String
+
+  record SsoRecord @relation(fields: [recordKey], references: [key], onDelete: Cascade)
+
+  @@unique([key, recordKey])
+  @@index([recordKey])
 }

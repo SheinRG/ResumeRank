@@ -8,6 +8,7 @@ import { useState } from "react";
 import { AuthAlert } from "@/components/auth/auth-alert";
 import { GoogleSignInButton } from "@/components/auth/google-signin-button";
 import { PasswordInput } from "@/components/auth/password-input";
+import { SsoSignInForm } from "@/components/auth/sso-signin-form";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
 import { Input } from "@/components/ui/input";
@@ -19,9 +20,10 @@ import { loginAction } from "@/server/actions/auth";
 type LoginFormProps = {
   next: string;
   googleEnabled: boolean;
+  ssoEnabled: boolean;
 };
 
-function LoginForm({ next, googleEnabled }: LoginFormProps) {
+function LoginForm({ next, googleEnabled, ssoEnabled }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,14 +86,17 @@ function LoginForm({ next, googleEnabled }: LoginFormProps) {
         </Button>
       </form>
 
-      {googleEnabled ? (
+      {googleEnabled || ssoEnabled ? (
         <>
           <div className="flex items-center gap-3">
             <Separator className="flex-1" />
             <span className="text-xs text-muted-foreground">or</span>
             <Separator className="flex-1" />
           </div>
-          <GoogleSignInButton next={next} />
+          <div className="flex flex-col gap-3">
+            {googleEnabled ? <GoogleSignInButton next={next} /> : null}
+            {ssoEnabled ? <SsoSignInForm next={next} /> : null}
+          </div>
         </>
       ) : null}
 
