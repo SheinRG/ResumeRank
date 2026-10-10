@@ -21,6 +21,9 @@
     "db:deploy": "npm run db:deploy --workspace backend",
     "db:push": "npm run db:push --workspace backend",
     "db:seed": "npm run db:seed --workspace backend",
-    "db:studio": "npm run db:studio --workspace backend"
+    "db:studio": "npm run db:studio --workspace backend",
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "bundle:check": "node scripts/bundle-budget.mjs",
+    "db:drift": "npm run db:drift --workspace backend"
   }
 }

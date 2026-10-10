@@ -14,16 +14,30 @@ function captured(spy: { mock: { calls: unknown[][] } }): Record<string, unknown
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("log", () => {
   it("writes one JSON object per line with level, event and time", () => {
+    vi.stubEnv("APP_ENV", "development");
     const out = vi.spyOn(console, "log").mockImplementation(() => {});
     log.info("thing.happened", { count: 2 });
 
     const [entry] = captured(out);
-    expect(entry).toMatchObject({ level: "info", event: "thing.happened", count: 2 });
+    expect(entry).toMatchObject({
+      level: "info",
+      event: "thing.happened",
+      count: 2,
+      appEnv: "development",
+    });
     expect(typeof entry.time).toBe("string");
+  });
+
+  it("stamps the deployment tier from APP_ENV", () => {
+    vi.stubEnv("APP_ENV", "staging");
+    const out = vi.spyOn(console, "log").mockImplementation(() => {});
+    log.info("tiered");
+    expect(captured(out)[0]).toMatchObject({ appEnv: "staging" });
   });
 
   it("routes warnings and errors to stderr", () => {

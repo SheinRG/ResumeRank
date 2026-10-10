@@ -1,0 +1,6 @@
+{
+  "defaultKB": 340,
+  "routes": {
+    "/(app)/dashboard/page": 385
+  }
+}

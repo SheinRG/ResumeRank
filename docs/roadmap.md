@@ -95,13 +95,13 @@ No `use cache` / `cacheTag` / `cacheComponents` anywhere; dashboard fires ~10 qu
 ### 1.8 CI/CD & environments
 `.github/workflows/ci.yml:48-52` runs `db:deploy` against an empty CI DB only; README says to migrate prod by hand.
 
-- [ ] Deploy workflow: `prisma migrate deploy` against staging → prod before promotion; Neon branch-per-PR preview DBs.
-- [ ] `prisma migrate diff --exit-code` drift check; documented expand/contract policy for destructive migrations.
-- [ ] Run Playwright e2e in CI (seed + production `start`; `playwright.config.ts` currently boots `next dev`). Add specs for RBAC, invites, scoring, tenant isolation (only `golden-path` and `avatar-upload` exist).
-- [ ] Dependabot, CodeQL, gitleaks, `npm audit`, bundle-size budget, concurrency cancel.
-- [ ] Pin `next-auth` exactly (currently `^5.0.0-beta.31` on a security-critical beta).
-- [ ] `APP_ENV` tiers in `.env.example`.
-- [ ] Backups/DR: document Neon PITR window, RPO/RTO, restore runbook, periodic restore drill.
+- [x] Deploy workflow: `prisma migrate deploy` against staging → prod before promotion; Neon branch-per-PR preview DBs. → `deploy.yml` (staging → production migrations, then an optional Vercel prebuilt deploy) and `preview-db.yml` (a migrated, drift-checked Neon branch per PR, deleted on close). Both are inert until their secrets exist; setup in `docs/operations.md`.
+- [x] `prisma migrate diff --exit-code` drift check; documented expand/contract policy for destructive migrations. → `npm run db:drift` in CI (and against each preview branch); policy in `docs/operations.md`.
+- [x] Run Playwright e2e in CI (seed + production `start`; `playwright.config.ts` currently boots `next dev`). Add specs for RBAC, invites, scoring, tenant isolation (only `golden-path` and `avatar-upload` exist). → `e2e` job in `ci.yml`; new `rbac`, `invites`, `scoring`, `tenant-isolation` specs. The RBAC spec found `/candidates/new` and `/candidates/[id]/edit` rendering forms to viewers; both now redirect like the job pages.
+- [x] Dependabot, CodeQL, gitleaks, `npm audit`, bundle-size budget, concurrency cancel. → `dependabot.yml`, `security.yml` (CodeQL + gitleaks over full history), `npm run audit:gate` (high/critical fail unless accepted with a reason and review date in `.github/audit-allowlist.json`), `npm run bundle:check` (per-route gzipped first-load JS vs `frontend/bundle-budget.json`), PR runs cancel superseded ones. Getting the audit green meant upgrading Next.js 16.2 → 16.3.8 (critical proxy bypass), next-auth to beta.32 (critical Auth.js fixes) and nodemailer 7 → 10.
+- [x] Pin `next-auth` exactly (currently `^5.0.0-beta.31` on a security-critical beta). → `5.0.0-beta.32` exact, excluded from Dependabot.
+- [x] `APP_ENV` tiers in `.env.example`. → Validated in `env.ts` and stamped on every log line as `appEnv`.
+- [x] Backups/DR: document Neon PITR window, RPO/RTO, restore runbook, periodic restore drill. → `docs/operations.md`. The retention window itself is a Neon plan setting to confirm in the console.
 
 ---
 

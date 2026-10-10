@@ -130,6 +130,8 @@ Full contract and defaults live in `backend/src/env.ts`.
 | `RESEND_API_KEY`      | No                           | Resend API key. Without it, verification/reset links are logged to the server console. |
 | `EMAIL_FROM`          | No (default provided)        | From address for transactional email.                                                |
 | `NEXT_PUBLIC_APP_URL` | No (default provided)        | Public app URL, used for SEO metadata and links inside emails.                       |
+| `APP_ENV`             | No (default `development`)   | Deployment tier (`development`/`test`/`preview`/`staging`/`production`), on every log line. |
+| `DIRECT_URL`          | No (recommended in prod)     | Direct (unpooled) Postgres URL for migrations when `DATABASE_URL` is pooled.          |
 
 ## Scripts
 
@@ -150,6 +152,9 @@ Full contract and defaults live in `backend/src/env.ts`.
 | `npm run db:push`     | Push the schema without a migration file.   |
 | `npm run db:seed`     | Seed a realistic demo workspace.            |
 | `npm run db:studio`   | Open Prisma Studio.                         |
+| `npm run db:drift`    | Fail if `schema.prisma` and the migrations disagree (needs `SHADOW_DATABASE_URL`). |
+| `npm run audit:gate`  | Fail on high/critical advisories not accepted in `.github/audit-allowlist.json`. |
+| `npm run bundle:check` | Fail if a route's first-load JS exceeds `frontend/bundle-budget.json` (after a build). |
 
 ## Testing
 
@@ -161,21 +166,30 @@ Full contract and defaults live in `backend/src/env.ts`.
   not-found, plus the tenant-scoped Prisma client's guarantees. Needs a disposable
   database in `TEST_DATABASE_URL` (see [CONTRIBUTING](CONTRIBUTING.md)).
   `npm run test:integration`.
-- **End-to-end** (`frontend/tests/e2e`, Playwright): the golden path — sign in,
-  reach the dashboard, and open a job's ranked applicant pipeline — against
-  `http://localhost:3105`. Requires a **seeded** database (`npm run db:seed`).
-  `npm run test:e2e` reuses an already-running server, otherwise it boots one.
+- **End-to-end** (`frontend/tests/e2e`, Playwright): the golden path, viewer
+  permissions, inviting and joining, scoring's error path, and cross-tenant
+  isolation, against `http://localhost:3105`. Requires a **seeded** database
+  (`npm run db:seed`); fixtures in `tests/e2e/support` write a second tenant
+  and known-token invites straight to that database, and clean up after.
+  `npm run test:e2e` reuses an already-running server, otherwise it boots one
+  (`next dev` locally; with `CI` set, the production build via `next start`).
   If the Turbopack dev server is flaky (seen on some Windows setups), serve a
   production build first — `npm run build && npm run start -- -p 3105` — then
   re-run `npm run test:e2e`.
 
 ## Deployment
 
-Deploys to **Vercel**, backed by **Neon** Postgres (set `DATABASE_URL` to
-Neon's pooled connection string). Set `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to
-the deployed domain, run `npm run db:deploy` against the production database
-before first traffic, and configure `GROQ_API_KEY` / `RESEND_API_KEY` if you
-want live scoring and email delivery rather than console fallbacks.
+Deploys to **Vercel**, backed by **Neon** Postgres. Set `DATABASE_URL` to
+Neon's pooled connection string and `DIRECT_URL` to the direct one, set
+`AUTH_URL` and `NEXT_PUBLIC_APP_URL` to the deployed domain and `APP_ENV` to
+the tier, and configure `GROQ_API_KEY` / `RESEND_API_KEY` if you want live
+scoring and email delivery rather than console fallbacks.
+
+Migrations ship through `.github/workflows/deploy.yml`: on every push to
+`main` they run against staging, then production, before the code deploys.
+[`docs/operations.md`](docs/operations.md) has the one-time GitHub and Neon
+setup, the expand/contract policy for schema changes, and the backup and
+restore runbook.
 
 One deployment can serve many companies: the app is multi-tenant on a shared
 database, so every company that registers gets its own isolated workspace on

@@ -32,6 +32,9 @@ function serialize(level: Level, event: string, fields: LogFields): string {
     level,
     event,
     time: new Date().toISOString(),
+    // Read directly rather than through env(): a logger must work even while the
+    // environment is invalid, which is exactly when env() throws.
+    appEnv: process.env.APP_ENV ?? "development",
     ...contextStore.getStore(),
     ...fields,
   };

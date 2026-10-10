@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to the same branch makes the previous run's result moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -23,8 +31,10 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resumerank
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resumerank_shadow
       AUTH_SECRET: ci-only-secret-value-not-used-in-production
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_ENV: test
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +46,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency audit
+        run: npm run audit:gate
+
       - name: Lint
         run: npm run lint
 
@@ -44,6 +57,13 @@ jobs:
 
       - name: Unit tests
         run: npm run test
+
+      # Fails when schema.prisma changed without a matching migration (or a
+      # migration was hand-edited away from the schema). Exit code 2 = drift.
+      - name: Migration drift check
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c "CREATE DATABASE resumerank_shadow"
+          npm run db:drift
 
       - name: Migrate database
         run: npm run db:deploy
@@ -56,3 +76,64 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Bundle size budget
+        run: npm run bundle:check
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resumerank
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/resumerank
+      AUTH_SECRET: ci-only-secret-value-not-used-in-production
+      AUTH_URL: http://localhost:3105
+      NEXT_PUBLIC_APP_URL: http://localhost:3105
+      APP_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Migrate and seed
+        run: |
+          npm run db:deploy
+          npm run db:seed
+
+      - name: Build
+        run: npm run build
+
+      # CI=true makes playwright.config.ts serve the production build.
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
