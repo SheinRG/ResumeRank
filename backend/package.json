@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/nodemailer": "^8.0.2",
     "dotenv": "^18.0.6",
     "prisma": "^7.10.0",
