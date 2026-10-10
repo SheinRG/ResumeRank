@@ -52,6 +52,13 @@ const envSchema = z.object({
   TRUSTED_IP_HEADER: z.string().trim().toLowerCase().optional(),
   /** Set by Vercel on every deployment. */
   VERCEL: z.string().optional(),
+  /**
+   * Encrypts the SSO connections (IdP certificates, OIDC client secrets) the
+   * embedded SAML/OIDC service stores. Kept apart from AUTH_SECRET because it
+   * protects durable configuration: rotating it strands every connection.
+   * Single sign-on is off while it is unset.
+   */
+  SSO_ENCRYPTION_KEY: z.string().min(32, "SSO_ENCRYPTION_KEY must be at least 32 characters").optional(),
   /** Bearer token a scheduler sends to /api/cron/scoring and /api/cron/email; both are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
@@ -73,4 +80,8 @@ export function env(): z.infer<typeof envSchema> {
 
 export function isGoogleAuthEnabled(): boolean {
   return Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+}
+
+export function isSsoEnabled(): boolean {
+  return Boolean(process.env.SSO_ENCRYPTION_KEY);
 }

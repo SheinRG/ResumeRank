@@ -7,3 +7,4 @@ export * from "./candidate";
 export * from "./application";
 export * from "./scoring";
 export * from "./search";
+export * from "./sso";

@@ -27,6 +27,7 @@ export interface TenantFixture {
   applicationId: string;
   scoringRunId: string;
   inviteId: string;
+  domainId: string;
   userIds: string[];
 }
 
@@ -127,6 +128,10 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     invitedById: owner.id,
   });
 
+  const domain = await db.companyDomain.create({
+    data: { companyId: company.id, domain: `${tag}.example.test`, verificationToken: tag },
+  });
+
   return {
     companyId: company.id,
     owner: ownerCtx,
@@ -138,11 +143,12 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     applicationId: application.id,
     scoringRunId: run.id,
     inviteId: invite.id,
+    domainId: domain.id,
     userIds: [owner.id, member.id, viewer.id],
   };
 }
 
-/** Company deletion cascades its jobs, candidates, applications, invites and log; users go last. */
+/** Company deletion cascades its jobs, candidates, applications, invites, domains and log; users go last. */
 export async function destroyTenant(fixture: TenantFixture): Promise<void> {
   await db.company.deleteMany({ where: { id: fixture.companyId } });
   await db.user.deleteMany({ where: { id: { in: fixture.userIds } } });
