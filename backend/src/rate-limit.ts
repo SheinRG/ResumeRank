@@ -154,6 +154,12 @@ export const AUTH_LIMIT: RateLimit = { max: 5, windowMs: 15 * 60 * 1000 };
 export const SSO_START_LIMIT: RateLimit = { max: 200, windowMs: 15 * 60 * 1000 };
 
 /**
+ * Per SCIM directory. An identity provider's first sync of a large company
+ * sends one request per person, so this allows bursts well beyond a person's pace.
+ */
+export const SCIM_LIMIT: RateLimit = { max: 600, windowMs: 60 * 1000 };
+
+/**
  * Every AI call is a paid LLM request. The per-user window stops one person
  * (or a stuck script) from hammering it; the per-company window caps a whole
  * tenant's call rate. Generous enough for a recruiter scoring a full pipeline.

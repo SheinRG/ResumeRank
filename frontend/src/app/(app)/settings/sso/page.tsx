@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { SsoSettingsPanel } from "@/components/settings/sso-settings";
 import { canAdmin, requireMember } from "@/lib/auth/guards";
-import { getSsoEnforcement, getSsoSettings } from "@/server/queries/sso";
+import { getDirectory, getSsoEnforcement, getSsoSettings } from "@/server/queries/sso";
 
 export const metadata: Metadata = { title: "SSO · Settings" };
 
@@ -40,7 +40,7 @@ export default async function SettingsSsoPage() {
   const user = await requireMember();
   if (!canAdmin(user.role)) return <MemberView />;
 
-  const settings = await getSsoSettings();
+  const [settings, directory] = await Promise.all([getSsoSettings(), getDirectory()]);
   if (!settings.available) {
     return (
       <Card>
@@ -56,5 +56,5 @@ export default async function SettingsSsoPage() {
     );
   }
 
-  return <SsoSettingsPanel settings={settings} isOwner={user.role === "OWNER"} />;
+  return <SsoSettingsPanel settings={settings} directory={directory} isOwner={user.role === "OWNER"} />;
 }

@@ -93,7 +93,7 @@ function DomainRow({
             <p className="text-sm font-medium text-foreground">Join automatically</p>
             <p className="text-sm text-muted-foreground">
               People who sign in through your SSO with an @{domain.domain} address join as members
-              without an invite.
+              without an invite. Directory sync, when connected, takes this over.
             </p>
           </div>
           <Switch
