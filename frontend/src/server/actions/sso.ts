@@ -9,6 +9,11 @@ import { isSsoEnabled } from "@resumerank/core/env";
 import { rateLimit, retryMessage, SSO_START_LIMIT } from "@resumerank/core/rate-limit";
 import { clientIp } from "@resumerank/core/request-ip";
 import {
+  createDirectory,
+  removeDirectory,
+  type DirectoryCredentials,
+} from "@resumerank/core/services/directory-sync";
+import {
   addDomain,
   removeDomain,
   removeSsoConnection,
@@ -23,6 +28,7 @@ import { SSO_PRODUCT, SSO_PROVIDER_ID } from "@resumerank/core/sso/jackson";
 import { findSsoTenant } from "@resumerank/core/sso/login";
 import {
   addDomainSchema,
+  createDirectorySchema,
   domainIdSchema,
   saveSsoConnectionSchema,
   setDomainAutoJoinSchema,
@@ -165,5 +171,27 @@ export async function setSsoEnforcedAction(
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
     return actionOk(result);
+  });
+}
+
+export async function createDirectoryAction(input: unknown): Promise<ActionResult<DirectoryCredentials>> {
+  return runAction("createDirectory", async () => {
+    const parsed = createDirectorySchema.safeParse(input);
+    if (!parsed.success) return actionError("Choose your identity provider.");
+    const admin = await requireAdmin();
+    const directory = await createDirectory(tenantContext(admin), parsed.data);
+    revalidatePath(SETTINGS_PATH);
+    expireTenantReads(admin.companyId);
+    return actionOk(directory);
+  });
+}
+
+export async function removeDirectoryAction(): Promise<ActionResult<{ removed: true }>> {
+  return runAction("removeDirectory", async () => {
+    const admin = await requireAdmin();
+    const removed = await removeDirectory(tenantContext(admin));
+    revalidatePath(SETTINGS_PATH);
+    expireTenantReads(admin.companyId);
+    return actionOk(removed);
   });
 }

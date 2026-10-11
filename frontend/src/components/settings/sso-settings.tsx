@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { SsoConnection } from "@/components/settings/sso-connection";
+import { SsoDirectory } from "@/components/settings/sso-directory";
 import { SsoDomains } from "@/components/settings/sso-domains";
 import {
   Card,
@@ -14,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { setSsoEnforcedAction } from "@/server/actions/sso";
-import type { SsoSettings } from "@/server/queries/sso";
+import type { DirectorySummary, SsoSettings } from "@/server/queries/sso";
 
 function Enforcement({
   enforced,
@@ -64,7 +65,15 @@ function Enforcement({
   );
 }
 
-export function SsoSettingsPanel({ settings, isOwner }: { settings: SsoSettings; isOwner: boolean }) {
+export function SsoSettingsPanel({
+  settings,
+  directory,
+  isOwner,
+}: {
+  settings: SsoSettings;
+  directory: DirectorySummary | null;
+  isOwner: boolean;
+}) {
   const [enforced, setEnforced] = useState(settings.enforced);
 
   return (
@@ -96,6 +105,20 @@ export function SsoSettingsPanel({ settings, isOwner }: { settings: SsoSettings;
             enforced={enforced}
             serviceProvider={settings.serviceProvider}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Directory sync (SCIM)</CardTitle>
+          <CardDescription>
+            Let your identity provider add people when they join and remove them when they leave.
+            Only addresses on verified domains are provisioned; owners are never removed
+            automatically. While it&apos;s connected, the directory alone decides who joins.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SsoDirectory initialDirectory={directory} />
         </CardContent>
       </Card>
 

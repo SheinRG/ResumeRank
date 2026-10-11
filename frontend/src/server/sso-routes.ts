@@ -14,13 +14,18 @@ const MAX_FORM_BYTES = 1_000_000;
 
 export class PayloadTooLargeError extends Error {}
 
-/** Url-encoded form fields, refusing oversized bodies before reading them whole. */
-export async function readForm(request: Request): Promise<Record<string, string>> {
+/** The raw body, refusing oversized ones before reading them whole. */
+export async function readBody(request: Request): Promise<string> {
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (declared > MAX_FORM_BYTES) throw new PayloadTooLargeError();
   const body = await request.text();
   if (body.length > MAX_FORM_BYTES) throw new PayloadTooLargeError();
-  return Object.fromEntries(new URLSearchParams(body));
+  return body;
+}
+
+/** Url-encoded form fields from a size-checked body. */
+export async function readForm(request: Request): Promise<Record<string, string>> {
+  return Object.fromEntries(new URLSearchParams(await readBody(request)));
 }
 
 export function queryParams(request: Request): Record<string, string> {

@@ -18,6 +18,7 @@ export const SSO_PATHS = {
   oidc: "/api/oauth/oidc",
   token: "/api/oauth/token",
   userinfo: "/api/oauth/userinfo",
+  scim: "/api/scim/v2.0",
 } as const;
 
 /** How long an in-flight login (session, code, access token) stays usable. */
@@ -75,6 +76,7 @@ function options(encryptionKey: string): JacksonOption {
     externalUrl: base,
     samlPath: SSO_PATHS.saml,
     oidcPath: SSO_PATHS.oidc,
+    scimPath: SSO_PATHS.scim,
     samlAudience: base,
     idpEnabled: false,
     noAnalytics: true,

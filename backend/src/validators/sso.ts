@@ -92,3 +92,15 @@ export const ssoTokenRequestSchema = z.object({
   redirect_uri: z.string().url(),
   code_verifier: z.string().min(43).max(128),
 });
+
+/** SCIM providers a company can connect; Google Workspace's non-SCIM sync is not offered. */
+export const DIRECTORY_TYPES = [
+  "okta-scim-v2",
+  "azure-scim-v2",
+  "onelogin-scim-v2",
+  "jumpcloud-scim-v2",
+  "generic-scim-v2",
+] as const;
+
+export const createDirectorySchema = z.object({ type: z.enum(DIRECTORY_TYPES) });
+export type CreateDirectoryInput = z.infer<typeof createDirectorySchema>;

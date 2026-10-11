@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
 import { isPrismaError } from "../services/prisma-errors";
+import { companyDirectory } from "./directory";
 import { emailDomain } from "./domains";
 import { SSO_PRODUCT, ssoControllers } from "./jackson";
 import type { SsoDenial } from "./policy";
@@ -84,7 +85,10 @@ export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignIn
   }
 
   const verifiedAt = new Date();
-  const join = claim.autoJoin && !existing?.companyId;
+  // With a SCIM directory, membership is the directory's call: auto-join
+  // would quietly re-admit someone it had just removed.
+  const join =
+    claim.autoJoin && !existing?.companyId && (await companyDirectory(input.tenant)) === null;
 
   try {
     await db.$transaction(async (tx) => {

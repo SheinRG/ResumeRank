@@ -91,20 +91,23 @@ enum EmailStatus {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  name           String
-  email          String    @unique
-  emailVerified  DateTime?
-  passwordHash   String?
-  image          String?
-  role           Role      @default(MEMBER)
-  notifyByEmail  Boolean   @default(true)
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  emailVerified   DateTime?
+  passwordHash    String?
+  image           String?
+  role            Role      @default(MEMBER)
+  notifyByEmail   Boolean   @default(true)
   // Stamped into each session token; bumping it revokes every existing
   // session (password change/reset, removal, "sign out everywhere").
-  sessionVersion Int       @default(0)
-  companyId      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  sessionVersion  Int       @default(0)
+  /// The id the company's SCIM directory knows this person by; set while the
+  /// directory manages their membership, so renames follow the right person.
+  directoryUserId String?
+  companyId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   company             Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
   accounts            Account[]
@@ -118,6 +121,7 @@ model User {
   scoringRuns         ScoringRun[]
   invitesSent         CompanyInvite[]      @relation("InvitesSent")
 
+  @@unique([companyId, directoryUserId])
   @@index([companyId])
 }
 

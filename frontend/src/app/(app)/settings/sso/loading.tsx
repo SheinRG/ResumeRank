@@ -41,6 +41,19 @@ export default function SsoLoading() {
       </Card>
       <Card>
         <CardHeader>
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-4 w-96 max-w-full" />
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+          <Skeleton className="h-9 w-48" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
           <Skeleton className="h-5 w-28" />
           <Skeleton className="h-4 w-72 max-w-full" />
         </CardHeader>
