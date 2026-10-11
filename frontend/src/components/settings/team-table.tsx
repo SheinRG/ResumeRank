@@ -1,5 +1,6 @@
 "use client";
 
+import { ShieldCheck, ShieldOff } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -20,8 +21,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ConfirmDialog } from "@/components/mfa/confirm-dialog";
 import { RemoveMemberDialog } from "@/components/settings/remove-member-dialog";
+import { Button } from "@/components/ui/button";
 import { initials } from "@/lib/format";
+import { resetMemberMfaAction } from "@/server/actions/mfa";
 import { updateUserRoleAction } from "@/server/actions/users";
 import type { TeamMember } from "@/server/queries/users";
 import type { Role } from "@resumerank/core/validators/enums";
@@ -71,13 +75,24 @@ export function TeamTable({
     setRows((current) => current.filter((member) => member.id !== userId));
   }
 
-  // Mirrors the server rule: only an owner may remove another owner.
+  // Mirrors the server rule: only an owner may remove (or reset) another owner.
   function canRemove(member: TeamMember) {
     return (
       canManage &&
       member.id !== currentUserId &&
       (member.role !== "OWNER" || currentUserRole === "OWNER")
     );
+  }
+
+  async function resetMfa(member: TeamMember): Promise<boolean> {
+    const result = await resetMemberMfaAction({ userId: member.id });
+    if (!result.ok) {
+      toast.error(result.error);
+      return false;
+    }
+    setRows((current) => current.map((row) => (row.id === member.id ? result.data : row)));
+    toast.success(`Reset ${member.name}'s two-factor authentication. They've been signed out.`);
+    return true;
   }
 
   return (
@@ -87,8 +102,9 @@ export function TeamTable({
           <TableHead>Member</TableHead>
           <TableHead>Email</TableHead>
           <TableHead>Role</TableHead>
+          {canManage ? <TableHead>2FA</TableHead> : null}
           {canManage ? (
-            <TableHead className="w-14">
+            <TableHead className="w-28">
               <span className="sr-only">Actions</span>
             </TableHead>
           ) : null}
@@ -134,13 +150,49 @@ export function TeamTable({
               )}
             </TableCell>
             {canManage ? (
+              <TableCell>
+                {member.mfaEnabledAt ? (
+                  <Badge variant="outline" className="border-verdict-strong/40 text-verdict-strong">
+                    <ShieldCheck aria-hidden="true" />
+                    On
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-muted-foreground">
+                    Off
+                  </Badge>
+                )}
+              </TableCell>
+            ) : null}
+            {canManage ? (
               <TableCell className="text-right">
                 {canRemove(member) ? (
-                  <RemoveMemberDialog
-                    userId={member.id}
-                    memberName={member.name}
-                    onRemoved={handleRemoved}
-                  />
+                  <div className="flex justify-end">
+                    {member.mfaEnabledAt ? (
+                      <ConfirmDialog
+                        trigger={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-11"
+                            aria-label={`Reset ${member.name}'s two-factor authentication`}
+                          >
+                            <ShieldOff aria-hidden="true" />
+                          </Button>
+                        }
+                        title={`Reset ${member.name}'s two-factor authentication?`}
+                        description="Only do this once you've confirmed it's really them, for example on a call. Their authenticator app, passkeys and recovery codes stop working and they're signed out everywhere. If your workspace requires two-factor authentication, they set it up again on their next sign-in."
+                        confirmLabel="Reset two-factor"
+                        pendingLabel="Resetting…"
+                        onConfirm={() => resetMfa(member)}
+                      />
+                    ) : null}
+                    <RemoveMemberDialog
+                      userId={member.id}
+                      memberName={member.name}
+                      onRemoved={handleRemoved}
+                    />
+                  </div>
                 ) : null}
               </TableCell>
             ) : null}

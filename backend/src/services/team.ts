@@ -17,6 +17,8 @@ export interface TeamMember {
   image: string | null;
   role: Role;
   emailVerified: Date | null;
+  /** Null while the member has no second factor. */
+  mfaEnabledAt: Date | null;
   createdAt: Date;
 }
 
@@ -35,13 +37,14 @@ export interface InviteResult {
   expiresAt: Date;
 }
 
-const TEAM_MEMBER_SELECT = {
+export const TEAM_MEMBER_SELECT = {
   id: true,
   name: true,
   email: true,
   image: true,
   role: true,
   emailVerified: true,
+  mfaEnabledAt: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
 

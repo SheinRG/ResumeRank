@@ -77,6 +77,17 @@ export async function createOtherTenant(client: Client, tag: string): Promise<Ot
   return { companyId, email };
 }
 
+/** A member of `companyId` who signs in with the seed password. */
+export async function addMember(client: Client, companyId: string, tag: string): Promise<string> {
+  const email = `member-${tag}@e2e.test`;
+  await client.query(
+    `INSERT INTO "User" (id, name, email, "emailVerified", "passwordHash", role, "companyId", "updatedAt")
+     VALUES ($1, $2, $3, now(), $4, 'MEMBER', $5, now())`,
+    [newId(), `Member ${tag}`, email, await seededPasswordHash(client), companyId],
+  );
+  return email;
+}
+
 /** Company deletion cascades its rows; its users are removed explicitly. */
 export async function deleteTenant(client: Client, companyId: string): Promise<void> {
   await client.query(`DELETE FROM "User" WHERE "companyId" = $1`, [companyId]);

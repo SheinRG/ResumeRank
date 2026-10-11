@@ -30,7 +30,8 @@ function LoginForm({ next, googleEnabled, ssoEnabled }: LoginFormProps) {
   const { fieldErrors, formError, isPending, submit } = useActionForm({
     schema: loginSchema,
     action: loginAction,
-    onSuccess: () => router.push(next),
+    onSuccess: ({ secondFactor }) =>
+      router.push(secondFactor ? `/mfa?next=${encodeURIComponent(next)}` : next),
   });
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {

@@ -4,10 +4,11 @@
 // a route loads the framework's root chunks plus its entries' chunks.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { gzipSync } from "node:zlib";
 
-const frontend = new URL("../frontend/", import.meta.url).pathname;
+const frontend = fileURLToPath(new URL("../frontend/", import.meta.url));
 const nextDir = join(frontend, ".next");
 const budget = JSON.parse(readFileSync(join(frontend, "bundle-budget.json"), "utf8"));
 const report = process.argv.includes("--report");

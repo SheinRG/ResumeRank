@@ -2,7 +2,7 @@ import { hkdfSync } from "node:crypto";
 
 import { controllers, type JacksonOption, type SAMLJackson } from "@boxyhq/saml-jackson";
 
-import { env } from "../env";
+import { appOrigin, env } from "../env";
 import { log } from "../observability/log";
 import { ssoStore } from "./store";
 
@@ -31,10 +31,9 @@ export class SsoUnavailableError extends Error {
   }
 }
 
-/** The public origin IdPs post back to; it has to be stable, so it comes from config rather than the request. */
+/** The public origin IdPs post back to. */
 export function ssoBaseUrl(): string {
-  const { AUTH_URL, NEXT_PUBLIC_APP_URL } = env();
-  return new URL(AUTH_URL ?? NEXT_PUBLIC_APP_URL).origin;
+  return appOrigin();
 }
 
 export function ssoCallbackUrl(): string {

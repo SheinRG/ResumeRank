@@ -59,6 +59,12 @@ const envSchema = z.object({
    * Single sign-on is off while it is unset.
    */
   SSO_ENCRYPTION_KEY: z.string().min(32, "SSO_ENCRYPTION_KEY must be at least 32 characters").optional(),
+  /**
+   * Encrypts authenticator-app (TOTP) secrets. Falls back to a key derived
+   * from AUTH_SECRET; set it in production so AUTH_SECRET can be rotated
+   * without everyone having to set their authenticator app up again.
+   */
+  MFA_ENCRYPTION_KEY: z.string().min(32, "MFA_ENCRYPTION_KEY must be at least 32 characters").optional(),
   /** Bearer token a scheduler sends to /api/cron/scoring and /api/cron/email; both are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
@@ -84,4 +90,13 @@ export function isGoogleAuthEnabled(): boolean {
 
 export function isSsoEnabled(): boolean {
   return Boolean(process.env.SSO_ENCRYPTION_KEY);
+}
+
+/**
+ * The app's public origin. Identity providers post back to it and passkeys
+ * are bound to its hostname, so it comes from config rather than the request.
+ */
+export function appOrigin(): string {
+  const { AUTH_URL, NEXT_PUBLIC_APP_URL } = env();
+  return new URL(AUTH_URL ?? NEXT_PUBLIC_APP_URL).origin;
 }

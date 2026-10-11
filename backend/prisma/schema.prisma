@@ -73,6 +73,12 @@ enum ScoringRunStatus {
   FAILED
 }
 
+/// What a stored WebAuthn challenge was issued for; each is single-use.
+enum WebAuthnCeremony {
+  REGISTRATION
+  AUTHENTICATION
+}
+
 enum EmailKind {
   VERIFY_EMAIL
   INVITE
@@ -105,6 +111,10 @@ model User {
   /// The id the company's SCIM directory knows this person by; set while the
   /// directory manages their membership, so renames follow the right person.
   directoryUserId String?
+  /// When the user's first second factor was confirmed; null while they have
+  /// none. Sessions record the value they verified against, so turning MFA
+  /// off and on again (or an admin reset) asks every session to verify anew.
+  mfaEnabledAt    DateTime?
   companyId       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -120,6 +130,10 @@ model User {
   activities          ActivityLog[]
   scoringRuns         ScoringRun[]
   invitesSent         CompanyInvite[]      @relation("InvitesSent")
+  totpFactor          TotpFactor?
+  webAuthnCredentials WebAuthnCredential[]
+  webAuthnChallenges  WebAuthnChallenge[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
 
   @@unique([companyId, directoryUserId])
   @@index([companyId])
@@ -140,6 +154,9 @@ model Company {
   /// Members must sign in through the company's SSO connection. Owners keep
   /// their password as the way back in if the identity provider breaks.
   ssoEnforced   Boolean  @default(false)
+  /// Members must have a second factor before they can use the workspace.
+  /// Single sign-on sessions are exempt: the identity provider owns MFA there.
+  mfaRequired   Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -231,6 +248,67 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+/// An authenticator-app secret. Unconfirmed until the user enters a code from
+/// it, and only a confirmed one counts as a factor.
+model TotpFactor {
+  userId       String    @id
+  /// The shared secret, AES-256-GCM sealed (see auth/mfa/secrets.ts).
+  secret       String
+  confirmedAt  DateTime?
+  /// The newest time step a code was accepted for, so each code works once.
+  lastUsedStep Int?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A passkey or security key registered as a second factor.
+model WebAuthnCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  /// The authenticator's credential id, base64url.
+  credentialId String    @unique
+  publicKey    Bytes
+  /// The signature counter is a uint32, which overflows Int.
+  counter      BigInt    @default(0)
+  transports   String[]
+  name         String
+  /// Synced across the user's devices (a passkey) rather than bound to one.
+  backedUp     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// The challenge of an in-flight WebAuthn ceremony, consumed by its response.
+model WebAuthnChallenge {
+  userId    String
+  ceremony  WebAuthnCeremony
+  challenge String
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, ceremony])
+}
+
+/// A one-time code for signing in without a second factor at hand.
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  /// SHA-256 of the normalised code; the codes carry 80 bits of entropy.
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
 }
 
 model PasswordResetToken {

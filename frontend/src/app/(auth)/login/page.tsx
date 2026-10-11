@@ -12,15 +12,11 @@ import {
 } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion";
 import { isGoogleAuthEnabled, isSsoEnabled } from "@resumerank/core/env";
+import { safeNext } from "@/lib/safe-next";
 
 export const metadata: Metadata = {
   title: "Log in",
 };
-
-function safeNext(next: string | undefined): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/dashboard";
-}
 
 const LOGIN_ERRORS: Record<LoginErrorCode, string> = {
   GoogleEmailUnverified:

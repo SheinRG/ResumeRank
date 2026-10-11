@@ -35,16 +35,14 @@ import {
   setSsoEnforcedSchema,
   ssoLoginSchema,
 } from "@resumerank/core/validators/sso";
+import { safeNext } from "@/lib/safe-next";
 import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
 const SETTINGS_PATH = "/settings/sso";
 
-const nextPathSchema = z
-  .string()
-  .optional()
-  .transform((next) => (next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"));
+const nextPathSchema = z.string().optional().transform(safeNext);
 
 /**
  * Starts an SSO login for whichever company has verified the email's domain.

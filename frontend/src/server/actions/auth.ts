@@ -22,6 +22,7 @@ import {
   resetPasswordSchema,
 } from "@resumerank/core/validators/auth";
 import { registerCompanySchema } from "@resumerank/core/validators/company";
+import { safeNext } from "@/lib/safe-next";
 import { scheduleEmailDrain } from "@/server/email-drain";
 import { runAction } from "@/server/run-action";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -93,7 +94,7 @@ export async function registerAction(
 
 export async function loginAction(
   input: unknown,
-): Promise<ActionResult<undefined>> {
+): Promise<ActionResult<{ secondFactor: boolean }>> {
   return runAction("login", async () => {
     const parsed = loginSchema.safeParse(input);
     if (!parsed.success) {
@@ -130,7 +131,13 @@ export async function loginAction(
       }
       throw error;
     }
-    return actionOk(undefined);
+    // Answered only after the password checked out, so it reveals nothing to
+    // someone guessing; the form uses it to go straight to the challenge.
+    const user = await db.user.findUnique({
+      where: { email: parsed.data.email },
+      select: { mfaEnabledAt: true },
+    });
+    return actionOk({ secondFactor: Boolean(user?.mfaEnabledAt) });
   });
 }
 
@@ -138,13 +145,8 @@ export async function logoutAction(): Promise<void> {
   await signOut({ redirectTo: "/login" });
 }
 
-function safeRedirectTarget(next: string | undefined): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/dashboard";
-}
-
 export async function signInWithGoogleAction(next?: string): Promise<void> {
-  await signIn("google", { redirectTo: safeRedirectTarget(next) });
+  await signIn("google", { redirectTo: safeNext(next) });
 }
 
 export async function verifyEmailAction(
