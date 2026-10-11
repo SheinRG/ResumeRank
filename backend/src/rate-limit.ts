@@ -160,6 +160,13 @@ export const SSO_START_LIMIT: RateLimit = { max: 200, windowMs: 15 * 60 * 1000 }
 export const SCIM_LIMIT: RateLimit = { max: 600, windowMs: 60 * 1000 };
 
 /**
+ * Second-factor attempts per user, counted whether they succeed or not. A
+ * six-digit code has a million values, so ten tries per window keeps
+ * guessing hopeless while leaving room for typos and a misread clock.
+ */
+export const MFA_ATTEMPT_LIMIT: RateLimit = { max: 10, windowMs: 15 * 60 * 1000 };
+
+/**
  * Every AI call is a paid LLM request. The per-user window stops one person
  * (or a stuck script) from hammering it; the per-company window caps a whole
  * tenant's call rate. Generous enough for a recruiter scoring a full pipeline.

@@ -31,6 +31,7 @@ const PROFILE_SELECT = {
   image: true,
   role: true,
   emailVerified: true,
+  mfaEnabledAt: true,
   createdAt: true,
 } as const;
 

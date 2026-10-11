@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { GateError, requireUser, type CurrentUser } from "@/lib/auth/guards";
+import { GateError, gateRedirectPath, requireUser, type CurrentUser } from "@/lib/auth/guards";
 import { db } from "@resumerank/core/db";
 import {
   Card,
@@ -24,7 +24,7 @@ async function loadOnboardingUser(): Promise<CurrentUser> {
     return await requireUser();
   } catch (error) {
     if (error instanceof GateError) {
-      redirect("/session-ended");
+      redirect(gateRedirectPath(error));
     }
     throw error;
   }

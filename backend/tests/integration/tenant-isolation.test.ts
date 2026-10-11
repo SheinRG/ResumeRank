@@ -21,6 +21,7 @@ import { getCompany } from "../../src/services/company";
 import { getDashboardData } from "../../src/services/dashboard";
 import { NotFoundError } from "../../src/services/errors";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
+import { resetMemberMfa } from "../../src/services/mfa";
 import { upsertScorecard } from "../../src/services/scorecards";
 import { getSsoSettings, removeDomain, setDomainAutoJoin, verifyDomain } from "../../src/services/sso";
 import { closeSso } from "../../src/sso/jackson";
@@ -263,11 +264,12 @@ describe("writes to another tenant's ids fail as not found", () => {
     await expect(requestJobScoring(a.owner, b.jobId)).rejects.toThrow(NotFoundError);
   });
 
-  it("rejects role changes, removal and invite revocation", async () => {
+  it("rejects role changes, removal, MFA resets and invite revocation", async () => {
     await expect(
       updateMemberRole(a.owner, { userId: b.memberId, role: "ADMIN" }),
     ).rejects.toThrow(NotFoundError);
     await expect(removeMember(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
+    await expect(resetMemberMfa(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(revokeInvite(a.owner, b.inviteId)).rejects.toThrow(NotFoundError);
   });
 

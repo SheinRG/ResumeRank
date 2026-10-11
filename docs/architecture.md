@@ -80,6 +80,73 @@ already has a company to scope to before it checks verification or role.
 `requireAdmin` layers an owner/admin check on top. No action trusts a
 client-sent role or id.
 
+## Two-factor authentication
+
+People can add an authenticator app (TOTP), passkeys or security keys
+(WebAuthn), and they get ten one-time recovery codes with their first factor.
+MFA belongs to the user rather than the workspace, so the self-service code
+lives in `backend/src/auth/mfa/` and takes the user's own id. The workspace
+pieces are in `services/mfa.ts`: the owner-only "require MFA" policy and the
+admin reset. Settings → Security covers both.
+
+**The gate.** Every sign-in's token carries a random `loginId`. Once a
+factor is proven, the token also gets `mfaEpoch`, which is
+`User.mfaEnabledAt` at the moment of proof. `getSignedInSession` (in the
+guards) works out `mfaGate` (`auth/mfa/policy.ts`) on every request from the
+fresh user row:
+
+- `challenge`: the user has a factor and this sign-in hasn't proven the
+  current epoch.
+- `setup`: the company requires MFA and the user has no factor yet.
+- `pass`: neither applies.
+
+`requireUser` throws `MfaChallengeRequiredError` / `MfaSetupRequiredError`,
+and pages send those to `/mfa` and `/mfa/setup`. Only
+`requireMfaChallenge` and `requireMfaEnrollment` let a gated session in. The
+enrollment guard refuses a session that still owes a challenge, so a password
+alone can't add a factor to an account that already has one.
+
+Turning MFA off and on again, or an admin reset, starts a new epoch, so every
+older session has to verify again. Single sign-on sessions always pass,
+because the identity provider owns MFA there.
+
+**Marking a session verified.** The browser can post its own payload to the
+Auth.js session-update endpoint, so the `jwt` callback doesn't believe a plain
+"verified" flag. A server action that has just checked a factor mints a
+proof with `mintMfaProof` (`auth/mfa/proof.ts`): an HMAC, under an
+`AUTH_SECRET` subkey, over the `loginId` and the epoch, valid for 60
+seconds. It passes the proof to `refreshSession`, and the callback stores the
+epoch only if the proof verifies for this sign-in.
+
+**Factors.**
+- **TOTP:** RFC 6238 with SHA-1, 6 digits, a 30-second period and one step
+  of drift. Secrets are sealed with AES-256-GCM (`sealed-box.ts`) under
+  `MFA_ENCRYPTION_KEY`, or an `AUTH_SECRET` subkey without it, and bound to
+  the user id. Each accepted code claims its time step with a conditional
+  update, so a code works once.
+- **Passkeys:** `@simplewebauthn/server` with `none` attestation, bound to
+  the hostname of `AUTH_URL`. Each ceremony's challenge is stored per user
+  and deleted before the response is checked, so it can be answered only
+  once. A signature counter that doesn't move forward (a cloned key) is
+  refused.
+- **Recovery codes:** 80 random bits each, stored as SHA-256 hashes,
+  consumed with a conditional update. Using one is written to the activity
+  log.
+
+All checks share a limit of 10 attempts per user per 15 minutes,
+`MFA_ATTEMPT_LIMIT`. Removing the last factor turns MFA off and voids the
+recovery codes, unless the company requires MFA, in which case the removal is
+refused.
+
+**Policy and resets.** Only an owner can require MFA, and only after setting
+it up themselves. Owners aren't exempt, unlike SSO enforcement: recovery
+codes and the admin reset cover lockouts. `resetMemberMfa` deletes a
+teammate's factors inside a tenant transaction and bumps their
+`sessionVersion`. The factor tables' RLS policies expose only rows of the
+company's own users, and the tenant role may only read and delete them.
+Sessions issued before MFA existed have no `loginId`, so if MFA applies to
+them they are ended and the person signs in again.
+
 ## Multi-tenancy
 
 ResumeRank runs many companies on one shared Postgres database, isolated by

@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation";
 
 import { signOut } from "@/lib/auth";
-import { GateError, requireUser, SsoRequiredError } from "@/lib/auth/guards";
+import {
+  GateError,
+  gateRedirectPath,
+  MfaChallengeRequiredError,
+  MfaSetupRequiredError,
+  requireUser,
+  SsoRequiredError,
+} from "@/lib/auth/guards";
 
 /**
  * Where guards send a dead session (revoked, expired, deleted account, or a
@@ -15,6 +22,10 @@ export async function GET(): Promise<never> {
   try {
     await requireUser();
   } catch (error) {
+    // A session that owes a second factor is alive; it only has a step left.
+    if (error instanceof MfaChallengeRequiredError || error instanceof MfaSetupRequiredError) {
+      redirect(gateRedirectPath(error));
+    }
     if (error instanceof GateError) {
       const reason = error instanceof SsoRequiredError ? "SsoRequired" : "SessionExpired";
       await signOut({ redirectTo: `/login?error=${reason}` });

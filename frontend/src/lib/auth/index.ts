@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -7,6 +9,7 @@ import { z } from "zod";
 import { db } from "@resumerank/core/db";
 import { isGoogleAuthEnabled, isSsoEnabled } from "@resumerank/core/env";
 import { verifyPassword } from "@resumerank/core/auth/password";
+import { readMfaProof } from "@resumerank/core/auth/mfa/proof";
 import {
   beginLoginAttempt,
   clearFailedLogins,
@@ -43,6 +46,9 @@ const ssoProfileSchema = z.object({
 });
 
 type SsoProfile = z.infer<typeof ssoProfileSchema>;
+
+/** A session refresh carrying a second-factor proof (see markSessionVerified). */
+const mfaRefreshSchema = z.object({ mfaProof: z.string().max(256) });
 
 function ssoDisplayName(profile: SsoProfile): string {
   const name = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
@@ -223,7 +229,7 @@ export const {
       }
       return true;
     },
-    async jwt({ token, user, account, trigger }) {
+    async jwt({ token, user, account, trigger, session }) {
       if (user?.id) {
         token.id = user.id;
         token.role = user.role;
@@ -231,15 +237,26 @@ export const {
         // How this session started, so the guards can end password and
         // Google sessions once the company starts requiring SSO.
         token.viaSso = account?.provider === SSO_PROVIDER_ID;
+        // Every sign-in starts without a proven second factor; the guards
+        // send it to the challenge if the user has one.
+        token.loginId = randomUUID();
+        delete token.mfaEpoch;
       }
-      // An explicit refresh (after the user changes their own password)
-      // re-stamps this session so it survives the revocation it triggered.
       if (trigger === "update" && token.id) {
+        // An explicit refresh (after the user changes their own password)
+        // re-stamps this session so it survives the revocation it triggered.
         const current = await db.user.findUnique({
           where: { id: token.id },
           select: { sessionVersion: true },
         });
         if (current) token.sessionVersion = current.sessionVersion;
+
+        // The browser can post its own refresh payload, so a second factor
+        // counts only through a proof the server signed for this sign-in.
+        const refresh = mfaRefreshSchema.safeParse(session);
+        const epoch =
+          refresh.success && token.loginId ? readMfaProof(refresh.data.mfaProof, token.loginId) : null;
+        if (epoch !== null) token.mfaEpoch = epoch;
       }
       // An uploaded avatar is an inlined data URL, which would chunk the session
       // cookie across several kilobytes of every request header. Nothing reads
@@ -252,6 +269,8 @@ export const {
       session.user.role = token.role ?? "MEMBER";
       session.user.sessionVersion = token.sessionVersion ?? 0;
       session.user.viaSso = token.viaSso ?? false;
+      session.user.loginId = token.loginId ?? null;
+      session.user.mfaEpoch = token.mfaEpoch ?? null;
       return session;
     },
   },
