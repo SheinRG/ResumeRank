@@ -69,28 +69,53 @@ export async function createOtherTenant(client: Client, tag: string): Promise<Ot
     `INSERT INTO "Company" (id, name, slug, "updatedAt") VALUES ($1, $2, $3, now())`,
     [companyId, `Other Co ${tag}`, `other-co-${tag}`],
   );
-  await client.query(
-    `INSERT INTO "User" (id, name, email, "emailVerified", "passwordHash", role, "companyId", "updatedAt")
-     VALUES ($1, $2, $3, now(), $4, 'OWNER', $5, now())`,
-    [newId(), `Other Owner ${tag}`, email, await seededPasswordHash(client), companyId],
-  );
+  await joinCompany(client, await createUser(client, `Other Owner ${tag}`, email), companyId, "OWNER");
   return { companyId, email };
+}
+
+async function createUser(client: Client, name: string, email: string): Promise<string> {
+  const id = newId();
+  await client.query(
+    `INSERT INTO "User" (id, name, email, "emailVerified", "passwordHash", "updatedAt")
+     VALUES ($1, $2, $3, now(), $4, now())`,
+    [id, name, email, await seededPasswordHash(client)],
+  );
+  return id;
+}
+
+/** Adds an existing account to another company, as accepting an invite would. */
+export async function joinCompany(
+  client: Client,
+  userId: string,
+  companyId: string,
+  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER",
+): Promise<void> {
+  await client.query(
+    `INSERT INTO "Membership" (id, "userId", "companyId", role, "updatedAt") VALUES ($1, $2, $3, $4, now())`,
+    [newId(), userId, companyId, role],
+  );
+}
+
+export async function userIdByEmail(client: Client, email: string): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(`SELECT id FROM "User" WHERE email = $1`, [email]);
+  const id = rows[0]?.id;
+  if (!id) throw new Error(`No user ${email}`);
+  return id;
 }
 
 /** A member of `companyId` who signs in with the seed password. */
 export async function addMember(client: Client, companyId: string, tag: string): Promise<string> {
   const email = `member-${tag}@e2e.test`;
-  await client.query(
-    `INSERT INTO "User" (id, name, email, "emailVerified", "passwordHash", role, "companyId", "updatedAt")
-     VALUES ($1, $2, $3, now(), $4, 'MEMBER', $5, now())`,
-    [newId(), `Member ${tag}`, email, await seededPasswordHash(client), companyId],
-  );
+  await joinCompany(client, await createUser(client, `Member ${tag}`, email), companyId, "MEMBER");
   return email;
 }
 
-/** Company deletion cascades its rows; its users are removed explicitly. */
+/** Company deletion cascades its rows; its members' accounts are removed explicitly. */
 export async function deleteTenant(client: Client, companyId: string): Promise<void> {
-  await client.query(`DELETE FROM "User" WHERE "companyId" = $1`, [companyId]);
+  await client.query(
+    `DELETE FROM "User" WHERE id IN (SELECT "userId" FROM "Membership" WHERE "companyId" = $1)`,
+    [companyId],
+  );
   await client.query(`DELETE FROM "Company" WHERE id = $1`, [companyId]);
 }
 

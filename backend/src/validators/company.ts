@@ -62,3 +62,7 @@ export const acceptInviteSchema = z.object({
   password: passwordSchema,
 });
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
+
+export const switchWorkspaceSchema = z.object({
+  companyId: z.string().min(1, "Choose a workspace").max(64),
+});

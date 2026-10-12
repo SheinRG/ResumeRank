@@ -63,7 +63,7 @@ async function workspace(label: string): Promise<Workspace> {
 /** `at` backdates the sign-in, so idle and lifetime limits can be checked without waiting. */
 async function signIn(userId: string, userAgent = CHROME_WINDOWS, at?: Date): Promise<string> {
   const id = randomUUID();
-  await startLoginSession({ id, userId, method: "PASSWORD", userAgent, ipAddress: "203.0.113.7" });
+  await startLoginSession({ id, userId, method: "PASSWORD", userAgent, ipAddress: "203.0.113.7", ssoCompanyId: null });
   if (at) await db.loginSession.update({ where: { id }, data: { createdAt: at, lastSeenAt: at } });
   return id;
 }

@@ -470,6 +470,7 @@ describe("sign-in events", () => {
       userId: ws.member.actorId,
       method: "PASSWORD",
       userAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:142.0) Gecko/20100101 Firefox/142.0",
+      ssoCompanyId: null,
       ipAddress: "203.0.113.7",
     });
     await endLoginSession(loginId);
@@ -491,7 +492,7 @@ describe("sign-in events", () => {
       data: { name: "No company", email: `audit-loose-${randomUUID().slice(0, 8)}@example.test` },
     });
     userIds.push(loose.id);
-    await startLoginSession({ id: randomUUID(), userId: loose.id, method: "GOOGLE", userAgent: null, ipAddress: null });
+    await startLoginSession({ id: randomUUID(), userId: loose.id, method: "GOOGLE", userAgent: null, ipAddress: null, ssoCompanyId: null });
     expect(await db.activityLog.count({ where: { actorId: loose.id } })).toBe(0);
   });
 });

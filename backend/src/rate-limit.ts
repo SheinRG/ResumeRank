@@ -167,6 +167,12 @@ export const SCIM_LIMIT: RateLimit = { max: 600, windowMs: 60 * 1000 };
 export const MFA_ATTEMPT_LIMIT: RateLimit = { max: 10, windowMs: 15 * 60 * 1000 };
 
 /**
+ * New workspaces per account. Agencies and consultants open a few; nobody
+ * needs dozens a day, and each one is a tenant to clean up after.
+ */
+export const COMPANY_CREATE_LIMIT: RateLimit = { max: 5, windowMs: 24 * 60 * 60 * 1000 };
+
+/**
  * Every AI call is a paid LLM request. The per-user window stops one person
  * (or a stuck script) from hammering it; the per-company window caps a whole
  * tenant's call rate. Generous enough for a recruiter scoring a full pipeline.

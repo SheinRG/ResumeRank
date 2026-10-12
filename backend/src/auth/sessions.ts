@@ -5,6 +5,7 @@ import type { SignInMethod } from "../generated/prisma/enums";
 import { ConflictError, NotFoundError } from "../services/errors";
 import { logAuthEvent, signInMethodLabel } from "./audit";
 import { describeDevice } from "./device";
+import { signInLanding } from "./workspaces";
 import {
   MAX_SESSION_MINUTES,
   sessionEnd,
@@ -15,7 +16,8 @@ import {
 /**
  * The person managing their own sessions. Sessions belong to the user, not
  * the workspace (someone mid-onboarding has no company yet), so these
- * functions take the user's own id; `companyId` only scopes the audit entry.
+ * functions take the user's own id; `companyId`, the workspace the request
+ * runs in, only scopes the audit entry.
  */
 export interface SessionActor {
   userId: string;
@@ -30,6 +32,8 @@ export interface NewLoginSession {
   method: SignInMethod;
   userAgent: string | null;
   ipAddress: string | null;
+  /** The company whose identity provider vouched for this sign-in, for SSO. */
+  ssoCompanyId: string | null;
 }
 
 export interface LoginSessionSummary {
@@ -40,6 +44,8 @@ export interface LoginSessionSummary {
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
+  /** The workspace the session has open, if any. */
+  workspace: string | null;
   current: boolean;
 }
 
@@ -53,7 +59,8 @@ interface SessionWriter {
 }
 
 /**
- * Records a sign-in. The user's dead rows are cleared on the way, so the
+ * Records a sign-in, opening it in the workspace it lands in (see
+ * `landingWorkspace`). The user's dead rows are cleared on the way, so the
  * table stays small without a sweeper: a revoked row has done its job, and
  * one unseen for longer than any policy allows can never be live again.
  */
@@ -67,8 +74,9 @@ export async function startLoginSession(session: NewLoginSession, now = new Date
         OR: [{ revokedAt: { not: null } }, { createdAt: { lt: cutoff } }],
       },
     });
+    const companyId = await signInLanding(tx, session.userId, session.ssoCompanyId);
     await tx.loginSession.create({
-      data: { ...session, userAgent: session.userAgent?.slice(0, USER_AGENT_MAX_LENGTH) ?? null },
+      data: { ...session, companyId, userAgent: session.userAgent?.slice(0, USER_AGENT_MAX_LENGTH) ?? null },
     });
     await logAuthEvent(
       {
@@ -127,24 +135,42 @@ export async function revokeUserSessions(
   return count;
 }
 
-/** The user's live sessions, the current one first, then the most recently active. */
+/**
+ * Ends the user's sign-ins that have this workspace open, for when they
+ * leave it; sign-ins in their other workspaces carry on. In a tenant
+ * transaction, call it before the membership goes: RLS hides their rows after.
+ */
+export async function revokeWorkspaceSessions(
+  tx: SessionWriter,
+  userId: string,
+  companyId: string,
+): Promise<number> {
+  const { count } = await tx.loginSession.updateMany({
+    where: { userId, companyId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return count;
+}
+
+/**
+ * The user's live sessions, the current one first, then the most recently
+ * active. Each is judged by the policy of the workspace it has open.
+ */
 export async function listLoginSessions(
   userId: string,
   currentId: string,
   now = Date.now(),
 ): Promise<LoginSessionSummary[]> {
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: {
-      company: { select: { sessionLifetimeMinutes: true, sessionIdleMinutes: true } },
-      loginSessions: { where: { revokedAt: null }, orderBy: { lastSeenAt: "desc" } },
+  const sessions = await db.loginSession.findMany({
+    where: { userId, revokedAt: null },
+    orderBy: { lastSeenAt: "desc" },
+    include: {
+      company: { select: { name: true, sessionLifetimeMinutes: true, sessionIdleMinutes: true } },
     },
   });
-  if (!user) throw new NotFoundError("Your account no longer exists.");
-  const policy = sessionPolicyOf(user.company);
 
-  return user.loginSessions
-    .filter((session) => sessionEnd(session, policy, now) === null)
+  return sessions
+    .filter((session) => sessionEnd(session, sessionPolicyOf(session.company), now) === null)
     .map((session) => ({
       id: session.id,
       method: session.method,
@@ -152,7 +178,8 @@ export async function listLoginSessions(
       ipAddress: session.ipAddress,
       createdAt: session.createdAt,
       lastSeenAt: session.lastSeenAt,
-      expiresAt: sessionExpiresAt(session, policy),
+      expiresAt: sessionExpiresAt(session, sessionPolicyOf(session.company)),
+      workspace: session.company?.name ?? null,
       current: session.id === currentId,
     }))
     .sort((a, b) => Number(b.current) - Number(a.current));

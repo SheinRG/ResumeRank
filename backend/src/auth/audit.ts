@@ -22,28 +22,36 @@ export interface AuthEvent {
 }
 
 interface AuthAuditClient extends ActivityWriter {
-  user: { findUnique(args: { where: { id: string }; select: { companyId: true } }): PromiseLike<{ companyId: string | null } | null> };
+  membership: {
+    findMany(args: { where: { userId: string }; select: { companyId: true } }): PromiseLike<{ companyId: string }[]>;
+  };
 }
 
 /**
- * Records a sign-in event in the user's company trail. Someone without a
- * company (mid-onboarding) has no trail, so their events are only logged.
+ * Records a sign-in event in the trail of every workspace the user belongs
+ * to: the account is shared, so each company sees how its members' accounts
+ * are being used. Someone without a company (mid-onboarding) has no trail,
+ * so their events are only logged.
  */
 export async function logAuthEvent(event: AuthEvent, client: AuthAuditClient = db): Promise<void> {
-  const user = await client.user.findUnique({ where: { id: event.userId }, select: { companyId: true } });
-  if (!user?.companyId) return;
-  await logActivity(
-    {
-      companyId: user.companyId,
-      actorId: event.userId,
-      action: event.action,
-      entityType: "user",
-      entityId: event.userId,
-      summary: event.summary,
-      ...(event.metadata === undefined ? {} : { metadata: event.metadata }),
-    },
-    client,
-  );
+  const memberships = await client.membership.findMany({
+    where: { userId: event.userId },
+    select: { companyId: true },
+  });
+  for (const { companyId } of memberships) {
+    await logActivity(
+      {
+        companyId,
+        actorId: event.userId,
+        action: event.action,
+        entityType: "user",
+        entityId: event.userId,
+        summary: event.summary,
+        ...(event.metadata === undefined ? {} : { metadata: event.metadata }),
+      },
+      client,
+    );
+  }
 }
 
 const METHOD_LABELS: Record<SignInMethod, string> = {

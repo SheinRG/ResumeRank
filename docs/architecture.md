@@ -67,12 +67,11 @@ export async function requireUser(): Promise<CurrentUser> {
 }
 ```
 
-The session JWT carries `user.id` and `user.role` (set in
-`src/lib/auth/index.ts`'s `jwt`/`session` callbacks), but that role is only
-ever used for UI affordances — showing or hiding a button. Authorization
-itself is decided by the fresh database row, so a role downgrade takes effect
-on the very next request instead of waiting for the JWT to expire.
-`requireMember` additionally requires the fresh row to have a `companyId`
+The session JWT carries `user.id` and the sign-in's `loginId`, never a role
+or company: one account can hold different roles in different workspaces.
+Authorization is decided by the fresh database rows, so a role downgrade
+takes effect on the very next request instead of waiting for the JWT to
+expire. `requireMember` additionally requires an open workspace
 (narrowing the return type to `CompanyUser`, where `companyId` is non-null) —
 `requireWriter` and `requireAdmin` both call it first, so every write path
 already has a company to scope to before it checks verification or role.
@@ -158,18 +157,20 @@ the user on every request and ends the session (`/session-ended`) when
 - `expired`: older than the company's `sessionLifetimeMinutes`;
 - `idle`: no request for `sessionIdleMinutes`.
 
-Both limits are read from the company on each request rather than stamped at
-sign-in, so an owner tightening them ends existing sessions past the new
-limit too. People without a company get `DEFAULT_SESSION_POLICY`. The cookie's
+Both limits are read on each request from the workspace the session has open
+rather than stamped at sign-in, so an owner tightening them ends existing
+sessions past the new limit too. People without a company get
+`DEFAULT_SESSION_POLICY`. The cookie's
 own lifetime is the 30-day maximum; the row always ends a session first.
 `lastSeenAt` is rewritten at most once a minute, so most requests only read.
 
 `sessionVersion` still kills every token at once. Whatever bumps it also calls
 `revokeUserSessions` in the same transaction (keeping the current sign-in on
-a password change), so the sessions list matches what the guards enforce. In
-a tenant transaction it runs before anything moves the user out of the
-company, because the `LoginSession` RLS policy (like the MFA tables') only
-exposes rows of the company's own users. The tenant role may read and update
+a password change), so the sessions list matches what the guards enforce.
+Leaving a workspace ends only the sessions open in it
+(`revokeWorkspaceSessions`). In a tenant transaction either runs before the
+membership goes, because the `LoginSession` RLS policy (like the MFA tables')
+only exposes rows of the company's own members. The tenant role may read and update
 them, nothing else. Sign-in clears the user's revoked and long-dead rows, so
 the table needs no sweeper.
 
@@ -239,9 +240,56 @@ drain; schedule it every minute.
 past the throttle) and `auth.sign_in_refused` (SSO required) are written in
 `authorize`. `auth.mfa_passed` and `auth.mfa_failed` come from
 `auditMfaChallenge`, which runs after the attempt limit so blocked attempts
-don't fill the trail. They are stored under the user's company, and only
-admins see them in the activity feed, since they carry IPs and devices. The
-dashboard leaves them out.
+don't fill the trail. They are stored in every workspace the user belongs
+to (the account is shared), and only admins see them in the activity feed,
+since they carry IPs and devices. `auth.workspace_switch` records a sign-in
+entering a workspace. The dashboard leaves them out.
+
+## Workspaces
+
+One account can belong to several companies, an agency and its clients, say,
+or a consultant's engagements, with a role in each. `Membership` is the
+source of truth; `20261016090000_memberships` adds it and backfills it from
+`User.companyId` and `User.role`.
+
+- **Each sign-in has one workspace open** (`LoginSession.companyId`), so a
+  laptop and a phone can work in different companies. The guards resolve it
+  on every request (`resolveWorkspace`, `backend/src/auth/workspace-policy.ts`):
+  the open one while the user still belongs to it, else where a new sign-in
+  would land. Role, MFA policy, session lifetime and tenancy all come from it.
+- **Landing.** A new sign-in opens the company whose identity provider it
+  came through, else the workspace last switched to (`User.companyId`, now
+  the default), else the oldest, skipping any it may not open.
+- **Switching** (`switchWorkspace`, the switcher at the top of the sidebar)
+  checks the membership, points the sign-in at the workspace, makes it the
+  default and records `auth.workspace_switch` in the workspace entered.
+- **Single sign-on is per company.** `LoginSession.ssoCompanyId` records whose
+  IdP vouched for the sign-in, and only that company's SSO requirement is met
+  by it (`signInMayOpen`). A password sign-in is refused only when every
+  workspace the user belongs to requires SSO; otherwise it lands in one that
+  doesn't, and the others show as needing SSO in the switcher. The IdP's MFA
+  exemption also holds only inside its own company.
+- **Account-wide things stay with the account.** Sign-in events
+  (`logAuthEvent`) go to the trail of every workspace the user belongs to.
+  Removing someone from a workspace (`removeMember`, SCIM deprovisioning)
+  deletes that membership and ends only the sessions open in it. An admin can
+  still sign a teammate out everywhere (a stolen laptop is stolen
+  everywhere), but can't reset the second factor of someone another company
+  shares (`belongs_elsewhere`, a `SECURITY DEFINER` function, answers that
+  without exposing the other memberships). Removing the last factor is
+  refused if any of the user's workspaces requires MFA. Deleting an account
+  needs another owner in every workspace, and re-homes the records in each.
+
+**Compatibility.** The migration is expand-only. `User.companyId` and
+`User.role` stay, now meaning the default workspace and the role there, and
+two triggers keep them and `Membership` in step: `membership_mirror` keeps the
+default pointing at a workspace the user still belongs to, and
+`membership_from_user` turns writes by code deployed before memberships
+(joining, re-roling and removing people through those two columns) into
+membership changes. The switch is the one place current code writes them; it
+sets `app.workspace_switch` so the second trigger doesn't replay a stale role.
+Dropping `User.role`, `User.directoryUserId` and both triggers is the
+contract step for a later release.
 
 ## Multi-tenancy
 
@@ -250,14 +298,16 @@ row-level `companyId` scoping rather than a database- or schema-per-tenant
 split. `Job`, `Candidate`, `Application`, and `ActivityLog` all carry a
 required `companyId`; `Candidate.email` is unique per company
 (`@@unique([companyId, email])`), not globally, so two different companies
-can each have their own candidate at the same address. `User.companyId` is
-the one nullable exception — an OAuth sign-up exists before it has a company.
+can each have their own candidate at the same address. People are not
+tenant data: a `User` is an account, and `Membership(userId, companyId, role)`
+says which workspaces it belongs to, with a role in each (see Workspaces
+below). An OAuth sign-up exists before it has any membership.
 
 **Enforcement lives in the guards, not in ad-hoc `where` clauses scattered
 through the app.** `requireMember()` (`frontend/src/lib/auth/guards.ts`)
-re-fetches the user from the database on every call and throws unless
-`companyId` is set, returning a `CompanyUser` whose `companyId` is
-guaranteed non-null. Every query in `frontend/src/server/queries/` and every
+re-fetches the user and their memberships from the database on every call,
+resolves the workspace this sign-in has open, and throws unless there is one,
+returning a `CompanyUser` whose `companyId` is guaranteed non-null. Every query in `frontend/src/server/queries/` and every
 action in `frontend/src/server/actions/` calls `requireMember()` (directly,
 or transitively via `requireWriter`/`requireAdmin`) and threads its
 `companyId` into the Prisma call — as a `where: { companyId, ... }` filter on
@@ -303,14 +353,17 @@ owner on commit or rollback.
 The migration creates the role and grants it to the migrating role, so
 `SET ROLE` works there. If production connects as a different role than
 migrations do, grant `resumerank_tenant` to that role too. `User` has no
-policy: users are identities rather than tenant data, removing a member sets
-their `companyId` to null, and invites look up users by email across
-workspaces. `backend/tests/integration/rls.test.ts` fails if a new table with
+policy: users are identities rather than tenant data, and invites look up
+users by email across workspaces. `Membership` is tenant data and has one,
+and the policies on a user's sessions and second factors
+(`LoginSession`, `TotpFactor`, `WebAuthnCredential`, `WebAuthnChallenge`,
+`MfaRecoveryCode`) admit a row while its user is a member of the tenant,
+wherever else they belong. `backend/tests/integration/rls.test.ts` fails if a new table with
 a `companyId` lands without a policy. A new table that a tenant transaction
 touches needs a `GRANT` in its migration, or the transaction fails with
 `permission denied`.
 
-**Membership lifecycle.** There are three ways to end up with a `companyId`:
+**Membership lifecycle.** There are four ways to gain a membership:
 
 1. **Register** (`/register`, `registerAction` in
    `frontend/src/server/actions/auth.ts`) — creates a `Company` (slug via
@@ -324,18 +377,20 @@ touches needs a `GRANT` in its migration, or the transaction fails with
    That route (`frontend/src/app/(auth)/invite/page.tsx`) branches on whether
    the recipient already has an account: a brand-new email gets a name +
    password form (`acceptInviteAction`) that creates the user pre-verified
-   (the emailed link already proved the address); an existing company-less
-   account can accept while signed in (`acceptPendingInviteAction`).
-   Re-inviting a pending email re-sends rather than erroring; revoking
-   deletes the pending row.
-3. **Onboarding** — a Google sign-in has no password-based registration step,
-   so a user with `companyId: null` lands on `/onboarding`
-   (`frontend/src/app/(auth)/onboarding/page.tsx`) and either accepts a
-   pending invite addressed to their email or creates a company
-   (`createCompanyAction`), which is registration's create-company step
-   without the credential signup. The `(app)` layout
-   (`frontend/src/app/(app)/layout.tsx`) redirects any signed-in,
-   company-less user to `/onboarding` before rendering the product shell.
+   (the emailed link already proved the address); an existing account,
+   whatever other workspaces it belongs to, accepts while signed in
+   (`acceptInvite`, `backend/src/auth/workspaces.ts`). Re-inviting a pending
+   email re-sends rather than erroring; revoking deletes the pending row;
+   inviting someone already in the workspace is refused.
+3. **Add a workspace** — `/onboarding` (`frontend/src/app/(auth)/onboarding/page.tsx`)
+   is where a company-less account (a Google sign-up) lands, and where any
+   signed-in user adds another workspace: accept a pending invite addressed
+   to their email, or create a company (`createWorkspace`, at most five a
+   day per account). The `(app)` layout redirects a signed-in user with no
+   workspace to `/onboarding` before rendering the product shell.
+4. **Single sign-on and directory sync** — an auto-join domain or a SCIM
+   directory adds a membership to an existing account rather than refusing
+   it (`sso/login.ts`, `sso/directory.ts`).
 
 **Backfill migration.** `backend/prisma/migrations/20260723054528_add_company_multi_tenancy`
 adds the `Company`/`CompanyInvite` tables and the new `companyId` columns as

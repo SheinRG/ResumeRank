@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { startLoginSession } from "../../src/auth/sessions";
+import { switchWorkspace } from "../../src/auth/workspaces";
 import { db } from "../../src/db";
 import { listActivity } from "../../src/services/activity";
 import { exportAuditLog, getAuditSettings, verifyAuditLog } from "../../src/services/audit";
@@ -57,7 +61,7 @@ import {
 
 /** Everything tenant A's probes could conceivably touch in tenant B. */
 async function snapshot(tenant: TenantFixture) {
-  const [job, candidate, application, member, invite, domain, activityCount] = await Promise.all([
+  const [job, candidate, application, member, memberships, invite, domain, activityCount] = await Promise.all([
     db.job.findUnique({
       where: { id: tenant.jobId },
       include: { requirements: { orderBy: { order: "asc" } } },
@@ -68,11 +72,12 @@ async function snapshot(tenant: TenantFixture) {
       include: { scorecards: true, scoringRuns: { include: { evaluations: true } } },
     }),
     db.user.findUnique({ where: { id: tenant.memberId } }),
+    db.membership.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
     db.companyInvite.findUnique({ where: { id: tenant.inviteId } }),
     db.companyDomain.findUnique({ where: { id: tenant.domainId } }),
     db.activityLog.count({ where: { companyId: tenant.companyId } }),
   ]);
-  return { job, candidate, application, member, invite, domain, activityCount };
+  return { job, candidate, application, member, memberships, invite, domain, activityCount };
 }
 
 let a: TenantFixture;
@@ -295,6 +300,22 @@ describe("writes to another tenant's ids fail as not found", () => {
     await expect(resetMemberMfa(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(signOutMember(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(revokeInvite(a.owner, b.inviteId)).rejects.toThrow(NotFoundError);
+  });
+
+  it("refuses to open another tenant's workspace in a sign-in", async () => {
+    const loginId = randomUUID();
+    await startLoginSession({
+      id: loginId,
+      userId: a.owner.actorId,
+      method: "PASSWORD",
+      userAgent: null,
+      ipAddress: null,
+      ssoCompanyId: null,
+    });
+    await expect(switchWorkspace({ userId: a.owner.actorId, loginId }, b.companyId)).rejects.toThrow(
+      NotFoundError,
+    );
+    expect((await db.loginSession.findUniqueOrThrow({ where: { id: loginId } })).companyId).toBe(a.companyId);
   });
 
   it("rejects verifying, auto-joining or removing another tenant's domain", async () => {

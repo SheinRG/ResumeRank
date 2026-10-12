@@ -29,8 +29,6 @@ const LOGIN_ERRORS: Record<LoginErrorCode, string> = {
     "Single sign-on didn't complete. Try again, or ask your admin to check the identity provider settings.",
   SsoDomainNotVerified:
     "Your company's identity provider can't sign in that email address. Ask your admin to verify its domain.",
-  SsoWrongWorkspace:
-    "That email already belongs to another ResumeRank workspace, so it can't sign in through this company's SSO.",
   SsoAccountMismatch:
     "Your identity provider sent a different email than the one on your ResumeRank account. Ask your admin to check your SSO profile.",
 };

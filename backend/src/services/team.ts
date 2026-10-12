@@ -1,6 +1,6 @@
-import { tenantDb, tenantTransaction } from "../tenant-db";
+import { tenantDb, tenantTransaction, type TenantTx } from "../tenant-db";
 import { logActivity } from "../activity";
-import { revokeUserSessions } from "../auth/sessions";
+import { revokeWorkspaceSessions } from "../auth/sessions";
 import { createCompanyInvite } from "../auth/tokens";
 import { queueInviteEmail } from "../email/messages";
 import { AUTH_LIMIT, rateLimit } from "../rate-limit";
@@ -20,6 +20,7 @@ export interface TeamMember {
   emailVerified: Date | null;
   /** Null while the member has no second factor. */
   mfaEnabledAt: Date | null;
+  /** When they joined this workspace. */
   createdAt: Date;
 }
 
@@ -38,26 +39,45 @@ export interface InviteResult {
   expiresAt: Date;
 }
 
+/** A teammate is a membership: the role is this workspace's, the person is the account. */
 export const TEAM_MEMBER_SELECT = {
-  id: true,
-  name: true,
-  email: true,
-  image: true,
   role: true,
-  emailVerified: true,
-  mfaEnabledAt: true,
   createdAt: true,
-} satisfies Prisma.UserSelect;
+  user: {
+    select: { id: true, name: true, email: true, image: true, emailVerified: true, mfaEnabledAt: true },
+  },
+} satisfies Prisma.MembershipSelect;
+
+type TeamMemberRow = Prisma.MembershipGetPayload<{ select: typeof TEAM_MEMBER_SELECT }>;
+
+export function toTeamMember({ role, createdAt, user }: TeamMemberRow): TeamMember {
+  return { ...user, role, createdAt };
+}
 
 const USER_NOT_FOUND = "That user no longer exists.";
 
 /** Postgres sorts the native Role enum by declaration order (OWNER, ADMIN, MEMBER, VIEWER). */
 export async function listTeam(ctx: TenantContext): Promise<TeamMember[]> {
-  return tenantDb(ctx).user.findMany({
+  const members = await tenantDb(ctx).membership.findMany({
     where: { companyId: ctx.companyId },
     select: TEAM_MEMBER_SELECT,
-    orderBy: [{ role: "asc" }, { name: "asc" }, { id: "asc" }],
+    orderBy: [{ role: "asc" }, { user: { name: "asc" } }, { userId: "asc" }],
   });
+  return members.map(toTeamMember);
+}
+
+/** A teammate's membership in this workspace, inside a tenant transaction. */
+export async function findTeammate(
+  tx: TenantTx,
+  ctx: TenantContext,
+  userId: string,
+): Promise<TeamMemberRow & { id: string }> {
+  const membership = await tx.membership.findUnique({
+    where: { userId_companyId: { userId, companyId: ctx.companyId } },
+    select: { id: true, ...TEAM_MEMBER_SELECT },
+  });
+  if (!membership) throw new NotFoundError(USER_NOT_FOUND);
+  return membership;
 }
 
 export async function listPendingInvites(ctx: TenantContext): Promise<PendingInvite[]> {
@@ -94,20 +114,18 @@ export async function updateMemberRole(
   }
 
   return tenantTransaction(ctx, async (tx) => {
-    const target = await tx.user.findFirst({
-      where: { id: userId, companyId: ctx.companyId },
-      select: { role: true },
-    });
-    if (!target) throw new NotFoundError(USER_NOT_FOUND);
+    const target = await findTeammate(tx, ctx, userId);
     if (target.role === "OWNER" && ctx.role !== "OWNER") {
       throw new ForbiddenError("Only an owner can change another owner's role.");
     }
 
-    const user = await tx.user.update({
-      where: { id: userId, companyId: ctx.companyId },
-      data: { role },
-      select: TEAM_MEMBER_SELECT,
-    });
+    const user = toTeamMember(
+      await tx.membership.update({
+        where: { id: target.id, companyId: ctx.companyId },
+        data: { role },
+        select: TEAM_MEMBER_SELECT,
+      }),
+    );
     await logActivity(
       {
         companyId: ctx.companyId,
@@ -125,10 +143,11 @@ export async function updateMemberRole(
 }
 
 /**
- * Detaches a teammate from the workspace. Their account survives (they can
- * be re-invited or start their own company) and the records they created stay
- * with the company. Access ends on their next request: the guards re-read
- * `companyId` from the database, and their open sessions are revoked.
+ * Detaches a teammate from the workspace. Their account survives, with any
+ * other workspaces they belong to (they can be re-invited or start their own
+ * company), and the records they created stay with the company. Access ends
+ * on their next request: the guards re-read memberships from the database,
+ * and the sessions they have open here are revoked.
  */
 export async function removeMember(
   ctx: TenantContext,
@@ -144,24 +163,15 @@ export async function removeMember(
   }
 
   return tenantTransaction(ctx, async (tx) => {
-    const target = await tx.user.findFirst({
-      where: { id: userId, companyId: ctx.companyId },
-      select: { role: true },
-    });
-    if (!target) throw new NotFoundError(USER_NOT_FOUND);
+    const target = await findTeammate(tx, ctx, userId);
     if (target.role === "OWNER" && ctx.role !== "OWNER") {
       throw new ForbiddenError("Only an owner can remove another owner.");
     }
 
-    // Before the update below: once they leave the company, RLS hides their sessions.
-    await revokeUserSessions(tx, userId);
-    // The role resets so an elevated role never carries into whatever
-    // workspace the user joins next.
-    const user = await tx.user.update({
-      where: { id: userId, companyId: ctx.companyId },
-      data: { companyId: null, role: "MEMBER", sessionVersion: { increment: 1 } },
-      select: TEAM_MEMBER_SELECT,
-    });
+    // Before the delete below: once they leave the company, RLS hides their sessions.
+    await revokeWorkspaceSessions(tx, userId, ctx.companyId);
+    await tx.membership.delete({ where: { id: target.id, companyId: ctx.companyId } });
+    const user = toTeamMember(target);
     await logActivity(
       {
         companyId: ctx.companyId,
@@ -199,10 +209,10 @@ export async function inviteMember(
     );
   }
 
-  const [inviter, company, existingUser] = await Promise.all([
+  const [inviter, company, alreadyMember] = await Promise.all([
     tenantDb(ctx).user.findUnique({ where: { id: ctx.actorId }, select: { name: true, email: true } }),
     tenantDb(ctx).company.findUnique({ where: { id: ctx.companyId }, select: { name: true } }),
-    tenantDb(ctx).user.findUnique({ where: { email }, select: { companyId: true } }),
+    tenantDb(ctx).membership.count({ where: { companyId: ctx.companyId, user: { email } } }),
   ]);
   if (!inviter || !company) {
     throw new NotFoundError("Your company no longer exists.");
@@ -210,8 +220,9 @@ export async function inviteMember(
   if (email === inviter.email.toLowerCase()) {
     throw new DomainError("You can't invite yourself.");
   }
-  if (existingUser?.companyId) {
-    throw new ConflictError("That person already belongs to a company.");
+  // People in other workspaces can be invited: they accept with the same account.
+  if (alreadyMember > 0) {
+    throw new ConflictError("That person is already a member of this workspace.");
   }
 
   const invite = await tenantTransaction(ctx, async (tx) => {

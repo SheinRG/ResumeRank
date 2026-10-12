@@ -70,25 +70,38 @@ async function InvitePage({ searchParams }: InvitePageProps) {
   const signedInUser = session?.user?.id
     ? await db.user.findUnique({
         where: { id: session.user.id },
-        select: { id: true, email: true, companyId: true },
+        select: {
+          id: true,
+          email: true,
+          memberships: { where: { companyId: invite.companyId }, select: { id: true } },
+        },
       })
     : null;
 
   if (signedInUser) {
-    if (signedInUser.companyId) {
-      return (
-        <ErrorCard
-          heading="You already belong to a company"
-          message="Sign out and open this invite link with a different account to accept it."
-        />
-      );
-    }
     if (signedInUser.email.toLowerCase() !== invite.email.toLowerCase()) {
       return (
         <ErrorCard
           heading="Wrong account"
           message={`This invite was sent to ${invite.email}. Sign out and open the link again signed in as that address.`}
         />
+      );
+    }
+    if (signedInUser.memberships.length > 0) {
+      return (
+        <FadeIn>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">You&apos;re already in {company.name}</CardTitle>
+              <CardDescription>Switch to it from the workspace menu in the sidebar.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="w-full">
+                <Link href="/dashboard">Go to ResumeRank</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </FadeIn>
       );
     }
 

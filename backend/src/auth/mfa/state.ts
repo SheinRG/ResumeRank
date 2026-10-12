@@ -3,6 +3,7 @@ import { logActivity } from "../../activity";
 import type { Prisma } from "../../generated/prisma/client";
 import { MFA_ATTEMPT_LIMIT, rateLimit, retryMessage } from "../../rate-limit";
 import { ConflictError, DomainError } from "../../services/errors";
+import { logAuthEvent } from "../audit";
 import { generateRecoveryCodes, hashRecoveryCode } from "./recovery-codes";
 
 /**
@@ -64,10 +65,11 @@ const CHALLENGE_METHOD_LABELS: Record<MfaChallengeMethod, string> = {
 };
 
 /**
- * Runs a sign-in factor check and records the outcome in the audit trail. A
- * failure is written on its own, since the check's transaction rolled back;
- * a recovery code records its success inside its own transaction. Call it
- * after the attempt limit, so attempts past the limit don't fill the trail.
+ * Runs a sign-in factor check and records the outcome with the other sign-in
+ * events, in every workspace the user belongs to. A failure is written on its
+ * own, since the check's transaction rolled back; a recovery code records its
+ * success inside its own transaction. Call it after the attempt limit, so
+ * attempts past the limit don't fill the trail.
  */
 export async function auditMfaChallenge<T>(
   actor: MfaActor,
@@ -80,15 +82,22 @@ export async function auditMfaChallenge<T>(
     result = await check();
   } catch (error) {
     if (error instanceof DomainError) {
-      await logMfaActivity(db, actor, "auth.mfa_failed", `failed a two-factor check with ${label}`, {
-        method,
-        reason: error.message,
+      await logAuthEvent({
+        userId: actor.userId,
+        action: "auth.mfa_failed",
+        summary: `failed a two-factor check with ${label}`,
+        metadata: { method, reason: error.message },
       });
     }
     throw error;
   }
   if (method !== "recovery_code") {
-    await logMfaActivity(db, actor, "auth.mfa_passed", `passed a two-factor check with ${label}`, { method });
+    await logAuthEvent({
+      userId: actor.userId,
+      action: "auth.mfa_passed",
+      summary: `passed a two-factor check with ${label}`,
+      metadata: { method },
+    });
   }
   return result;
 }
@@ -131,8 +140,9 @@ async function factorCount(client: Prisma.TransactionClient, userId: string): Pr
 
 /**
  * Call after deleting a factor, in the same transaction. Removing the last
- * one turns MFA off, unless the company requires it — then the deletion is
- * refused (and rolled back) so nobody strands themselves on the setup page.
+ * one turns MFA off, unless a workspace the user belongs to requires it —
+ * then the deletion is refused (and rolled back) so nobody strands
+ * themselves on the setup page.
  */
 export async function factorRemoved(
   tx: Prisma.TransactionClient,
@@ -140,11 +150,14 @@ export async function factorRemoved(
 ): Promise<{ enabledAt: Date | null }> {
   const user = await tx.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { mfaEnabledAt: true, company: { select: { mfaRequired: true } } },
+    select: {
+      mfaEnabledAt: true,
+      memberships: { where: { company: { mfaRequired: true } }, select: { id: true }, take: 1 },
+    },
   });
   if ((await factorCount(tx, userId)) > 0) return { enabledAt: user.mfaEnabledAt };
 
-  if (user.company?.mfaRequired) {
+  if (user.memberships.length > 0) {
     throw new ConflictError(
       "Your workspace requires two-factor authentication. Add another method before removing this one.",
     );
