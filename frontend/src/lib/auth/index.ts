@@ -9,6 +9,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { z } from "zod";
 import { db } from "@resumerank/core/db";
 import { isGoogleAuthEnabled, isSsoEnabled } from "@resumerank/core/env";
+import { logAuthEvent } from "@resumerank/core/auth/audit";
 import { verifyPassword } from "@resumerank/core/auth/password";
 import { readMfaProof } from "@resumerank/core/auth/mfa/proof";
 import { MAX_SESSION_MINUTES } from "@resumerank/core/auth/session-policy";
@@ -70,7 +71,8 @@ const providers = [
       if (!parsed.success) return null;
       const { email, password } = parsed.data;
 
-      const gate = await beginLoginAttempt(email, clientIp(request.headers));
+      const ip = clientIp(request.headers);
+      const gate = await beginLoginAttempt(email, ip);
       if (!gate.allowed) throw new TooManyLoginAttempts();
 
       const user = await db.user.findUnique({
@@ -80,6 +82,15 @@ const providers = [
       const valid = user?.passwordHash ? await verifyPassword(password, user.passwordHash) : false;
       if (!user || !valid) {
         await recordFailedLogin(email);
+        // Past the throttle, so a guessing attack can't flood the trail.
+        if (user) {
+          await logAuthEvent({
+            userId: user.id,
+            action: "auth.sign_in_failed",
+            summary: "failed to sign in with a password",
+            metadata: { reason: "wrong_password", ipAddress: ip === UNKNOWN_IP ? null : ip },
+          });
+        }
         return null;
       }
       await clearFailedLogins(email);
@@ -88,6 +99,12 @@ const providers = [
       // which addresses belong to an SSO-only company.
       const role = roleSchema.parse(user.role);
       if (requiresSso({ role, ssoEnforced: user.company?.ssoEnforced ?? false })) {
+        await logAuthEvent({
+          userId: user.id,
+          action: "auth.sign_in_refused",
+          summary: "was refused a password sign-in because the workspace requires single sign-on",
+          metadata: { reason: "sso_required", ipAddress: ip === UNKNOWN_IP ? null : ip },
+        });
         throw new SsoRequiredSignin();
       }
 

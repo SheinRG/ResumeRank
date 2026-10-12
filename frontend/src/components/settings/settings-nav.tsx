@@ -11,6 +11,7 @@ const TABS = [
   { value: "team", href: "/settings/team", label: "Team" },
   { value: "company", href: "/settings/company", label: "Company" },
   { value: "sso", href: "/settings/sso", label: "SSO" },
+  { value: "audit", href: "/settings/audit", label: "Audit log" },
 ] as const;
 
 export function SettingsNav() {
@@ -26,7 +27,7 @@ export function SettingsNav() {
 
   return (
     <Tabs value={active} onValueChange={handleChange}>
-      {/* Six tabs outgrow a phone screen; the strip scrolls instead of the page. */}
+      {/* The tabs outgrow a phone screen; the strip scrolls instead of the page. */}
       <TabsList className="max-w-full justify-start overflow-x-auto">
         {TABS.map((tab) => (
           <TabsTrigger key={tab.value} value={tab.value}>

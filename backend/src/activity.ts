@@ -6,7 +6,7 @@ interface ActivityInput {
   /** Null for work that outlived its requester, e.g. a queued run whose author was deleted. */
   actorId: string | null;
   action: string;
-  entityType: "job" | "candidate" | "application" | "user";
+  entityType: "job" | "candidate" | "application" | "user" | "company";
   entityId: string;
   summary: string;
   metadata?: Prisma.InputJsonValue;

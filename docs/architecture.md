@@ -179,6 +179,70 @@ in `services/sessions.ts`: the owner-only lifetime policy and an admin's
 "sign out everywhere" for a teammate. Tokens issued before sign-ins were
 recorded have no row, so they ended once when this shipped.
 
+## Audit log
+
+`ActivityLog` is the audit trail, and it is tamper-evident. The
+`20261015090000_audit_log` migration adds three things in the database, so
+they hold whatever code path writes:
+
+- **A hash chain per company.** `audit_seal`, a deferred constraint trigger,
+  runs as the inserting transaction commits. It takes a per-company advisory
+  lock and stamps the entry with the next `seq`, the previous entry's hash
+  (`prevHash`) and its own `hash`, which is `audit_entry_hash` (SHA-256 over a
+  `jsonb` array of the previous hash, company, seq, time, action, entity,
+  summary and metadata). Sealing at commit means `seq` follows commit order,
+  so anyone who can see entry *n* can already see every entry before it. The
+  lock is taken after every other lock the transaction holds, so it can't
+  deadlock with them, and it is held only until the commit. Inside the
+  inserting transaction the three columns are still null. The actor is left
+  out of the hash because deleting an account clears it.
+- **A guard.** `audit_log_guard` refuses `UPDATE`, `DELETE` and `TRUNCATE` for
+  every role, the owner included. It lets through only the seal itself, an
+  account deletion clearing `actorId`, the cascade when a company is deleted
+  (`pg_trigger_depth() > 1`), and the retention purge (`app.audit_purge`).
+- **Verification.** `verifyAuditLog` (`services/audit.ts`) recomputes every
+  hash with the same SQL function and walks the links. `findChainBreak`
+  (`audit/chain.ts`) names the first fault: an edited entry, a missing one,
+  one that doesn't point at its predecessor, or the oldest entries deleted
+  without a retention purge to account for it. A database superuser can still
+  turn the triggers off; the chain is what makes that visible.
+
+**Retention.** Owners pick how long entries are kept (`Company.auditRetentionDays`,
+from a fixed list; null means forever). `purgeExpiredAuditEntries`
+(`audit/retention.ts`) deletes a whole prefix of the chain, by `seq`, never
+the newest entry, so `seq` and every stream cursor keep counting. It records
+an `audit.purge` entry with the last deleted `seq` and hash, and verification
+accepts the gap only when that record exists.
+
+**Export.** `GET /activity/export?format=csv|jsonl&from&to` (admins) streams
+the log oldest first, with each entry's chain hashes. It covers only the
+entries that existed when it started, and it writes `audit.export` before the
+first byte. CSV cells go through `csvRow`, which defuses spreadsheet formulas.
+
+**SIEM streaming.** Each company can have one `AuditStream` (owner-managed):
+a signed HTTPS webhook (Stripe-style `ResumeRank-Signature: t=…,v1=HMAC`),
+Splunk HEC or Datadog Logs. `drainAuditStreams` (`audit/stream.ts`) claims due
+streams with `SKIP LOCKED`, sends the next 500 entries after `cursorSeq`, and
+moves the cursor only on a 2xx. Failures back off from a minute up to an
+hour. Delivery is at least once, so receivers deduplicate on `id`. A new
+stream starts at the newest entry, and an export covers history. The token
+is sealed under an `AUTH_SECRET` subkey, bound to company, kind and URL, so a
+row edited to point somewhere else can't decrypt it. Requests go out through
+`audit/outbound.ts`: https only, with private, loopback, link-local and
+metadata addresses refused both when the stream is saved and at connect time
+(the lookup the socket uses is the one that's checked), and redirects aren't
+followed. `GET /api/cron/audit` (bearer `CRON_SECRET`) runs the purge and the
+drain; schedule it every minute.
+
+**Sign-in events.** `auth.sign_in` and `auth.sign_out` are written with the
+`LoginSession` row (`auth/sessions.ts`). `auth.sign_in_failed` (wrong password,
+past the throttle) and `auth.sign_in_refused` (SSO required) are written in
+`authorize`. `auth.mfa_passed` and `auth.mfa_failed` come from
+`auditMfaChallenge`, which runs after the attempt limit so blocked attempts
+don't fill the trail. They are stored under the user's company, and only
+admins see them in the activity feed, since they carry IPs and devices. The
+dashboard leaves them out.
+
 ## Multi-tenancy
 
 ResumeRank runs many companies on one shared Postgres database, isolated by
@@ -222,7 +286,8 @@ check to forget.
   `Application` and `ScoringRun` policies also require their parents to be
   visible — a row can't be attached to another tenant's job or candidate.
   The role only has `SELECT, INSERT` on `ActivityLog` and `Evaluation`, so
-  the audit trail and scoring evidence are append-only from the app.
+  the audit trail and scoring evidence are append-only from the app (the
+  audit log is also append-only for every other role; see Audit log).
   Without the setting, no row matches.
 
 Every service mutation runs in `tenantTransaction` (`tenantDb` deliberately

@@ -55,6 +55,44 @@ export async function logMfaActivity(
   );
 }
 
+export type MfaChallengeMethod = "totp" | "passkey" | "recovery_code";
+
+const CHALLENGE_METHOD_LABELS: Record<MfaChallengeMethod, string> = {
+  totp: "an authenticator app code",
+  passkey: "a passkey",
+  recovery_code: "a recovery code",
+};
+
+/**
+ * Runs a sign-in factor check and records the outcome in the audit trail. A
+ * failure is written on its own, since the check's transaction rolled back;
+ * a recovery code records its success inside its own transaction. Call it
+ * after the attempt limit, so attempts past the limit don't fill the trail.
+ */
+export async function auditMfaChallenge<T>(
+  actor: MfaActor,
+  method: MfaChallengeMethod,
+  check: () => Promise<T>,
+): Promise<T> {
+  const label = CHALLENGE_METHOD_LABELS[method];
+  let result: T;
+  try {
+    result = await check();
+  } catch (error) {
+    if (error instanceof DomainError) {
+      await logMfaActivity(db, actor, "auth.mfa_failed", `failed a two-factor check with ${label}`, {
+        method,
+        reason: error.message,
+      });
+    }
+    throw error;
+  }
+  if (method !== "recovery_code") {
+    await logMfaActivity(db, actor, "auth.mfa_passed", `passed a two-factor check with ${label}`, { method });
+  }
+  return result;
+}
+
 export async function replaceRecoveryCodes(tx: Prisma.TransactionClient, userId: string): Promise<string[]> {
   const codes = generateRecoveryCodes();
   await tx.mfaRecoveryCode.deleteMany({ where: { userId } });

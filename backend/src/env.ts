@@ -65,7 +65,7 @@ const envSchema = z.object({
    * without everyone having to set their authenticator app up again.
    */
   MFA_ENCRYPTION_KEY: z.string().min(32, "MFA_ENCRYPTION_KEY must be at least 32 characters").optional(),
-  /** Bearer token a scheduler sends to /api/cron/scoring and /api/cron/email; both are disabled without it. */
+  /** Bearer token a scheduler sends to the /api/cron/* routes (scoring, email, audit); all are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { db } from "../../src/db";
 import { listActivity } from "../../src/services/activity";
+import { exportAuditLog, getAuditSettings, verifyAuditLog } from "../../src/services/audit";
 import {
   createApplication,
   getApplication,
@@ -177,6 +178,27 @@ describe("reads never return another tenant's rows", () => {
     });
     const otherTenantIds = new Set([b.jobId, b.candidateId, b.applicationId]);
     expect(recentActivity.some((item) => otherTenantIds.has(item.entityId))).toBe(false);
+  });
+
+  it("verifies, reports and exports only the caller's audit log", async () => {
+    const ownSeqs = await db.activityLog.aggregate({
+      where: { companyId: a.companyId },
+      _max: { seq: true },
+      _count: { _all: true },
+    });
+    const settings = await getAuditSettings(a.owner);
+    expect(settings.latestSeq).toBe(Number(ownSeqs._max.seq));
+
+    const report = await verifyAuditLog(a.owner);
+    expect(report).toMatchObject({ fault: null, checked: ownSeqs._count._all });
+
+    const { stream } = await exportAuditLog(a.owner, { format: "jsonl" });
+    const events = (await readStream(stream))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(events.length).toBe(ownSeqs._count._all);
+    expect(events.every((event) => event.companyId === a.companyId)).toBe(true);
   });
 
   it("exports only the caller's candidates", async () => {
