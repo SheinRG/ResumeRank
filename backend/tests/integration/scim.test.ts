@@ -95,6 +95,13 @@ afterAll(async () => {
   await closeSso();
 });
 
+function membership(userId: string, companyId: string) {
+  return db.membership.findUnique({
+    where: { userId_companyId: { userId, companyId } },
+    select: { role: true, directoryUserId: true },
+  });
+}
+
 describe("SCIM provisioning", () => {
   it("adds a person the directory creates, and only with the directory's token", async () => {
     const ws = await workspace("create");
@@ -111,8 +118,9 @@ describe("SCIM provisioning", () => {
 
     const id = await createUser(ws, `ada@${ws.domain}`);
     const user = await db.user.findUniqueOrThrow({ where: { email: `ada@${ws.domain}` } });
-    expect(user).toMatchObject({ companyId: ws.companyId, role: "MEMBER", directoryUserId: id, name: "Ada Lovelace" });
+    expect(user).toMatchObject({ name: "Ada Lovelace" });
     expect(user.emailVerified).not.toBeNull();
+    expect(await membership(user.id, ws.companyId)).toMatchObject({ role: "MEMBER", directoryUserId: id });
     expect(
       await db.activityLog.count({ where: { companyId: ws.companyId, action: "user.provision", entityId: user.id } }),
     ).toBe(1);
@@ -126,14 +134,22 @@ describe("SCIM provisioning", () => {
     expect(await db.user.findUnique({ where: { email } })).toBeNull();
   });
 
-  it("leaves people who belong to another workspace alone", async () => {
+  it("adds someone who belongs to another workspace, keeping that one", async () => {
     const ws = await workspace("taken");
     const other = await workspace("other");
     const email = `shared@${ws.domain}`;
     emails.push(email);
-    await db.user.create({ data: { name: "Shared", email, companyId: other.companyId } });
+    const shared = await db.user.create({
+      data: { name: "Shared", email, memberships: { create: { companyId: other.companyId, role: "ADMIN" } } },
+    });
 
-    await createUser(ws, email);
+    const id = await createUser(ws, email);
+    expect(await membership(shared.id, ws.companyId)).toMatchObject({ role: "MEMBER", directoryUserId: id });
+    expect(await membership(shared.id, other.companyId)).toMatchObject({ role: "ADMIN", directoryUserId: null });
+
+    await setActive(ws, id, false);
+    expect(await membership(shared.id, ws.companyId)).toBeNull();
+    expect(await membership(shared.id, other.companyId)).toMatchObject({ role: "ADMIN" });
     expect(await db.user.findUniqueOrThrow({ where: { email } })).toMatchObject({ companyId: other.companyId });
   });
 
@@ -141,21 +157,22 @@ describe("SCIM provisioning", () => {
     const ws = await workspace("deactivate");
     const email = `leaver@${ws.domain}`;
     const id = await createUser(ws, email);
-    const before = await db.user.findUniqueOrThrow({ where: { email } });
+    const user = await db.user.findUniqueOrThrow({ where: { email } });
+    const loginId = randomUUID();
+    await db.loginSession.create({
+      data: { id: loginId, userId: user.id, method: "SSO", companyId: ws.companyId, ssoCompanyId: ws.companyId },
+    });
 
     expect((await setActive(ws, id, false)).status).toBe(200);
-    const removed = await db.user.findUniqueOrThrow({ where: { email } });
-    expect(removed).toMatchObject({ companyId: null, role: "MEMBER", directoryUserId: null });
-    expect(removed.sessionVersion).toBe(before.sessionVersion + 1);
+    expect(await membership(user.id, ws.companyId)).toBeNull();
+    expect(await db.user.findUniqueOrThrow({ where: { email } })).toMatchObject({ companyId: null });
+    expect((await db.loginSession.findUniqueOrThrow({ where: { id: loginId } })).revokedAt).not.toBeNull();
     expect(
-      await db.activityLog.count({ where: { companyId: ws.companyId, action: "user.deprovision", entityId: removed.id } }),
+      await db.activityLog.count({ where: { companyId: ws.companyId, action: "user.deprovision", entityId: user.id } }),
     ).toBe(1);
 
     expect((await setActive(ws, id, true)).status).toBe(200);
-    expect(await db.user.findUniqueOrThrow({ where: { email } })).toMatchObject({
-      companyId: ws.companyId,
-      directoryUserId: id,
-    });
+    expect(await membership(user.id, ws.companyId)).toMatchObject({ role: "MEMBER", directoryUserId: id });
   });
 
   it("removes a deleted person", async () => {
@@ -163,7 +180,8 @@ describe("SCIM provisioning", () => {
     const email = `gone@${ws.domain}`;
     const id = await createUser(ws, email);
     expect((await scim(ws, { method: "DELETE", resourceType: "Users", resourceId: id })).status).toBe(200);
-    expect(await db.user.findUniqueOrThrow({ where: { email } })).toMatchObject({ companyId: null });
+    const user = await db.user.findUniqueOrThrow({ where: { email } });
+    expect(await membership(user.id, ws.companyId)).toBeNull();
   });
 
   it("follows an email change to the same person", async () => {
@@ -189,13 +207,11 @@ describe("SCIM provisioning", () => {
   it("never removes an owner", async () => {
     const ws = await workspace("owner");
     const id = await createUser(ws, ws.ownerEmail);
-    expect(await db.user.findUniqueOrThrow({ where: { email: ws.ownerEmail } })).toMatchObject({ directoryUserId: id });
+    const owner = await db.user.findUniqueOrThrow({ where: { email: ws.ownerEmail } });
+    expect(await membership(owner.id, ws.companyId)).toMatchObject({ role: "OWNER", directoryUserId: id });
 
     await setActive(ws, id, false);
-    expect(await db.user.findUniqueOrThrow({ where: { email: ws.ownerEmail } })).toMatchObject({
-      companyId: ws.companyId,
-      role: "OWNER",
-    });
+    expect(await membership(owner.id, ws.companyId)).toMatchObject({ role: "OWNER" });
   });
 
   it("keeps each company's events on its own tenant when requests overlap", async () => {

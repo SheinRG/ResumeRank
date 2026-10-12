@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { db } from "../db";
 import { logActivity } from "../activity";
-import { revokeUserSessions } from "../auth/sessions";
+import { revokeWorkspaceSessions } from "../auth/sessions";
 import { log } from "../observability/log";
 import { emailDomain } from "./domains";
 import { SSO_PRODUCT, ssoControllers } from "./jackson";
@@ -46,7 +46,8 @@ export async function companyDirectory(companyId: string): Promise<Directory | n
 /**
  * Adds or refreshes a person the directory says is active. Only addresses on
  * the company's verified domains are accepted — the same rule SSO sign-in
- * follows — and someone already in another workspace is left alone.
+ * follows. Someone who already has an account joins with it, keeping any
+ * other workspaces they belong to.
  */
 async function provision(companyId: string, user: DirectoryUser): Promise<void> {
   const domain = emailDomain(user.email);
@@ -63,27 +64,27 @@ async function provision(companyId: string, user: DirectoryUser): Promise<void> 
 
   const name = displayName(user);
   await db.$transaction(async (tx) => {
-    const linked = await tx.user.findUnique({
+    const linked = await tx.membership.findUnique({
       where: { companyId_directoryUserId: { companyId, directoryUserId: user.id } },
-      select: { id: true, name: true, email: true },
+      select: { user: { select: { id: true, name: true, email: true } } },
     });
     if (linked) {
       // A renamed address moves with the person, unless another account has it.
       const emailTaken =
-        linked.email !== user.email &&
+        linked.user.email !== user.email &&
         (await tx.user.findUnique({ where: { email: user.email }, select: { id: true } })) !== null;
-      const email = emailTaken ? linked.email : user.email;
+      const email = emailTaken ? linked.user.email : user.email;
       if (emailTaken) log.warn("scim.email_change_skipped", { companyId, reason: "email_taken" });
-      if (linked.name === name && linked.email === email) return;
+      if (linked.user.name === name && linked.user.email === email) return;
 
-      await tx.user.update({ where: { id: linked.id }, data: { name, email } });
+      await tx.user.update({ where: { id: linked.user.id }, data: { name, email } });
       await logActivity(
         {
           companyId,
           actorId: null,
           action: "user.directory_update",
           entityType: "user",
-          entityId: linked.id,
+          entityId: linked.user.id,
           summary: `directory sync updated ${name}'s profile`,
         },
         tx,
@@ -93,67 +94,57 @@ async function provision(companyId: string, user: DirectoryUser): Promise<void> 
 
     const existing = await tx.user.findUnique({
       where: { email: user.email },
-      select: { id: true, companyId: true, emailVerified: true },
+      select: { id: true, emailVerified: true, memberships: { where: { companyId }, select: { id: true } } },
     });
-    if (existing?.companyId && existing.companyId !== companyId) {
-      log.warn("scim.provision_skipped", { companyId, reason: "other_workspace" });
-      return;
-    }
-
-    const joining = !existing?.companyId;
     const provisioned = existing
       ? await tx.user.update({
           where: { id: existing.id },
-          data: {
-            directoryUserId: user.id,
-            emailVerified: existing.emailVerified ?? new Date(),
-            ...(joining ? { companyId, role: "MEMBER" } : {}),
-          },
+          data: { emailVerified: existing.emailVerified ?? new Date() },
           select: { id: true, name: true },
         })
       : await tx.user.create({
-          data: {
-            name,
-            email: user.email,
-            emailVerified: new Date(),
-            companyId,
-            role: "MEMBER",
-            directoryUserId: user.id,
-          },
+          data: { name, email: user.email, emailVerified: new Date() },
           select: { id: true, name: true },
         });
-    if (joining) {
-      await logActivity(
-        {
-          companyId,
-          actorId: null,
-          action: "user.provision",
-          entityType: "user",
-          entityId: provisioned.id,
-          summary: `directory sync added ${provisioned.name}`,
-        },
-        tx,
-      );
+
+    const [membership] = existing?.memberships ?? [];
+    if (membership) {
+      await tx.membership.update({ where: { id: membership.id }, data: { directoryUserId: user.id } });
+      return;
     }
+    await tx.membership.create({
+      data: { userId: provisioned.id, companyId, role: "MEMBER", directoryUserId: user.id },
+    });
+    await logActivity(
+      {
+        companyId,
+        actorId: null,
+        action: "user.provision",
+        entityType: "user",
+        entityId: provisioned.id,
+        summary: `directory sync added ${provisioned.name}`,
+      },
+      tx,
+    );
   });
 }
 
 /**
- * Removes a person the directory deactivated or deleted, ending their
- * sessions, exactly as an admin removing them would. Owners are never removed
- * this way: losing the last owner would strand the workspace, so their
- * offboarding stays a human decision.
+ * Removes a person the directory deactivated or deleted from this workspace,
+ * ending the sessions they have open in it, exactly as an admin removing them
+ * would. Owners are never removed this way: losing the last owner would
+ * strand the workspace, so their offboarding stays a human decision.
  */
 async function deprovision(companyId: string, user: DirectoryUser): Promise<void> {
   await db.$transaction(async (tx) => {
     const target =
-      (await tx.user.findUnique({
+      (await tx.membership.findUnique({
         where: { companyId_directoryUserId: { companyId, directoryUserId: user.id } },
-        select: { id: true, name: true, role: true },
+        select: { id: true, role: true, user: { select: { id: true, name: true } } },
       })) ??
-      (await tx.user.findFirst({
-        where: { email: user.email, companyId },
-        select: { id: true, name: true, role: true },
+      (await tx.membership.findFirst({
+        where: { companyId, user: { email: user.email } },
+        select: { id: true, role: true, user: { select: { id: true, name: true } } },
       }));
     if (!target) return;
     if (target.role === "OWNER") {
@@ -161,19 +152,16 @@ async function deprovision(companyId: string, user: DirectoryUser): Promise<void
       return;
     }
 
-    await revokeUserSessions(tx, target.id);
-    await tx.user.update({
-      where: { id: target.id },
-      data: { companyId: null, role: "MEMBER", directoryUserId: null, sessionVersion: { increment: 1 } },
-    });
+    await revokeWorkspaceSessions(tx, target.user.id, companyId);
+    await tx.membership.delete({ where: { id: target.id } });
     await logActivity(
       {
         companyId,
         actorId: null,
         action: "user.deprovision",
         entityType: "user",
-        entityId: target.id,
-        summary: `directory sync removed ${target.name}`,
+        entityId: target.user.id,
+        summary: `directory sync removed ${target.user.name}`,
         metadata: { role: target.role },
       },
       tx,

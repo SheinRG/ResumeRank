@@ -26,6 +26,7 @@ const METHOD_LABELS: Record<LoginSessionSummary["method"], string> = {
 
 function sessionDetail(session: LoginSessionSummary): string {
   return [
+    session.workspace,
     session.ipAddress,
     `signed in ${formatDate(session.createdAt)}`,
     session.current ? "active now" : `active ${formatRelative(session.lastSeenAt)}`,

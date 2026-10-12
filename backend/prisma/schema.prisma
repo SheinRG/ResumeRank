@@ -118,6 +118,9 @@ model User {
   emailVerified   DateTime?
   passwordHash    String?
   image           String?
+  /// Deprecated: the role in the `companyId` workspace, mirrored from its
+  /// Membership by a trigger for code deployed before memberships. Read
+  /// Membership.role instead.
   role            Role      @default(MEMBER)
   notifyByEmail   Boolean   @default(true)
   // Stamped into each session token; bumping it revokes every existing
@@ -125,18 +128,21 @@ model User {
   // sign-in's LoginSession row is revoked alongside, so the sessions list
   // agrees with what the guards enforce.
   sessionVersion  Int       @default(0)
-  /// The id the company's SCIM directory knows this person by; set while the
-  /// directory manages their membership, so renames follow the right person.
+  /// Deprecated: superseded by Membership.directoryUserId, which a directory
+  /// sets per workspace. No longer written.
   directoryUserId String?
   /// When the user's first second factor was confirmed; null while they have
   /// none. Sessions record the value they verified against, so turning MFA
   /// off and on again (or an admin reset) asks every session to verify anew.
   mfaEnabledAt    DateTime?
+  /// The workspace a new sign-in opens in: the one last switched to. Always
+  /// one the user is a member of (the Membership triggers keep it so), or null.
   companyId       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   company             Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  memberships         Membership[]
   accounts            Account[]
   sessions            Session[]
   loginSessions       LoginSession[]
@@ -155,6 +161,27 @@ model User {
 
   @@unique([companyId, directoryUserId])
   @@index([companyId])
+}
+
+/// A person's place in a workspace. One account can belong to several
+/// companies (agencies, consultants, subsidiaries), with a role in each.
+model Membership {
+  id              String   @id @default(cuid())
+  userId          String
+  companyId       String
+  role            Role     @default(MEMBER)
+  /// The id this company's SCIM directory knows the person by; set while the
+  /// directory manages this membership, so renames follow the right person.
+  directoryUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@unique([companyId, directoryUserId])
+  @@index([companyId, role])
 }
 
 model Company {
@@ -184,15 +211,18 @@ model Company {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  users        User[]
-  jobs         Job[]
-  candidates   Candidate[]
-  applications Application[]
-  activities   ActivityLog[]
-  invites      CompanyInvite[]
-  scoringRuns  ScoringRun[]
-  domains      CompanyDomain[]
-  auditStream  AuditStream?
+  users            User[]
+  memberships      Membership[]
+  loginSessions    LoginSession[]  @relation("LoginSessionCompany")
+  ssoLoginSessions LoginSession[]  @relation("LoginSessionSso")
+  jobs             Job[]
+  candidates       Candidate[]
+  applications     Application[]
+  activities       ActivityLog[]
+  invites          CompanyInvite[]
+  scoringRuns      ScoringRun[]
+  domains          CompanyDomain[]
+  auditStream      AuditStream?
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -280,19 +310,28 @@ model VerificationToken {
 /// company allows, so revoking takes effect on the next request. Auth.js's
 /// own `Session` model stays unused under the JWT strategy.
 model LoginSession {
-  id         String       @id
-  userId     String
-  method     SignInMethod
-  userAgent  String?
-  ipAddress  String?
-  createdAt  DateTime     @default(now())
+  id           String       @id
+  userId       String
+  method       SignInMethod
+  userAgent    String?
+  ipAddress    String?
+  createdAt    DateTime     @default(now())
   /// Written at most once a minute (see auth/session-policy.ts).
-  lastSeenAt DateTime     @default(now())
-  revokedAt  DateTime?
+  lastSeenAt   DateTime     @default(now())
+  revokedAt    DateTime?
+  /// The workspace this sign-in has open. Each sign-in switches on its own, so
+  /// a laptop and a phone can have different companies open.
+  companyId    String?
+  /// The company whose identity provider vouched for this sign-in. Only that
+  /// company's single sign-on requirement is met by it.
+  ssoCompanyId String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company? @relation("LoginSessionCompany", fields: [companyId], references: [id], onDelete: SetNull)
+  ssoCompany Company? @relation("LoginSessionSso", fields: [ssoCompanyId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([companyId])
 }
 
 /// An authenticator-app secret. Unconfirmed until the user enters a code from

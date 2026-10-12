@@ -79,8 +79,7 @@ export async function registerAction(
             name,
             email,
             passwordHash,
-            role: "OWNER",
-            companyId: company.id,
+            memberships: { create: { companyId: company.id, role: "OWNER" } },
           },
         });
         const token = await createVerificationToken(email, tx);

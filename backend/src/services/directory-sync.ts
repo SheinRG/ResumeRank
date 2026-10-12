@@ -38,7 +38,7 @@ function assertSsoAvailable(): void {
 }
 
 async function summarize(ctx: TenantContext, directory: Directory): Promise<DirectorySummary> {
-  const managedMembers = await tenantDb(ctx).user.count({
+  const managedMembers = await tenantDb(ctx).membership.count({
     where: { companyId: ctx.companyId, directoryUserId: { not: null } },
   });
   return {
@@ -125,7 +125,7 @@ export async function removeDirectory(ctx: TenantContext): Promise<{ removed: tr
   if (error) throw new Error(`Directory delete failed: ${error.message}`);
 
   await tenantTransaction(ctx, async (tx) => {
-    await tx.user.updateMany({
+    await tx.membership.updateMany({
       where: { companyId: ctx.companyId, directoryUserId: { not: null } },
       data: { directoryUserId: null },
     });

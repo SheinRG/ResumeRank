@@ -5,7 +5,7 @@ import { sessionPolicyOf, type SessionPolicy } from "../auth/session-policy";
 import type { SessionPolicyInput, SignOutMemberInput } from "../validators/session";
 import { assertCanAdmin, type TenantContext } from "./context";
 import { ForbiddenError, NotFoundError } from "./errors";
-import { TEAM_MEMBER_SELECT, type TeamMember } from "./team";
+import { findTeammate, toTeamMember, type TeamMember } from "./team";
 
 const POLICY_SELECT = { sessionLifetimeMinutes: true, sessionIdleMinutes: true } as const;
 
@@ -53,8 +53,9 @@ export async function setSessionPolicy(ctx: TenantContext, input: SessionPolicyI
 
 /**
  * Ends every session a teammate has, for a lost laptop or a suspected
- * compromise. They can sign straight back in, unlike removal. Owners can
- * only be signed out by an owner.
+ * compromise, including those open in other workspaces they belong to: a
+ * stolen device is stolen everywhere, and signing back in is all it costs
+ * them. Owners can only be signed out by an owner.
  */
 export async function signOutMember(ctx: TenantContext, input: SignOutMemberInput): Promise<TeamMember> {
   assertCanAdmin(ctx);
@@ -63,22 +64,15 @@ export async function signOutMember(ctx: TenantContext, input: SignOutMemberInpu
   }
 
   return tenantTransaction(ctx, async (tx) => {
-    const target = await tx.user.findFirst({
-      where: { id: input.userId, companyId: ctx.companyId },
-      select: { role: true },
-    });
-    if (!target) throw new NotFoundError("That user no longer exists.");
+    const target = await findTeammate(tx, ctx, input.userId);
     if (target.role === "OWNER" && ctx.role !== "OWNER") {
       throw new ForbiddenError("Only an owner can sign out another owner.");
     }
 
-    // The RLS policy on LoginSession only exposes rows of this company's users.
+    // The RLS policy on LoginSession only exposes rows of this company's members.
     const revoked = await revokeUserSessions(tx, input.userId);
-    const user = await tx.user.update({
-      where: { id: input.userId, companyId: ctx.companyId },
-      data: { sessionVersion: { increment: 1 } },
-      select: TEAM_MEMBER_SELECT,
-    });
+    await tx.user.update({ where: { id: input.userId }, data: { sessionVersion: { increment: 1 } } });
+    const user = toTeamMember(target);
     await logActivity(
       {
         companyId: ctx.companyId,

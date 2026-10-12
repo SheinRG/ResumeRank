@@ -269,18 +269,34 @@ describe("who an assertion may sign in", () => {
     ).toEqual({ ok: false, reason: "SsoDomainNotVerified" });
   });
 
-  it("refuses someone who already belongs to another workspace", async () => {
-    const ws = await workspace("wrong");
+  it("adds someone from another workspace on an auto-join domain, keeping that one", async () => {
+    const ws = await workspace("shared");
     const other = await workspace("other");
     await verifiedDomain(ws, true);
-    const email = `moved@${ws.domain}`;
-    await db.user.create({ data: { name: "Moved", email, companyId: other.companyId } });
+    const email = `shared@${ws.domain}`;
+    const shared = await db.user.create({
+      data: { name: "Shared", email, memberships: { create: { companyId: other.companyId, role: "ADMIN" } } },
+    });
     extraUserEmails.push(email);
 
     expect(
-      await resolveSsoSignIn({ tenant: ws.companyId, email, name: "Moved", linkedUserId: null }),
-    ).toEqual({ ok: false, reason: "SsoWrongWorkspace" });
+      await resolveSsoSignIn({ tenant: ws.companyId, email, name: "Shared", linkedUserId: null }),
+    ).toEqual({ ok: true, joinedCompanyId: ws.companyId });
+    const memberships = await db.membership.findMany({
+      where: { userId: shared.id },
+      orderBy: { createdAt: "asc" },
+      select: { companyId: true, role: true },
+    });
+    expect(memberships).toEqual([
+      { companyId: other.companyId, role: "ADMIN" },
+      { companyId: ws.companyId, role: "MEMBER" },
+    ]);
+    // Their default workspace stays put; the sign-in itself lands in ws.
     expect(await db.user.findUniqueOrThrow({ where: { email } })).toMatchObject({ companyId: other.companyId });
+
+    expect(
+      await resolveSsoSignIn({ tenant: ws.companyId, email, name: "Shared", linkedUserId: null }),
+    ).toEqual({ ok: true, joinedCompanyId: null });
   });
 
   it("refuses a linked account whose user doesn't own the asserted email", async () => {

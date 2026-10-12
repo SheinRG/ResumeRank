@@ -5,10 +5,15 @@ import { revalidatePath } from "next/cache";
 import { AuthError } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn } from "@/lib/auth";
-import { requireAdmin, requireUser, tenantContext } from "@/lib/auth/guards";
-import { withUniqueCompanySlug } from "@resumerank/core/company";
+import { requireAdmin, requireUserSession, tenantContext } from "@/lib/auth/guards";
 import { hashPassword } from "@resumerank/core/auth/password";
 import { claimInvite, findValidInviteByToken } from "@resumerank/core/auth/tokens";
+import {
+  acceptInvite,
+  createWorkspace,
+  type CreatedWorkspace,
+  type JoinedWorkspace,
+} from "@resumerank/core/auth/workspaces";
 import { updateCompany, type CompanyDetail } from "@resumerank/core/services/company";
 import {
   inviteMember,
@@ -32,7 +37,7 @@ const inviteIdSchema = z.string().min(1, "Invite is missing");
 
 export async function createCompanyAction(
   input: unknown,
-): Promise<ActionResult<{ id: string; name: string; slug: string }>> {
+): Promise<ActionResult<CreatedWorkspace>> {
   return runAction("createCompany", async () => {
     const parsed = createCompanySchema.safeParse(input);
     if (!parsed.success) {
@@ -41,36 +46,12 @@ export async function createCompanyAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireUser();
-    if (user.companyId) {
-      return actionError("You already belong to a company.");
-    }
+    const { user, loginId } = await requireUserSession();
+    const company = await createWorkspace({ userId: user.id, loginId }, parsed.data.companyName);
 
-    const company = await withUniqueCompanySlug(parsed.data.companyName, (slug) =>
-      db.$transaction(async (tx) => {
-        const created = await tx.company.create({
-          data: { name: parsed.data.companyName, slug },
-        });
-        await tx.user.update({
-          where: { id: user.id },
-          data: { companyId: created.id, role: "OWNER" },
-        });
-        await logActivity(
-          {
-            companyId: created.id,
-            actorId: user.id,
-            action: "company.create",
-            entityType: "user",
-            entityId: user.id,
-            summary: `created ${created.name}`,
-          },
-          tx,
-        );
-        return created;
-      }),
-    );
+    revalidatePath("/", "layout");
 
-    return actionOk({ id: company.id, name: company.name, slug: company.slug });
+    return actionOk(company);
   });
 }
 
@@ -97,50 +78,22 @@ export async function updateCompanyAction(
 
 export async function acceptPendingInviteAction(
   inviteId: unknown,
-): Promise<ActionResult<{ companyId: string }>> {
+): Promise<ActionResult<JoinedWorkspace>> {
   return runAction("acceptPendingInvite", async () => {
     const parsed = inviteIdSchema.safeParse(inviteId);
     if (!parsed.success) {
       return actionError("That invite could not be found.");
     }
-    const user = await requireUser();
-    if (user.companyId) {
-      return actionError("You already belong to a company.");
-    }
+    const { user, loginId } = await requireUserSession();
+    const joined = await acceptInvite(
+      { userId: user.id, loginId, email: user.email, name: user.name },
+      parsed.data,
+    );
 
-    const invite = await db.companyInvite.findUnique({ where: { id: parsed.data } });
-    if (!invite || invite.acceptedAt !== null || invite.expiresAt < new Date()) {
-      return actionError("This invite is no longer valid.");
-    }
-    if (invite.email.toLowerCase() !== user.email.toLowerCase()) {
-      return actionError("This invite was sent to a different email address.");
-    }
+    revalidatePath("/", "layout");
+    expireTenantReads(joined.companyId);
 
-    const joined = await db.$transaction(async (tx) => {
-      if (!(await claimInvite(tx, invite.id))) return false;
-      await tx.user.update({
-        where: { id: user.id },
-        data: { companyId: invite.companyId, role: invite.role },
-      });
-      await logActivity(
-        {
-          companyId: invite.companyId,
-          actorId: user.id,
-          action: "user.join",
-          entityType: "user",
-          entityId: user.id,
-          summary: `${user.name} joined the company`,
-        },
-        tx,
-      );
-      return true;
-    });
-    if (!joined) {
-      return actionError("This invite is no longer valid.");
-    }
-    expireTenantReads(invite.companyId);
-
-    return actionOk({ companyId: invite.companyId });
+    return actionOk(joined);
   });
 }
 
@@ -219,9 +172,10 @@ export async function acceptInviteAction(
           // verified the moment the account is created.
           emailVerified: new Date(),
           passwordHash,
-          role: invite.role,
-          companyId: invite.companyId,
         },
+      });
+      await tx.membership.create({
+        data: { userId: user.id, companyId: invite.companyId, role: invite.role },
       });
       await logActivity(
         {

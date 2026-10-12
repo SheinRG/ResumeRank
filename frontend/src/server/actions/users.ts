@@ -30,7 +30,6 @@ const PROFILE_SELECT = {
   name: true,
   email: true,
   image: true,
-  role: true,
   emailVerified: true,
   mfaEnabledAt: true,
   createdAt: true,
@@ -124,7 +123,7 @@ export async function updateProfileAction(
           tx,
         );
       }
-      return updated;
+      return { ...updated, role: currentUser.role };
     });
 
     revalidatePath("/settings/team");
@@ -283,28 +282,31 @@ export async function deleteAccountAction(
       });
     }
 
-    // The workspace's shared jobs, candidates and applications are re-homed to
-    // an owner so deleting a teammate never destroys team data. Owners must
-    // hand off the role first — otherwise there'd be no one to inherit it.
-    // A company-less (onboarding) user owns no shared data, so there's no
-    // inheritor to find and nothing to reassign.
-    const inheritor = currentUser.companyId
-      ? await db.user.findFirst({
-          where: {
-            role: "OWNER",
-            companyId: currentUser.companyId,
-            id: { not: currentUser.id },
-          },
-          orderBy: { createdAt: "asc" },
-          select: { id: true },
-        })
-      : null;
-    if (currentUser.companyId && !inheritor) {
-      return actionError(
-        currentUser.role === "OWNER"
-          ? "Transfer the owner role to a teammate before deleting your account."
-          : "Your workspace has no other owner to inherit your data. Contact support.",
-      );
+    // Each workspace's shared jobs, candidates and applications are re-homed
+    // to one of its other owners, so deleting a teammate never destroys team
+    // data. An owner must hand off the role first wherever they're the only
+    // one — otherwise there'd be no one to inherit it. Memberships are read
+    // by the user's own id: the account spans every workspace it belongs to.
+    const memberships = await db.membership.findMany({
+      where: { userId: currentUser.id },
+      orderBy: { createdAt: "asc" },
+      select: { companyId: true, role: true, company: { select: { name: true } } },
+    });
+    const inheritors = new Map<string, string>();
+    for (const membership of memberships) {
+      const inheritor = await db.membership.findFirst({
+        where: { companyId: membership.companyId, role: "OWNER", userId: { not: currentUser.id } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { userId: true },
+      });
+      if (!inheritor) {
+        return actionError(
+          membership.role === "OWNER"
+            ? `Transfer the owner role in ${membership.company.name} to a teammate before deleting your account.`
+            : `${membership.company.name} has no other owner to inherit your data. Contact support.`,
+        );
+      }
+      inheritors.set(membership.companyId, inheritor.userId);
     }
 
     const record = await db.user.findUnique({
@@ -328,20 +330,19 @@ export async function deleteAccountAction(
       }
     }
 
-    const companyId = currentUser.companyId;
     // Activity rows are left untouched: the FK nulls their actor on delete, so
-    // the company's audit trail survives with the author anonymised.
+    // each company's audit trail survives with the author anonymised.
     await db.$transaction(async (tx) => {
-      if (inheritor && companyId) {
+      for (const [companyId, inheritorId] of inheritors) {
         const owned = { createdById: currentUser.id, companyId };
-        const reassign = { createdById: inheritor.id };
+        const reassign = { createdById: inheritorId };
         await tx.job.updateMany({ where: owned, data: reassign });
         await tx.candidate.updateMany({ where: owned, data: reassign });
         await tx.application.updateMany({ where: owned, data: reassign });
       }
       await tx.user.delete({ where: { id: currentUser.id } });
     });
-    expireTenantReads(companyId);
+    for (const companyId of inheritors.keys()) expireTenantReads(companyId);
 
     return actionOk({ deleted: true });
   });

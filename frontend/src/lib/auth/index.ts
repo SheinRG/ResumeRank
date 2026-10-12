@@ -14,6 +14,7 @@ import { verifyPassword } from "@resumerank/core/auth/password";
 import { readMfaProof } from "@resumerank/core/auth/mfa/proof";
 import { MAX_SESSION_MINUTES } from "@resumerank/core/auth/session-policy";
 import { endLoginSession, startLoginSession } from "@resumerank/core/auth/sessions";
+import { passwordSignInRefused } from "@resumerank/core/auth/workspaces";
 import type { SignInMethod } from "@resumerank/core/generated/prisma/enums";
 import {
   beginLoginAttempt,
@@ -24,9 +25,8 @@ import { log } from "@resumerank/core/observability/log";
 import { clientIp, UNKNOWN_IP } from "@resumerank/core/request-ip";
 import { SSO_PROVIDER_ID, ssoBaseUrl, ssoClientSecret } from "@resumerank/core/sso/jackson";
 import { resolveSsoSignIn } from "@resumerank/core/sso/login";
-import { requiresSso, type SsoDenial } from "@resumerank/core/sso/policy";
+import type { SsoDenial } from "@resumerank/core/sso/policy";
 import { loginSchema } from "@resumerank/core/validators/auth";
-import { roleSchema } from "@resumerank/core/validators/enums";
 
 export const TOO_MANY_LOGIN_ATTEMPTS = "too_many_attempts";
 export const SSO_REQUIRED = "sso_required";
@@ -36,7 +36,7 @@ class TooManyLoginAttempts extends CredentialsSignin {
   code = TOO_MANY_LOGIN_ATTEMPTS;
 }
 
-/** The password was right, but the user's company only allows single sign-on. */
+/** The password was right, but every workspace the user belongs to only allows single sign-on. */
 class SsoRequiredSignin extends CredentialsSignin {
   code = SSO_REQUIRED;
 }
@@ -75,10 +75,7 @@ const providers = [
       const gate = await beginLoginAttempt(email, ip);
       if (!gate.allowed) throw new TooManyLoginAttempts();
 
-      const user = await db.user.findUnique({
-        where: { email },
-        include: { company: { select: { ssoEnforced: true } } },
-      });
+      const user = await db.user.findUnique({ where: { email } });
       const valid = user?.passwordHash ? await verifyPassword(password, user.passwordHash) : false;
       if (!user || !valid) {
         await recordFailedLogin(email);
@@ -96,9 +93,9 @@ const providers = [
       await clearFailedLogins(email);
 
       // Checked only after the password, so the error can't be used to learn
-      // which addresses belong to an SSO-only company.
-      const role = roleSchema.parse(user.role);
-      if (requiresSso({ role, ssoEnforced: user.company?.ssoEnforced ?? false })) {
+      // which addresses belong to an SSO-only company. Someone who also
+      // belongs to a workspace without SSO signs in there instead.
+      if (await passwordSignInRefused(user.id)) {
         await logAuthEvent({
           userId: user.id,
           action: "auth.sign_in_refused",
@@ -113,7 +110,6 @@ const providers = [
         name: user.name,
         email: user.email,
         image: user.image,
-        role,
         sessionVersion: user.sessionVersion,
       };
     },
@@ -201,16 +197,27 @@ function signInMethod(provider: string | undefined): SignInMethod {
   return "PASSWORD";
 }
 
+/** SSO account ids are `<companyId>:<subject>` (see the provider's profile()). */
+function ssoTenantOf(providerAccountId: string): string {
+  return providerAccountId.slice(0, providerAccountId.indexOf(":"));
+}
+
 /** Records a new sign-in with the device it came from, for the sessions list. */
-async function recordLoginSession(loginId: string, userId: string, provider: string | undefined) {
+async function recordLoginSession(
+  loginId: string,
+  userId: string,
+  account: { provider: string; providerAccountId: string } | null | undefined,
+) {
   const requestHeaders = await headers();
   const ip = clientIp(requestHeaders);
+  const method = signInMethod(account?.provider);
   await startLoginSession({
     id: loginId,
     userId,
-    method: signInMethod(provider),
+    method,
     userAgent: requestHeaders.get("user-agent"),
     ipAddress: ip === UNKNOWN_IP ? null : ip,
+    ssoCompanyId: method === "SSO" && account ? ssoTenantOf(account.providerAccountId) : null,
   });
 }
 
@@ -249,22 +256,15 @@ export const {
       const existing = await db.user.findUnique({
         where: { email: user.email },
         select: {
-          role: true,
+          id: true,
           emailVerified: true,
-          company: { select: { ssoEnforced: true } },
           accounts: { where: { provider: "google" }, select: { id: true } },
         },
       });
       if (existing && existing.accounts.length === 0 && !existing.emailVerified) {
         return loginError("AccountNotLinked");
       }
-      if (
-        existing &&
-        requiresSso({
-          role: roleSchema.parse(existing.role),
-          ssoEnforced: existing.company?.ssoEnforced ?? false,
-        })
-      ) {
+      if (existing && (await passwordSignInRefused(existing.id))) {
         return loginError("SsoRequired");
       }
       return true;
@@ -272,17 +272,14 @@ export const {
     async jwt({ token, user, account, trigger, session }) {
       if (user?.id) {
         token.id = user.id;
-        token.role = user.role;
         token.sessionVersion = user.sessionVersion ?? 0;
-        // How this session started, so the guards can end password and
-        // Google sessions once the company starts requiring SSO.
-        token.viaSso = account?.provider === SSO_PROVIDER_ID;
         // Every sign-in starts without a proven second factor; the guards
         // send it to the challenge if the user has one. The guards also
-        // require this sign-in's LoginSession row, which revoking ends.
+        // require this sign-in's LoginSession row, which revoking ends; it
+        // records how the sign-in started and which workspace it has open.
         token.loginId = randomUUID();
         delete token.mfaEpoch;
-        await recordLoginSession(token.loginId, user.id, account?.provider);
+        await recordLoginSession(token.loginId, user.id, account);
       }
       if (trigger === "update" && token.id) {
         // An explicit refresh (after the user changes their own password)
@@ -308,9 +305,7 @@ export const {
     },
     session({ session, token }) {
       if (token.id) session.user.id = token.id;
-      session.user.role = token.role ?? "MEMBER";
       session.user.sessionVersion = token.sessionVersion ?? 0;
-      session.user.viaSso = token.viaSso ?? false;
       session.user.loginId = token.loginId ?? null;
       session.user.mfaEpoch = token.mfaEpoch ?? null;
       return session;
@@ -323,8 +318,8 @@ export const {
       }
     },
     // OAuth sign-ups arrive with a provider-verified email; mirror that into
-    // our verification gate. Role stays MEMBER and companyId stays null —
-    // onboarding resolves whether they create a company or join one by invite.
+    // our verification gate. They start with no membership; onboarding
+    // resolves whether they create a company or join one by invite.
     async createUser({ user }) {
       if (!user.id) return;
       await db.user.update({

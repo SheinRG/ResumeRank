@@ -9,8 +9,8 @@ import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
 import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
 import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
 import { touchLoginSession } from "@resumerank/core/auth/sessions";
+import { resolveWorkspace, signInMayOpen } from "@resumerank/core/auth/workspace-policy";
 import { annotateLogContext } from "@resumerank/core/observability/log";
-import { requiresSso } from "@resumerank/core/sso/policy";
 import type { Role } from "@resumerank/core/validators/enums";
 import type { TenantContext } from "@resumerank/core/services/context";
 
@@ -52,16 +52,30 @@ export function gateRedirectPath(error: GateError): string {
   return "/session-ended";
 }
 
+/** A workspace the user belongs to, for the switcher. */
+export interface WorkspaceOption {
+  companyId: string;
+  name: string;
+  logoUrl: string | null;
+  role: Role;
+  /** False when the company requires single sign-on this sign-in didn't come through. */
+  openable: boolean;
+}
+
 export interface CurrentUser {
   id: string;
   name: string;
   email: string;
+  /** The role in the open workspace. */
   role: Role;
   emailVerified: Date | null;
   image: string | null;
+  /** The workspace this sign-in has open, if the user belongs to any. */
   companyId: string | null;
   companyName: string | null;
   companyLogoUrl: string | null;
+  /** Every workspace the user belongs to, oldest first. */
+  workspaces: WorkspaceOption[];
 }
 
 /** A signed-in user who has completed onboarding and belongs to a company. */
@@ -73,7 +87,6 @@ export interface CompanyUser extends CurrentUser {
 interface SessionClaims {
   id: string;
   sessionVersion: number;
-  viaSso: boolean;
   loginId: string | null;
   mfaEpoch: number | null;
 }
@@ -107,7 +120,6 @@ async function reissuedClaims(): Promise<SessionClaims | null> {
     return {
       id: token.id,
       sessionVersion: token.sessionVersion ?? 0,
-      viaSso: token.viaSso ?? false,
       loginId: token.loginId ?? null,
       mfaEpoch: token.mfaEpoch ?? null,
     };
@@ -120,8 +132,8 @@ async function sessionClaims(): Promise<SessionClaims | null> {
   if (reissued) return reissued;
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, sessionVersion, viaSso, loginId, mfaEpoch } = session.user;
-  return { id, sessionVersion, viaSso, loginId, mfaEpoch };
+  const { id, sessionVersion, loginId, mfaEpoch } = session.user;
+  return { id, sessionVersion, loginId, mfaEpoch };
 }
 
 /** A signed-in session before its second-factor gate is applied. */
@@ -137,9 +149,13 @@ export interface SignedInSession {
  * role demotion takes effect on the next request — the JWT is never the
  * authorization source of truth. A token whose session version is behind the
  * user's has been revoked and is rejected the same way, as is one whose
- * LoginSession row was revoked, went idle or outlived the company's session
- * lifetime, and a password or Google session once the user's company
- * requires single sign-on.
+ * LoginSession row was revoked, went idle or outlived its workspace's session
+ * lifetime, and one whose workspace requires single sign-on from its own
+ * identity provider when this sign-in didn't come through it.
+ *
+ * The workspace is the one this sign-in has open (`LoginSession.companyId`)
+ * while the user still belongs to it; after they leave it, wherever a new
+ * sign-in would land. Role, policies and tenancy all follow from it.
  *
  * Memoized per render with React `cache()`: the layout, the page and every
  * query it calls share one session read and one user lookup. Server actions
@@ -161,55 +177,77 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
       id: true,
       name: true,
       email: true,
-      role: true,
       emailVerified: true,
       image: true,
       companyId: true,
-      company: {
+      memberships: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          name: true,
-          logoUrl: true,
-          ssoEnforced: true,
-          mfaRequired: true,
-          sessionLifetimeMinutes: true,
-          sessionIdleMinutes: true,
+          role: true,
+          companyId: true,
+          company: {
+            select: {
+              name: true,
+              logoUrl: true,
+              ssoEnforced: true,
+              mfaRequired: true,
+              sessionLifetimeMinutes: true,
+              sessionIdleMinutes: true,
+            },
+          },
         },
       },
       loginSessions: {
         where: { id: loginId },
-        select: { createdAt: true, lastSeenAt: true, revokedAt: true },
+        select: { createdAt: true, lastSeenAt: true, revokedAt: true, companyId: true, ssoCompanyId: true },
       },
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
-  const { company, sessionVersion, mfaEnabledAt, loginSessions, ...rest } = user;
-  annotateLogContext({ companyId: user.companyId });
+  const { sessionVersion, mfaEnabledAt, loginSessions, memberships, companyId: preferred, ...rest } = user;
   if (sessionVersion !== session.sessionVersion) {
     throw new GateError(SESSION_ENDED);
   }
   const [login] = loginSessions;
-  if (!login || sessionEnd(login, sessionPolicyOf(company)) !== null) {
+  if (!login) throw new GateError(SESSION_ENDED);
+
+  const workspaces = memberships.map(({ role, companyId, company }) => ({
+    ...company,
+    role,
+    companyId,
+  }));
+  const ssoCompanyId = login.ssoCompanyId;
+  const active = resolveWorkspace(workspaces, { opened: login.companyId, preferred, ssoCompanyId });
+  annotateLogContext({ companyId: active?.companyId ?? null });
+  if (sessionEnd(login, sessionPolicyOf(active)) !== null) {
     throw new GateError(SESSION_ENDED);
   }
   if (needsLastSeenUpdate(login.lastSeenAt)) await touchLoginSession(loginId);
-  if (
-    !session.viaSso &&
-    requiresSso({ role: user.role, ssoEnforced: company?.ssoEnforced ?? false })
-  ) {
-    throw new SsoRequiredError();
-  }
+  // A member everywhere, but in no workspace this sign-in may open.
+  if (!active && workspaces.length > 0) throw new SsoRequiredError();
+  if (active && !signInMayOpen(active, ssoCompanyId)) throw new SsoRequiredError();
 
   const mfa = mfaGate({
-    viaSso: session.viaSso,
+    // The identity provider owns MFA only inside its own company.
+    viaSso: ssoCompanyId !== null && (active === null || active.companyId === ssoCompanyId),
     enabledAt: mfaEnabledAt,
     verifiedEpoch: session.mfaEpoch,
-    required: company?.mfaRequired ?? false,
+    required: active?.mfaRequired ?? false,
   });
   return {
     user: {
       ...rest,
-      companyName: company?.name ?? null,
-      companyLogoUrl: company?.logoUrl ?? null,
+      role: active?.role ?? "MEMBER",
+      companyId: active?.companyId ?? null,
+      companyName: active?.name ?? null,
+      companyLogoUrl: active?.logoUrl ?? null,
+      workspaces: workspaces.map((workspace) => ({
+        companyId: workspace.companyId,
+        name: workspace.name,
+        logoUrl: workspace.logoUrl,
+        role: workspace.role,
+        openable: signInMayOpen(workspace, ssoCompanyId),
+      })),
     },
     loginId,
     mfa,

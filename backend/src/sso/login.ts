@@ -53,10 +53,9 @@ export type SsoSignInResult =
  *
  * A company's IdP may only vouch for addresses on a domain that company has
  * verified: otherwise any tenant could configure an IdP that asserts someone
- * else's email and take over their account. People already in another
- * workspace are refused rather than moved. New people are created here (not
- * by Auth.js) so that, on an auto-join domain, they land in the company in
- * the same step.
+ * else's email and take over their account. People who belong to other
+ * workspaces keep them. New people are created here (not by Auth.js) so
+ * that, on an auto-join domain, they join the company in the same step.
  */
 export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignInResult> {
   const email = input.email.trim().toLowerCase();
@@ -71,7 +70,12 @@ export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignIn
 
   const existing = await db.user.findUnique({
     where: { email },
-    select: { id: true, name: true, companyId: true, emailVerified: true },
+    select: {
+      id: true,
+      name: true,
+      emailVerified: true,
+      memberships: { where: { companyId: input.tenant }, select: { id: true } },
+    },
   });
 
   // Auth.js signs in whoever the linked account points at, whatever email
@@ -80,37 +84,26 @@ export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignIn
     return { ok: false, reason: "SsoAccountMismatch" };
   }
 
-  if (existing?.companyId && existing.companyId !== input.tenant) {
-    return { ok: false, reason: "SsoWrongWorkspace" };
-  }
-
   const verifiedAt = new Date();
+  const member = (existing?.memberships.length ?? 0) > 0;
   // With a SCIM directory, membership is the directory's call: auto-join
   // would quietly re-admit someone it had just removed.
-  const join =
-    claim.autoJoin && !existing?.companyId && (await companyDirectory(input.tenant)) === null;
+  const join = claim.autoJoin && !member && (await companyDirectory(input.tenant)) === null;
 
   try {
     await db.$transaction(async (tx) => {
       const user = existing
         ? await tx.user.update({
             where: { id: existing.id },
-            data: {
-              emailVerified: existing.emailVerified ?? verifiedAt,
-              ...(join ? { companyId: input.tenant, role: "MEMBER" } : {}),
-            },
+            data: { emailVerified: existing.emailVerified ?? verifiedAt },
             select: { id: true, name: true },
           })
         : await tx.user.create({
-            data: {
-              name: input.name,
-              email,
-              emailVerified: verifiedAt,
-              ...(join ? { companyId: input.tenant, role: "MEMBER" } : {}),
-            },
+            data: { name: input.name, email, emailVerified: verifiedAt },
             select: { id: true, name: true },
           });
       if (join) {
+        await tx.membership.create({ data: { userId: user.id, companyId: input.tenant, role: "MEMBER" } });
         await logActivity(
           {
             companyId: input.tenant,

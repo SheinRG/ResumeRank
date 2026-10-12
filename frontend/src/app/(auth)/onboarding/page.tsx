@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { GateError, gateRedirectPath, requireUser, type CurrentUser } from "@/lib/auth/guards";
@@ -30,17 +31,20 @@ async function loadOnboardingUser(): Promise<CurrentUser> {
   }
 }
 
+/**
+ * First-run setup for someone with no workspace, and where anyone else adds
+ * one: accepting another company's invite or starting a new company.
+ */
 async function OnboardingPage() {
   const user = await loadOnboardingUser();
-  if (user.companyId) {
-    redirect("/dashboard");
-  }
+  const member = user.workspaces.length > 0;
 
   const invites = await db.companyInvite.findMany({
     where: {
       email: user.email,
       acceptedAt: null,
       expiresAt: { gt: new Date() },
+      companyId: { notIn: user.workspaces.map((workspace) => workspace.companyId) },
     },
     include: {
       company: { select: { name: true } },
@@ -53,9 +57,13 @@ async function OnboardingPage() {
     <FadeIn>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Set up your workspace</CardTitle>
+          <CardTitle className="text-2xl">
+            {member ? "Add a workspace" : "Set up your workspace"}
+          </CardTitle>
           <CardDescription>
-            Join a team you were invited to, or start a new company workspace.
+            {member
+              ? "Join another team you were invited to, or start a new company. Your current workspaces stay as they are."
+              : "Join a team you were invited to, or start a new company workspace."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -77,6 +85,14 @@ async function OnboardingPage() {
             </>
           ) : null}
           <CreateCompanyForm />
+          {member ? (
+            <Link
+              href="/dashboard"
+              className="self-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Back to {user.companyName ?? "your workspace"}
+            </Link>
+          ) : null}
         </CardContent>
       </Card>
     </FadeIn>

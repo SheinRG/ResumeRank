@@ -1,10 +1,11 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import { revokeUserSessions } from "../auth/sessions";
+import { belongsElsewhere } from "../auth/workspaces";
 import type { ResetMemberMfaInput, SetMfaRequiredInput } from "../validators/mfa";
 import { assertCanAdmin, type TenantContext } from "./context";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors";
-import { TEAM_MEMBER_SELECT, type TeamMember } from "./team";
+import { findTeammate, toTeamMember, type TeamMember } from "./team";
 
 export interface MfaPolicy {
   required: boolean;
@@ -15,7 +16,7 @@ export interface MfaPolicy {
 export async function getMfaPolicy(ctx: TenantContext): Promise<MfaPolicy> {
   const [company, membersWithoutMfa] = await Promise.all([
     tenantDb(ctx).company.findUnique({ where: { id: ctx.companyId }, select: { mfaRequired: true } }),
-    tenantDb(ctx).user.count({ where: { companyId: ctx.companyId, mfaEnabledAt: null } }),
+    tenantDb(ctx).membership.count({ where: { companyId: ctx.companyId, user: { mfaEnabledAt: null } } }),
   ]);
   if (!company) throw new NotFoundError("Your company no longer exists.");
   return { required: company.mfaRequired, membersWithoutMfa };
@@ -36,11 +37,8 @@ export async function setMfaRequired(ctx: TenantContext, input: SetMfaRequiredIn
 
   return tenantTransaction(ctx, async (tx) => {
     if (input.required) {
-      const actor = await tx.user.findFirst({
-        where: { id: ctx.actorId, companyId: ctx.companyId },
-        select: { mfaEnabledAt: true },
-      });
-      if (!actor?.mfaEnabledAt) {
+      const actor = await findTeammate(tx, ctx, ctx.actorId);
+      if (!actor.user.mfaEnabledAt) {
         throw new ConflictError("Set up two-factor authentication for yourself before requiring it.");
       }
     }
@@ -50,8 +48,8 @@ export async function setMfaRequired(ctx: TenantContext, input: SetMfaRequiredIn
       data: { mfaRequired: input.required },
       select: { mfaRequired: true },
     });
-    const membersWithoutMfa = await tx.user.count({
-      where: { companyId: ctx.companyId, mfaEnabledAt: null },
+    const membersWithoutMfa = await tx.membership.count({
+      where: { companyId: ctx.companyId, user: { mfaEnabledAt: null } },
     });
     await logActivity(
       {
@@ -76,6 +74,10 @@ export async function setMfaRequired(ctx: TenantContext, input: SetMfaRequiredIn
  * sessions end too: whoever asked for the reset might not be them, and the
  * next sign-in (password plus a new factor if the company requires one) is
  * the check. Owners can only be reset by an owner.
+ *
+ * Factors guard the whole account, so someone who also belongs to another
+ * workspace is refused: one company's admin must not be able to strip the
+ * second factor protecting another company's data.
  */
 export async function resetMemberMfa(ctx: TenantContext, input: ResetMemberMfaInput): Promise<TeamMember> {
   assertCanAdmin(ctx);
@@ -84,16 +86,17 @@ export async function resetMemberMfa(ctx: TenantContext, input: ResetMemberMfaIn
   }
 
   return tenantTransaction(ctx, async (tx) => {
-    const target = await tx.user.findFirst({
-      where: { id: input.userId, companyId: ctx.companyId },
-      select: { role: true, mfaEnabledAt: true },
-    });
-    if (!target) throw new NotFoundError("That user no longer exists.");
+    const target = await findTeammate(tx, ctx, input.userId);
     if (target.role === "OWNER" && ctx.role !== "OWNER") {
       throw new ForbiddenError("Only an owner can reset another owner's two-factor authentication.");
     }
-    if (!target.mfaEnabledAt) {
+    if (!target.user.mfaEnabledAt) {
       throw new ConflictError("That teammate doesn't have two-factor authentication set up.");
+    }
+    if (await belongsElsewhere(tx, input.userId)) {
+      throw new ForbiddenError(
+        "That teammate also belongs to another workspace, so only they can reset their two-factor authentication.",
+      );
     }
 
     // The RLS policies on these tables (and LoginSession) only expose rows of this company's users.
@@ -102,11 +105,12 @@ export async function resetMemberMfa(ctx: TenantContext, input: ResetMemberMfaIn
     await tx.webAuthnChallenge.deleteMany({ where: { userId: input.userId } });
     await tx.mfaRecoveryCode.deleteMany({ where: { userId: input.userId } });
     await revokeUserSessions(tx, input.userId);
-    const user = await tx.user.update({
-      where: { id: input.userId, companyId: ctx.companyId },
+    const updated = await tx.user.update({
+      where: { id: input.userId },
       data: { mfaEnabledAt: null, sessionVersion: { increment: 1 } },
-      select: TEAM_MEMBER_SELECT,
+      select: { mfaEnabledAt: true },
     });
+    const user = toTeamMember({ ...target, user: { ...target.user, ...updated } });
     await logActivity(
       {
         companyId: ctx.companyId,

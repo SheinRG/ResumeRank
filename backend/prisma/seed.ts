@@ -935,44 +935,40 @@ async function main(): Promise<void> {
       data: {
         name: "Ava Founder",
         email: "owner@resumerank.app",
-        role: "OWNER",
         passwordHash,
-        companyId: company.id,
         emailVerified: daysAgo(60),
         createdAt: daysAgo(60),
+        memberships: { create: { companyId: company.id, role: "OWNER", createdAt: daysAgo(60) } },
       },
     }),
     db.user.create({
       data: {
         name: "Demo Recruiter",
         email: "demo@resumerank.app",
-        role: "ADMIN",
         passwordHash,
-        companyId: company.id,
         emailVerified: daysAgo(50),
         createdAt: daysAgo(50),
+        memberships: { create: { companyId: company.id, role: "ADMIN", createdAt: daysAgo(50) } },
       },
     }),
     db.user.create({
       data: {
         name: "Maya Reviewer",
         email: "maya@resumerank.app",
-        role: "MEMBER",
         passwordHash,
-        companyId: company.id,
         emailVerified: daysAgo(45),
         createdAt: daysAgo(45),
+        memberships: { create: { companyId: company.id, role: "MEMBER", createdAt: daysAgo(45) } },
       },
     }),
     db.user.create({
       data: {
         name: "Vik Observer",
         email: "viewer@resumerank.app",
-        role: "VIEWER",
         passwordHash,
-        companyId: company.id,
         emailVerified: daysAgo(40),
         createdAt: daysAgo(40),
+        memberships: { create: { companyId: company.id, role: "VIEWER", createdAt: daysAgo(40) } },
       },
     }),
   ]);
