@@ -86,6 +86,14 @@ enum SignInMethod {
   SSO
 }
 
+/// Where an audit stream delivers: a signed HTTPS webhook, a Splunk HTTP
+/// Event Collector, or the Datadog logs intake.
+enum AuditStreamKind {
+  WEBHOOK
+  SPLUNK
+  DATADOG
+}
+
 enum EmailKind {
   VERIFY_EMAIL
   INVITE
@@ -171,6 +179,8 @@ model Company {
   sessionLifetimeMinutes Int      @default(43200)
   /// Sessions end after this long without a request.
   sessionIdleMinutes     Int      @default(10080)
+  /// Audit entries older than this are deleted; null keeps them forever.
+  auditRetentionDays     Int?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -182,6 +192,7 @@ model Company {
   invites      CompanyInvite[]
   scoringRuns  ScoringRun[]
   domains      CompanyDomain[]
+  auditStream  AuditStream?
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -563,14 +574,45 @@ model ActivityLog {
   metadata   Json?
   companyId  String
   createdAt  DateTime @default(now())
+  /// The entry's place in its company's hash chain, and the chain links. All
+  /// three are set by the audit_seal trigger as the inserting transaction
+  /// commits, so they are null only inside that transaction.
+  seq        BigInt?
+  prevHash   String?
+  hash       String?
 
   actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([companyId, seq])
   @@index([companyId, entityType, entityId, createdAt(sort: Desc)])
   @@index([companyId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([companyId, entityType, createdAt(sort: Desc), id(sort: Desc)])
   @@index([actorId])
+}
+
+/// A company's live feed of audit entries to its SIEM. Delivery walks the
+/// hash chain by `seq`, so `cursorSeq` alone says what has been delivered.
+model AuditStream {
+  id              String          @id @default(cuid())
+  companyId       String          @unique
+  kind            AuditStreamKind
+  url             String
+  /// Sealed: the webhook signing secret, or the Splunk / Datadog token.
+  secret          String
+  enabled         Boolean         @default(true)
+  cursorSeq       BigInt          @default(0)
+  failures        Int             @default(0)
+  nextAttemptAt   DateTime        @default(now())
+  lockedAt        DateTime?
+  lastDeliveredAt DateTime?
+  lastError       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextAttemptAt])
 }
 
 /// Sliding-window counters shared by every app instance (rate limits, failed

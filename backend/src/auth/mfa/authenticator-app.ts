@@ -6,6 +6,7 @@ import type { ConfirmTotpInput } from "../../validators/mfa";
 import { openTotpSecret, sealTotpSecret } from "./secrets";
 import {
   assertMfaAttemptAllowed,
+  auditMfaChallenge,
   currentEpoch,
   factorAdded,
   factorRemoved,
@@ -110,29 +111,31 @@ export async function verifyTotpChallenge(
 ): Promise<MfaVerified> {
   await assertMfaAttemptAllowed(actor.userId);
 
-  const factor = await db.totpFactor.findUnique({ where: { userId: actor.userId } });
-  if (!factor?.confirmedAt) {
-    throw new DomainError("No authenticator app is set up. Use a passkey or a recovery code.");
-  }
-  const secret = openTotpSecret(factor.secret, actor.userId);
-  if (!secret) {
-    // Only a rotated MFA_ENCRYPTION_KEY / AUTH_SECRET gets here; the user can't fix it.
-    log.error("mfa.totp_secret_unreadable", { userId: actor.userId });
-    throw new DomainError("Your authenticator app can't be checked right now. Use a passkey or a recovery code.");
-  }
+  return auditMfaChallenge(actor, "totp", async () => {
+    const factor = await db.totpFactor.findUnique({ where: { userId: actor.userId } });
+    if (!factor?.confirmedAt) {
+      throw new DomainError("No authenticator app is set up. Use a passkey or a recovery code.");
+    }
+    const secret = openTotpSecret(factor.secret, actor.userId);
+    if (!secret) {
+      // Only a rotated MFA_ENCRYPTION_KEY / AUTH_SECRET gets here; the user can't fix it.
+      log.error("mfa.totp_secret_unreadable", { userId: actor.userId });
+      throw new DomainError("Your authenticator app can't be checked right now. Use a passkey or a recovery code.");
+    }
 
-  const step = matchTotp(secret, code, now, factor.lastUsedStep);
-  if (step === null) throw new DomainError(WRONG_CODE, { code: ["That code didn't match"] });
+    const step = matchTotp(secret, code, now, factor.lastUsedStep);
+    if (step === null) throw new DomainError(WRONG_CODE, { code: ["That code didn't match"] });
 
-  const { count } = await db.totpFactor.updateMany({
-    where: {
-      userId: actor.userId,
-      confirmedAt: { not: null },
-      OR: [{ lastUsedStep: null }, { lastUsedStep: { lt: step } }],
-    },
-    data: { lastUsedStep: step },
+    const { count } = await db.totpFactor.updateMany({
+      where: {
+        userId: actor.userId,
+        confirmedAt: { not: null },
+        OR: [{ lastUsedStep: null }, { lastUsedStep: { lt: step } }],
+      },
+      data: { lastUsedStep: step },
+    });
+    if (count === 0) throw new DomainError(WRONG_CODE, { code: ["That code was already used"] });
+
+    return currentEpoch(actor.userId);
   });
-  if (count === 0) throw new DomainError(WRONG_CODE, { code: ["That code was already used"] });
-
-  return currentEpoch(actor.userId);
 }

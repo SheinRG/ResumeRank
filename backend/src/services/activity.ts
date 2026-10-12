@@ -1,11 +1,13 @@
 import { tenantDb } from "../tenant-db";
+import { AUTH_ACTION_PREFIX } from "../auth/audit";
+import { canAdmin } from "../auth/roles";
 import { PAGE_SIZE } from "../validators/search";
 import type { Prisma } from "../generated/prisma/client";
 import type { Paged } from "../types/paged";
 import type { TenantContext } from "./context";
 import { countCapped, createdAtSort, keysetPage, type PageParams } from "./pagination";
 
-export type ActivityEntityType = "job" | "candidate" | "application" | "user";
+export type ActivityEntityType = "job" | "candidate" | "application" | "user" | "company";
 
 export interface ActivityActor {
   id: string | null;
@@ -18,10 +20,15 @@ export const activityActorInclude = {
 } as const;
 
 const DELETED_ACTOR: ActivityActor = { id: null, name: "Deleted user", image: null };
+const SYSTEM_ACTOR: ActivityActor = { id: null, name: "ResumeRank", image: null };
+
+/** Work the app does on its own schedule, with no person behind it. */
+const SYSTEM_ACTIONS: ReadonlySet<string> = new Set(["audit.purge"]);
 
 /** Entries outlive their author's account; render those as an anonymous actor. */
-export function toActivityActor(actor: ActivityActor | null): ActivityActor {
-  return actor ?? DELETED_ACTOR;
+export function toActivityActor(actor: ActivityActor | null, action: string): ActivityActor {
+  if (actor) return actor;
+  return SYSTEM_ACTIONS.has(action) ? SYSTEM_ACTOR : DELETED_ACTOR;
 }
 
 export interface ActivityListParams extends PageParams {
@@ -48,6 +55,8 @@ export async function listActivity(
   const where: Prisma.ActivityLogWhereInput = {
     companyId: ctx.companyId,
     entityType: params.entityType,
+    // Sign-in events carry teammates' IP addresses and devices.
+    ...(canAdmin(ctx.role) ? {} : { NOT: { action: { startsWith: AUTH_ACTION_PREFIX } } }),
   };
   const [{ total, totalCapped }, page] = await Promise.all([
     countCapped((take) => tenantDb(ctx).activityLog.count({ where, take })),
@@ -60,7 +69,7 @@ export async function listActivity(
       }),
     ),
   ]);
-  const items = page.items.map((row) => ({ ...row, actor: toActivityActor(row.actor) }));
+  const items = page.items.map((row) => ({ ...row, actor: toActivityActor(row.actor, row.action) }));
 
   return {
     items,

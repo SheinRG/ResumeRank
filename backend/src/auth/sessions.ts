@@ -3,6 +3,7 @@ import { logActivity } from "../activity";
 import type { Prisma } from "../generated/prisma/client";
 import type { SignInMethod } from "../generated/prisma/enums";
 import { ConflictError, NotFoundError } from "../services/errors";
+import { logAuthEvent, signInMethodLabel } from "./audit";
 import { describeDevice } from "./device";
 import {
   MAX_SESSION_MINUTES,
@@ -58,17 +59,27 @@ interface SessionWriter {
  */
 export async function startLoginSession(session: NewLoginSession, now = new Date()): Promise<void> {
   const cutoff = new Date(now.getTime() - MAX_SESSION_MINUTES * 60_000);
-  await db.$transaction([
-    db.loginSession.deleteMany({
+  const device = describeDevice(session.userAgent);
+  await db.$transaction(async (tx) => {
+    await tx.loginSession.deleteMany({
       where: {
         userId: session.userId,
         OR: [{ revokedAt: { not: null } }, { createdAt: { lt: cutoff } }],
       },
-    }),
-    db.loginSession.create({
+    });
+    await tx.loginSession.create({
       data: { ...session, userAgent: session.userAgent?.slice(0, USER_AGENT_MAX_LENGTH) ?? null },
-    }),
-  ]);
+    });
+    await logAuthEvent(
+      {
+        userId: session.userId,
+        action: "auth.sign_in",
+        summary: `signed in with ${signInMethodLabel(session.method)} on ${device}`,
+        metadata: { method: session.method, device, ipAddress: session.ipAddress, loginId: session.id },
+      },
+      tx,
+    );
+  });
 }
 
 /** Conditional, so a request racing a revocation can't bring the session back. */
@@ -78,7 +89,24 @@ export async function touchLoginSession(id: string, now = new Date()): Promise<v
 
 /** For signing out: the token is about to be deleted, and its row goes with it. */
 export async function endLoginSession(id: string): Promise<void> {
-  await db.loginSession.updateMany({ where: { id, revokedAt: null }, data: { revokedAt: new Date() } });
+  await db.$transaction(async (tx) => {
+    const [ended] = await tx.loginSession.updateManyAndReturn({
+      where: { id, revokedAt: null },
+      data: { revokedAt: new Date() },
+      select: { userId: true, userAgent: true },
+    });
+    if (!ended) return;
+    const device = describeDevice(ended.userAgent);
+    await logAuthEvent(
+      {
+        userId: ended.userId,
+        action: "auth.sign_out",
+        summary: `signed out on ${device}`,
+        metadata: { device, loginId: id },
+      },
+      tx,
+    );
+  });
 }
 
 /**

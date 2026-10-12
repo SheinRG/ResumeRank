@@ -3,6 +3,7 @@ import { DomainError, NotFoundError } from "../../services/errors";
 import { hashRecoveryCode } from "./recovery-codes";
 import {
   assertMfaAttemptAllowed,
+  auditMfaChallenge,
   currentEpoch,
   logMfaActivity,
   replaceRecoveryCodes,
@@ -88,21 +89,23 @@ export async function verifyRecoveryCode(
 ): Promise<MfaVerified & { remaining: number }> {
   await assertMfaAttemptAllowed(actor.userId);
 
-  return db.$transaction(async (tx) => {
-    const { count } = await tx.mfaRecoveryCode.updateMany({
-      where: { userId: actor.userId, codeHash: hashRecoveryCode(code), usedAt: null },
-      data: { usedAt: new Date() },
-    });
-    if (count === 0) {
-      throw new DomainError("That recovery code isn't valid or was already used.", {
-        code: ["That code isn't valid or was already used"],
+  return auditMfaChallenge(actor, "recovery_code", () =>
+    db.$transaction(async (tx) => {
+      const { count } = await tx.mfaRecoveryCode.updateMany({
+        where: { userId: actor.userId, codeHash: hashRecoveryCode(code), usedAt: null },
+        data: { usedAt: new Date() },
       });
-    }
-    const verified = await currentEpoch(actor.userId, tx);
-    const remaining = await tx.mfaRecoveryCode.count({ where: { userId: actor.userId, usedAt: null } });
-    await logMfaActivity(tx, actor, "mfa.recovery_code_used", "signed in with a two-factor recovery code", {
-      remaining,
-    });
-    return { ...verified, remaining };
-  });
+      if (count === 0) {
+        throw new DomainError("That recovery code isn't valid or was already used.", {
+          code: ["That code isn't valid or was already used"],
+        });
+      }
+      const verified = await currentEpoch(actor.userId, tx);
+      const remaining = await tx.mfaRecoveryCode.count({ where: { userId: actor.userId, usedAt: null } });
+      await logMfaActivity(tx, actor, "mfa.recovery_code_used", "signed in with a two-factor recovery code", {
+        remaining,
+      });
+      return { ...verified, remaining };
+    }),
+  );
 }

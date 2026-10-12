@@ -20,6 +20,7 @@ import type {
 } from "../../validators/mfa";
 import {
   assertMfaAttemptAllowed,
+  auditMfaChallenge,
   currentEpoch,
   factorAdded,
   factorRemoved,
@@ -204,38 +205,41 @@ export async function verifyPasskeyChallenge(
   input: PasskeyChallengeInput,
 ): Promise<MfaVerified> {
   await assertMfaAttemptAllowed(actor.userId);
-  const expectedChallenge = await consumeChallenge(actor.userId, "AUTHENTICATION");
 
-  const stored = await db.webAuthnCredential.findFirst({
-    where: { userId: actor.userId, credentialId: input.response.id },
-  });
-  if (!stored) throw new DomainError("That passkey isn't registered to your account.");
+  return auditMfaChallenge(actor, "passkey", async () => {
+    const expectedChallenge = await consumeChallenge(actor.userId, "AUTHENTICATION");
 
-  const rp = relyingParty();
-  let verification;
-  try {
-    verification = await verifyAuthenticationResponse({
-      response: input.response,
-      expectedChallenge,
-      expectedOrigin: rp.origin,
-      expectedRPID: rp.id,
-      requireUserVerification: false,
-      credential: {
-        id: stored.credentialId,
-        publicKey: new Uint8Array(stored.publicKey),
-        counter: Number(stored.counter),
-        transports: stored.transports,
-      },
+    const stored = await db.webAuthnCredential.findFirst({
+      where: { userId: actor.userId, credentialId: input.response.id },
     });
-  } catch (error) {
-    log.warn("mfa.passkey_assertion_rejected", { userId: actor.userId, ...errorFields(error) });
-    throw new DomainError("That passkey couldn't be verified. Try again.");
-  }
-  if (!verification.verified) throw new DomainError("That passkey couldn't be verified. Try again.");
+    if (!stored) throw new DomainError("That passkey isn't registered to your account.");
 
-  await db.webAuthnCredential.update({
-    where: { id: stored.id },
-    data: { counter: BigInt(verification.authenticationInfo.newCounter), lastUsedAt: new Date() },
+    const rp = relyingParty();
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: input.response,
+        expectedChallenge,
+        expectedOrigin: rp.origin,
+        expectedRPID: rp.id,
+        requireUserVerification: false,
+        credential: {
+          id: stored.credentialId,
+          publicKey: new Uint8Array(stored.publicKey),
+          counter: Number(stored.counter),
+          transports: stored.transports,
+        },
+      });
+    } catch (error) {
+      log.warn("mfa.passkey_assertion_rejected", { userId: actor.userId, ...errorFields(error) });
+      throw new DomainError("That passkey couldn't be verified. Try again.");
+    }
+    if (!verification.verified) throw new DomainError("That passkey couldn't be verified. Try again.");
+
+    await db.webAuthnCredential.update({
+      where: { id: stored.id },
+      data: { counter: BigInt(verification.authenticationInfo.newCounter), lastUsedAt: new Date() },
+    });
+    return currentEpoch(actor.userId);
   });
-  return currentEpoch(actor.userId);
 }

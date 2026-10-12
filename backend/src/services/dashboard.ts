@@ -1,4 +1,5 @@
 import { tenantDb } from "../tenant-db";
+import { AUTH_ACTION_PREFIX } from "../auth/audit";
 import { STAGES, type Stage } from "../validators/enums";
 import type { TenantContext } from "./context";
 import {
@@ -138,8 +139,9 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
       WHERE "companyId" = ${companyId} AND "deletedAt" IS NULL AND "createdAt" >= ${earliestWeekStart}
       GROUP BY 1
     `,
+    // Sign-ins would crowd out the work; they live in the activity log.
     tenantDb(ctx).activityLog.findMany({
-      where: { companyId },
+      where: { companyId, NOT: { action: { startsWith: AUTH_ACTION_PREFIX } } },
       take: RECENT_ACTIVITY_LIMIT,
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       include: activityActorInclude,
@@ -147,7 +149,7 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
   ]);
   const recentActivity: ActivityFeedItem[] = recentActivityRows.map((row) => ({
     ...row,
-    actor: toActivityActor(row.actor),
+    actor: toActivityActor(row.actor, row.action),
   }));
 
   const countByStage = new Map(

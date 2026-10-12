@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { z } from "zod";
-import { History } from "lucide-react";
+import { Download, History } from "lucide-react";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -19,13 +19,14 @@ import {
 } from "@/components/ui/table";
 import { ActivityFilter } from "@/components/activity/activity-filter";
 import { PaginationControl } from "@/components/shared/pagination-control";
+import { canAdmin, requireMember } from "@/lib/auth/guards";
 import { formatCount, formatDate, formatRelative, initials } from "@/lib/format";
 import { cursorParamSchema } from "@resumerank/core/validators/search";
 import { listActivity, type ActivityEntityType } from "@/server/queries/activity";
 
 export const metadata: Metadata = { title: "Activity" };
 
-const ENTITY_VALUES = ["all", "job", "candidate", "application", "user"] as const;
+const ENTITY_VALUES = ["all", "job", "candidate", "application", "user", "company"] as const;
 const searchParamsSchema = z.object({
   entity: z.enum(ENTITY_VALUES).catch("all"),
   after: cursorParamSchema,
@@ -37,6 +38,7 @@ const ENTITY_LABELS: Record<ActivityEntityType, string> = {
   candidate: "Candidate",
   application: "Application",
   user: "User",
+  company: "Workspace",
 };
 
 export default async function ActivityPage({
@@ -52,14 +54,27 @@ export default async function ActivityPage({
   });
 
   const entityType = parsed.entity === "all" ? undefined : parsed.entity;
-  const result = await listActivity({ entityType, after: parsed.after, before: parsed.before });
+  const [user, result] = await Promise.all([
+    requireMember(),
+    listActivity({ entityType, after: parsed.after, before: parsed.before }),
+  ]);
   const hasFilter = parsed.entity !== "all";
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Activity"
-        description="An append-only log of changes across your workspace."
+        description="An append-only, tamper-evident log of changes across your workspace."
+        actions={
+          canAdmin(user.role) ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/settings/audit">
+                <Download aria-hidden="true" />
+                Export &amp; retention
+              </Link>
+            </Button>
+          ) : null
+        }
       />
 
       <Card>
