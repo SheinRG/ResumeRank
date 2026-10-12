@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { refreshSession, signOut } from "@/lib/auth";
-import { requireAdmin, requireUser, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requireUser, requireUserSession, tenantContext } from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
   changePasswordSchema,
@@ -14,6 +14,7 @@ import {
   updateProfileSchema,
 } from "@resumerank/core/validators/user";
 import { hashPassword, verifyPassword } from "@resumerank/core/auth/password";
+import { revokeUserSessions } from "@resumerank/core/auth/sessions";
 import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
@@ -145,7 +146,7 @@ export async function changePasswordAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const currentUser = await requireUser();
+    const { user: currentUser, loginId } = await requireUserSession();
 
     const record = await db.user.findUnique({
       where: { id: currentUser.id },
@@ -186,6 +187,7 @@ export async function changePasswordAction(
         where: { id: currentUser.id },
         data: { passwordHash, sessionVersion: { increment: 1 } },
       });
+      await revokeUserSessions(tx, currentUser.id, loginId);
       if (companyId) {
         await logActivity(
           {
@@ -216,6 +218,7 @@ export async function signOutEverywhereAction(): Promise<void> {
       where: { id: currentUser.id },
       data: { sessionVersion: { increment: 1 } },
     });
+    await revokeUserSessions(tx, currentUser.id);
     if (companyId) {
       await logActivity(
         {

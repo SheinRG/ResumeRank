@@ -7,6 +7,8 @@ import { db } from "@resumerank/core/db";
 import { env } from "@resumerank/core/env";
 import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
 import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
+import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
+import { touchLoginSession } from "@resumerank/core/auth/sessions";
 import { annotateLogContext } from "@resumerank/core/observability/log";
 import { requiresSso } from "@resumerank/core/sso/policy";
 import type { Role } from "@resumerank/core/validators/enums";
@@ -125,8 +127,8 @@ async function sessionClaims(): Promise<SessionClaims | null> {
 /** A signed-in session before its second-factor gate is applied. */
 export interface SignedInSession {
   user: CurrentUser;
-  /** Null only on sessions issued before MFA existed; they can't record a verification. */
-  loginId: string | null;
+  /** This sign-in: the id of its LoginSession row, and what a second-factor proof is bound to. */
+  loginId: string;
   mfa: MfaGate;
 }
 
@@ -134,8 +136,10 @@ export interface SignedInSession {
  * Resolves the signed-in user fresh from the database once per request, so a
  * role demotion takes effect on the next request — the JWT is never the
  * authorization source of truth. A token whose session version is behind the
- * user's has been revoked and is rejected the same way, as is a password or
- * Google session once the user's company requires single sign-on.
+ * user's has been revoked and is rejected the same way, as is one whose
+ * LoginSession row was revoked, went idle or outlived the company's session
+ * lifetime, and a password or Google session once the user's company
+ * requires single sign-on.
  *
  * Memoized per render with React `cache()`: the layout, the page and every
  * query it calls share one session read and one user lookup. Server actions
@@ -144,8 +148,10 @@ export interface SignedInSession {
 export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
   const session = await sessionClaims();
   if (!session) throw new GateError("You need to sign in to do that.");
-  const { id } = session;
+  const { id, loginId } = session;
   annotateLogContext({ userId: id });
+  // Tokens issued before sign-ins were recorded have no row to check.
+  if (!loginId) throw new GateError(SESSION_ENDED);
 
   const user = await db.user.findUnique({
     where: { id },
@@ -159,15 +165,33 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
       emailVerified: true,
       image: true,
       companyId: true,
-      company: { select: { name: true, logoUrl: true, ssoEnforced: true, mfaRequired: true } },
+      company: {
+        select: {
+          name: true,
+          logoUrl: true,
+          ssoEnforced: true,
+          mfaRequired: true,
+          sessionLifetimeMinutes: true,
+          sessionIdleMinutes: true,
+        },
+      },
+      loginSessions: {
+        where: { id: loginId },
+        select: { createdAt: true, lastSeenAt: true, revokedAt: true },
+      },
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
-  const { company, sessionVersion, mfaEnabledAt, ...rest } = user;
+  const { company, sessionVersion, mfaEnabledAt, loginSessions, ...rest } = user;
   annotateLogContext({ companyId: user.companyId });
   if (sessionVersion !== session.sessionVersion) {
     throw new GateError(SESSION_ENDED);
   }
+  const [login] = loginSessions;
+  if (!login || sessionEnd(login, sessionPolicyOf(company)) !== null) {
+    throw new GateError(SESSION_ENDED);
+  }
+  if (needsLastSeenUpdate(login.lastSeenAt)) await touchLoginSession(loginId);
   if (
     !session.viaSso &&
     requiresSso({ role: user.role, ssoEnforced: company?.ssoEnforced ?? false })
@@ -181,9 +205,6 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     verifiedEpoch: session.mfaEpoch,
     required: company?.mfaRequired ?? false,
   });
-  const loginId = session.loginId;
-  if (mfa !== "pass" && !loginId) throw new GateError(SESSION_ENDED);
-
   return {
     user: {
       ...rest,
@@ -195,32 +216,33 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
   };
 });
 
-/** A fully signed-in user: session live and any second factor proven. */
-export const requireUser = cache(async (): Promise<CurrentUser> => {
-  const { user, mfa } = await getSignedInSession();
-  if (mfa === "challenge") throw new MfaChallengeRequiredError();
-  if (mfa === "setup") throw new MfaSetupRequiredError();
-  return user;
-});
-
-/** A session plus the sign-in id a second-factor proof is bound to. */
-export interface MfaSession {
+/** A user plus the sign-in they're using. */
+export interface UserSession {
   user: CurrentUser;
   loginId: string;
 }
 
-function withLoginId({ user, loginId }: SignedInSession): MfaSession {
-  if (!loginId) throw new GateError(SESSION_ENDED);
+/** A fully signed-in session (live, any second factor proven), for actions that act on the sign-in itself. */
+export const requireUserSession = cache(async (): Promise<UserSession> => {
+  const { user, loginId, mfa } = await getSignedInSession();
+  if (mfa === "challenge") throw new MfaChallengeRequiredError();
+  if (mfa === "setup") throw new MfaSetupRequiredError();
   return { user, loginId };
-}
+});
+
+/** A fully signed-in user: session live and any second factor proven. */
+export const requireUser = cache(async (): Promise<CurrentUser> => {
+  const { user } = await requireUserSession();
+  return user;
+});
 
 /** For the sign-in challenge: a live session that still owes its second factor. */
-export async function requireMfaChallenge(): Promise<MfaSession> {
-  const session = await getSignedInSession();
-  if (session.mfa !== "challenge") {
+export async function requireMfaChallenge(): Promise<UserSession> {
+  const { user, loginId, mfa } = await getSignedInSession();
+  if (mfa !== "challenge") {
     throw new GateError("There's no two-factor check waiting for this session.");
   }
-  return withLoginId(session);
+  return { user, loginId };
 }
 
 /**
@@ -228,10 +250,10 @@ export async function requireMfaChallenge(): Promise<MfaSession> {
  * Never one that still owes a challenge, or a password alone could add an
  * attacker's authenticator to an account that already has one.
  */
-export async function requireMfaEnrollment(): Promise<MfaSession> {
-  const session = await getSignedInSession();
-  if (session.mfa === "challenge") throw new MfaChallengeRequiredError();
-  return withLoginId(session);
+export async function requireMfaEnrollment(): Promise<UserSession> {
+  const { user, loginId, mfa } = await getSignedInSession();
+  if (mfa === "challenge") throw new MfaChallengeRequiredError();
+  return { user, loginId };
 }
 
 /** Narrows to a user who has a company — onboarding must run before this passes. */

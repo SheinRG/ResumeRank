@@ -1,5 +1,6 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
+import { revokeUserSessions } from "../auth/sessions";
 import { createCompanyInvite } from "../auth/tokens";
 import { queueInviteEmail } from "../email/messages";
 import { AUTH_LIMIT, rateLimit } from "../rate-limit";
@@ -152,6 +153,8 @@ export async function removeMember(
       throw new ForbiddenError("Only an owner can remove another owner.");
     }
 
+    // Before the update below: once they leave the company, RLS hides their sessions.
+    await revokeUserSessions(tx, userId);
     // The role resets so an elevated role never carries into whatever
     // workspace the user joins next.
     const user = await tx.user.update({

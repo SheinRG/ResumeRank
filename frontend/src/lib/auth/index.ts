@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { headers } from "next/headers";
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
@@ -10,13 +11,16 @@ import { db } from "@resumerank/core/db";
 import { isGoogleAuthEnabled, isSsoEnabled } from "@resumerank/core/env";
 import { verifyPassword } from "@resumerank/core/auth/password";
 import { readMfaProof } from "@resumerank/core/auth/mfa/proof";
+import { MAX_SESSION_MINUTES } from "@resumerank/core/auth/session-policy";
+import { endLoginSession, startLoginSession } from "@resumerank/core/auth/sessions";
+import type { SignInMethod } from "@resumerank/core/generated/prisma/enums";
 import {
   beginLoginAttempt,
   clearFailedLogins,
   recordFailedLogin,
 } from "@resumerank/core/auth/login-throttle";
 import { log } from "@resumerank/core/observability/log";
-import { clientIp } from "@resumerank/core/request-ip";
+import { clientIp, UNKNOWN_IP } from "@resumerank/core/request-ip";
 import { SSO_PROVIDER_ID, ssoBaseUrl, ssoClientSecret } from "@resumerank/core/sso/jackson";
 import { resolveSsoSignIn } from "@resumerank/core/sso/login";
 import { requiresSso, type SsoDenial } from "@resumerank/core/sso/policy";
@@ -174,7 +178,24 @@ async function allowSsoSignIn(providerAccountId: string, profile: unknown): Prom
   return true;
 }
 
-const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+function signInMethod(provider: string | undefined): SignInMethod {
+  if (provider === SSO_PROVIDER_ID) return "SSO";
+  if (provider === "google") return "GOOGLE";
+  return "PASSWORD";
+}
+
+/** Records a new sign-in with the device it came from, for the sessions list. */
+async function recordLoginSession(loginId: string, userId: string, provider: string | undefined) {
+  const requestHeaders = await headers();
+  const ip = clientIp(requestHeaders);
+  await startLoginSession({
+    id: loginId,
+    userId,
+    method: signInMethod(provider),
+    userAgent: requestHeaders.get("user-agent"),
+    ipAddress: ip === UNKNOWN_IP ? null : ip,
+  });
+}
 
 export const {
   handlers,
@@ -184,7 +205,9 @@ export const {
   unstable_update: refreshSession,
 } = NextAuth({
   adapter: PrismaAdapter(db),
-  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SECONDS },
+  // The cookie outlives any company's policy; the guards end the session
+  // sooner from its LoginSession row (lifetime, idle timeout, revocation).
+  session: { strategy: "jwt", maxAge: MAX_SESSION_MINUTES * 60 },
   trustHost: true,
   pages: {
     signIn: "/login",
@@ -238,9 +261,11 @@ export const {
         // Google sessions once the company starts requiring SSO.
         token.viaSso = account?.provider === SSO_PROVIDER_ID;
         // Every sign-in starts without a proven second factor; the guards
-        // send it to the challenge if the user has one.
+        // send it to the challenge if the user has one. The guards also
+        // require this sign-in's LoginSession row, which revoking ends.
         token.loginId = randomUUID();
         delete token.mfaEpoch;
+        await recordLoginSession(token.loginId, user.id, account?.provider);
       }
       if (trigger === "update" && token.id) {
         // An explicit refresh (after the user changes their own password)
@@ -275,6 +300,11 @@ export const {
     },
   },
   events: {
+    async signOut(message) {
+      if ("token" in message && message.token?.loginId) {
+        await endLoginSession(message.token.loginId);
+      }
+    },
     // OAuth sign-ups arrive with a provider-verified email; mirror that into
     // our verification gate. Role stays MEMBER and companyId stays null —
     // onboarding resolves whether they create a company or join one by invite.

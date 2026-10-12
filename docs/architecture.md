@@ -144,8 +144,40 @@ codes and the admin reset cover lockouts. `resetMemberMfa` deletes a
 teammate's factors inside a tenant transaction and bumps their
 `sessionVersion`. The factor tables' RLS policies expose only rows of the
 company's own users, and the tenant role may only read and delete them.
-Sessions issued before MFA existed have no `loginId`, so if MFA applies to
-them they are ended and the person signs in again.
+
+## Sessions
+
+Sessions are Auth.js JWTs, so the server can't delete one. Instead, every
+sign-in writes a `LoginSession` row whose id is the token's `loginId`
+(`jwt` callback → `startLoginSession` in `auth/sessions.ts`, with the sign-in
+method, user agent and `clientIp`). `getSignedInSession` loads that row with
+the user on every request and ends the session (`/session-ended`) when
+`sessionEnd` (`auth/session-policy.ts`) says it is:
+
+- `revoked`: signed out, revoked from the sessions list, or ended by an admin;
+- `expired`: older than the company's `sessionLifetimeMinutes`;
+- `idle`: no request for `sessionIdleMinutes`.
+
+Both limits are read from the company on each request rather than stamped at
+sign-in, so an owner tightening them ends existing sessions past the new
+limit too. People without a company get `DEFAULT_SESSION_POLICY`. The cookie's
+own lifetime is the 30-day maximum; the row always ends a session first.
+`lastSeenAt` is rewritten at most once a minute, so most requests only read.
+
+`sessionVersion` still kills every token at once. Whatever bumps it also calls
+`revokeUserSessions` in the same transaction (keeping the current sign-in on
+a password change), so the sessions list matches what the guards enforce. In
+a tenant transaction it runs before anything moves the user out of the
+company, because the `LoginSession` RLS policy (like the MFA tables') only
+exposes rows of the company's own users. The tenant role may read and update
+them, nothing else. Sign-in clears the user's revoked and long-dead rows, so
+the table needs no sweeper.
+
+Self-service code (list, revoke one, revoke the others) takes the user's own
+id and current `loginId` (`SessionActor`), like MFA. The workspace pieces are
+in `services/sessions.ts`: the owner-only lifetime policy and an admin's
+"sign out everywhere" for a teammate. Tokens issued before sign-ins were
+recorded have no row, so they ended once when this shipped.
 
 ## Multi-tenancy
 

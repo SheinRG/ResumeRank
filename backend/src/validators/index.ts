@@ -9,3 +9,4 @@ export * from "./scoring";
 export * from "./search";
 export * from "./sso";
 export * from "./mfa";
+export * from "./session";

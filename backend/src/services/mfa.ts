@@ -1,5 +1,6 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
+import { revokeUserSessions } from "../auth/sessions";
 import type { ResetMemberMfaInput, SetMfaRequiredInput } from "../validators/mfa";
 import { assertCanAdmin, type TenantContext } from "./context";
 import { ConflictError, ForbiddenError, NotFoundError } from "./errors";
@@ -95,11 +96,12 @@ export async function resetMemberMfa(ctx: TenantContext, input: ResetMemberMfaIn
       throw new ConflictError("That teammate doesn't have two-factor authentication set up.");
     }
 
-    // The RLS policies on these tables only expose rows of this company's users.
+    // The RLS policies on these tables (and LoginSession) only expose rows of this company's users.
     await tx.totpFactor.deleteMany({ where: { userId: input.userId } });
     await tx.webAuthnCredential.deleteMany({ where: { userId: input.userId } });
     await tx.webAuthnChallenge.deleteMany({ where: { userId: input.userId } });
     await tx.mfaRecoveryCode.deleteMany({ where: { userId: input.userId } });
+    await revokeUserSessions(tx, input.userId);
     const user = await tx.user.update({
       where: { id: input.userId, companyId: ctx.companyId },
       data: { mfaEnabledAt: null, sessionVersion: { increment: 1 } },

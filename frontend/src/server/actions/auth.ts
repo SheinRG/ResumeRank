@@ -5,6 +5,7 @@ import { AuthError, CredentialsSignin } from "next-auth";
 import { db } from "@resumerank/core/db";
 import { signIn, signOut, SSO_REQUIRED, TOO_MANY_LOGIN_ATTEMPTS } from "@/lib/auth";
 import { hashPassword } from "@resumerank/core/auth/password";
+import { revokeUserSessions } from "@resumerank/core/auth/sessions";
 import { withUniqueCompanySlug } from "@resumerank/core/company";
 import {
   consumePasswordResetToken,
@@ -238,12 +239,13 @@ export async function resetPasswordAction(
 
     // A reset usually means the old password is compromised, so every session
     // signed in with it is revoked.
-    await db.user.update({
-      where: { id: userId },
-      data: {
-        passwordHash: await hashPassword(parsed.data.password),
-        sessionVersion: { increment: 1 },
-      },
+    const passwordHash = await hashPassword(parsed.data.password);
+    await db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash, sessionVersion: { increment: 1 } },
+      });
+      await revokeUserSessions(tx, userId);
     });
     return actionOk(undefined);
   });

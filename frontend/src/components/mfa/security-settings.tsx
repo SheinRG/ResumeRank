@@ -279,7 +279,7 @@ function PolicyCard({ policy, canChange }: { policy: MfaPolicy; canChange: boole
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Workspace policy</CardTitle>
+        <CardTitle>Two-factor policy</CardTitle>
         <CardDescription>
           Members who sign in through your company&apos;s SSO are covered by your identity provider
           instead.
@@ -309,19 +309,23 @@ function PolicyCard({ policy, canChange }: { policy: MfaPolicy; canChange: boole
   );
 }
 
+/** `children` sit between the personal two-factor card and the workspace policy. */
 export function SecuritySettings({
   status,
   policy,
   isOwner,
+  children,
 }: {
   status: MfaStatus;
   policy: MfaPolicy | null;
   isOwner: boolean;
+  children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-6">
+    <>
       <TwoFactorCard status={status} />
+      {children}
       {policy ? <PolicyCard policy={policy} canChange={isOwner} /> : null}
-    </div>
+    </>
   );
 }
