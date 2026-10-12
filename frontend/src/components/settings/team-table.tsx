@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, ShieldOff } from "lucide-react";
+import { LogOut, ShieldCheck, ShieldOff } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ import { RemoveMemberDialog } from "@/components/settings/remove-member-dialog";
 import { Button } from "@/components/ui/button";
 import { initials } from "@/lib/format";
 import { resetMemberMfaAction } from "@/server/actions/mfa";
+import { signOutMemberAction } from "@/server/actions/sessions";
 import { updateUserRoleAction } from "@/server/actions/users";
 import type { TeamMember } from "@/server/queries/users";
 import type { Role } from "@resumerank/core/validators/enums";
@@ -75,7 +76,7 @@ export function TeamTable({
     setRows((current) => current.filter((member) => member.id !== userId));
   }
 
-  // Mirrors the server rule: only an owner may remove (or reset) another owner.
+  // Mirrors the server rule: only an owner may remove, reset or sign out another owner.
   function canRemove(member: TeamMember) {
     return (
       canManage &&
@@ -95,6 +96,16 @@ export function TeamTable({
     return true;
   }
 
+  async function signOut(member: TeamMember): Promise<boolean> {
+    const result = await signOutMemberAction({ userId: member.id });
+    if (!result.ok) {
+      toast.error(result.error);
+      return false;
+    }
+    toast.success(`Signed ${member.name} out of every session.`);
+    return true;
+  }
+
   return (
     <Table>
       <TableHeader>
@@ -104,7 +115,7 @@ export function TeamTable({
           <TableHead>Role</TableHead>
           {canManage ? <TableHead>2FA</TableHead> : null}
           {canManage ? (
-            <TableHead className="w-28">
+            <TableHead className="w-40">
               <span className="sr-only">Actions</span>
             </TableHead>
           ) : null}
@@ -167,6 +178,24 @@ export function TeamTable({
               <TableCell className="text-right">
                 {canRemove(member) ? (
                   <div className="flex justify-end">
+                    <ConfirmDialog
+                      trigger={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-11"
+                          aria-label={`Sign ${member.name} out everywhere`}
+                        >
+                          <LogOut aria-hidden="true" />
+                        </Button>
+                      }
+                      title={`Sign ${member.name} out everywhere?`}
+                      description="Every session they have ends on its next request, for a lost device or an account you think is compromised. They can sign straight back in, so reset their password or two-factor too if someone else might know it."
+                      confirmLabel="Sign out"
+                      pendingLabel="Signing out…"
+                      onConfirm={() => signOut(member)}
+                    />
                     {member.mfaEnabledAt ? (
                       <ConfirmDialog
                         trigger={

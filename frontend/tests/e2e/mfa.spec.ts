@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signIn } from "./support/auth";
+import { signIn, waitForHydration } from "./support/auth";
 import {
   addMember,
   createOtherTenant,
@@ -38,14 +38,6 @@ async function logInToChallenge(page: Page, email: string): Promise<void> {
   await page.getByLabel("Password", { exact: true }).fill(SEED_PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/mfa(\?|$)/);
-}
-
-/** A click on server-rendered markup before React attaches to it is lost. */
-async function waitForHydration(page: Page, selector: string): Promise<void> {
-  await page.waitForFunction((target) => {
-    const element = document.querySelector(target);
-    return element !== null && Object.keys(element).some((key) => key.startsWith("__reactFiber"));
-  }, selector);
 }
 
 async function openSecuritySettings(page: Page): Promise<void> {

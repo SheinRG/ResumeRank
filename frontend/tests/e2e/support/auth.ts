@@ -10,3 +10,11 @@ export async function signIn(page: Page, email: string, password = SEED_PASSWORD
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
+
+/** A click on server-rendered markup before React attaches to it is lost. */
+export async function waitForHydration(page: Page, selector: string): Promise<void> {
+  await page.waitForFunction((target) => {
+    const element = document.querySelector(target);
+    return element !== null && Object.keys(element).some((key) => key.startsWith("__reactFiber"));
+  }, selector);
+}

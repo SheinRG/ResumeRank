@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 
 /**
- * A confirmation step for an MFA change that can't be undone in place.
+ * A confirmation step for a security change that can't be undone in place.
  * `onConfirm` resolves true to close the dialog, false to keep it open
  * (it has already shown why).
  */

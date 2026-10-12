@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { db } from "../db";
 import { logActivity } from "../activity";
+import { revokeUserSessions } from "../auth/sessions";
 import { log } from "../observability/log";
 import { emailDomain } from "./domains";
 import { SSO_PRODUCT, ssoControllers } from "./jackson";
@@ -160,6 +161,7 @@ async function deprovision(companyId: string, user: DirectoryUser): Promise<void
       return;
     }
 
+    await revokeUserSessions(tx, target.id);
     await tx.user.update({
       where: { id: target.id },
       data: { companyId: null, role: "MEMBER", directoryUserId: null, sessionVersion: { increment: 1 } },
