@@ -5,7 +5,7 @@ import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { env } from "@resumerank/core/env";
-import { canAdmin, canWrite } from "@resumerank/core/auth/roles";
+import { can, canAdmin, type Permission } from "@resumerank/core/auth/roles";
 import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
 import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
 import { touchLoginSession } from "@resumerank/core/auth/sessions";
@@ -17,7 +17,7 @@ import type { TenantContext } from "@resumerank/core/services/context";
 // Re-exported so UI affordances can keep importing capability checks from the
 // guard module; the pure predicates live in the backend package where they are
 // unit-tested.
-export { canAdmin, canWrite };
+export { can, canAdmin };
 
 /** Raised by guards; the action runner converts it into a typed ActionResult. */
 export class GateError extends Error {}
@@ -303,19 +303,28 @@ export async function requireMember(): Promise<CompanyUser> {
   return { ...user, companyId: user.companyId };
 }
 
-export async function requireWriter(): Promise<CompanyUser> {
+async function requireVerifiedMember(): Promise<CompanyUser> {
   const user = await requireMember();
   if (!user.emailVerified) {
     throw new GateError("Verify your email to make changes.");
   }
-  if (!canWrite(user.role)) {
-    throw new GateError("Viewers have read-only access.");
+  return user;
+}
+
+/**
+ * For work a hiring manager or interviewer may do too. The role check is
+ * here; which jobs it may be done on is the service's, which sees the data.
+ */
+export async function requireCan(permission: Permission): Promise<CompanyUser> {
+  const user = await requireVerifiedMember();
+  if (!can(user.role, permission)) {
+    throw new GateError("Your role doesn't allow that.");
   }
   return user;
 }
 
 export async function requireAdmin(): Promise<CompanyUser> {
-  const user = await requireWriter();
+  const user = await requireVerifiedMember();
   if (!canAdmin(user.role)) {
     throw new GateError("Only admins can do that.");
   }

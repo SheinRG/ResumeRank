@@ -10,6 +10,9 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "CompanyDomain",
   "AuditStream",
   "Membership",
+  "Department",
+  "DepartmentMember",
+  "JobAssignment",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

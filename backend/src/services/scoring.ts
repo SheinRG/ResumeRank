@@ -12,7 +12,8 @@ import {
 } from "../scoring/engine";
 import { MIN_RESUME_LENGTH } from "../validators/candidate";
 import type { ScoringRunStatus } from "../validators/enums";
-import { assertCanWrite, type TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
+import { applicationAccessWhere, jobAccessWhere, seesScores } from "./access";
 import { DomainError, NotFoundError } from "./errors";
 
 /** Bounds one bulk request; the rest stay unscored for the next click. */
@@ -134,7 +135,7 @@ export async function requestScoring(
   ctx: TenantContext,
   applicationId: string,
 ): Promise<ScoringRequestResult> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "scoring.request");
   assertScoringConfigured();
   const settings = currentScoringSettings();
 
@@ -142,11 +143,11 @@ export async function requestScoring(
     const locked = await lockApplications(tx, ctx.companyId, [applicationId]);
     if (!locked.has(applicationId)) throw new NotFoundError(APPLICATION_NOT_FOUND);
 
-    const application = await tx.application.findUniqueOrThrow({
-      where: { id: applicationId },
+    const application = await tx.application.findFirst({
+      where: { id: applicationId, ...applicationAccessWhere(ctx) },
       select: SCORING_INPUT_SELECT,
     });
-    if (application.deletedAt) throw new NotFoundError(APPLICATION_NOT_FOUND);
+    if (!application || application.deletedAt) throw new NotFoundError(APPLICATION_NOT_FOUND);
     assertScorable(application.candidate.resumeText, application.job.requirements.length);
 
     const active = await tx.scoringRun.findFirst({
@@ -236,13 +237,13 @@ export async function requestJobScoring(
   ctx: TenantContext,
   jobId: string,
 ): Promise<JobScoringRequestResult> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "scoring.request");
   assertScoringConfigured();
   const settings = currentScoringSettings();
 
   return tenantTransaction(ctx, async (tx) => {
-    const job = await tx.job.findUnique({
-      where: { id: jobId },
+    const job = await tx.job.findFirst({
+      where: { id: jobId, ...jobAccessWhere(ctx) },
       select: {
         id: true,
         title: true,
@@ -313,15 +314,20 @@ export async function requestJobScoring(
 }
 
 export async function getScoringRun(ctx: TenantContext, runId: string): Promise<ScoringRunView | null> {
-  return tenantDb(ctx).scoringRun.findUnique({ where: { id: runId }, select: RUN_VIEW_SELECT });
+  if (!seesScores(ctx)) return null;
+  return tenantDb(ctx).scoringRun.findFirst({
+    where: { id: runId, application: applicationAccessWhere(ctx) },
+    select: RUN_VIEW_SELECT,
+  });
 }
 
 export async function getJobScoringProgress(
   ctx: TenantContext,
   jobId: string,
 ): Promise<JobScoringProgress | null> {
+  if (!seesScores(ctx)) return null;
   const scoped = tenantDb(ctx);
-  const job = await scoped.job.findUnique({ where: { id: jobId }, select: { id: true } });
+  const job = await scoped.job.findFirst({ where: { id: jobId, ...jobAccessWhere(ctx) }, select: { id: true } });
   if (!job) return null;
 
   const [groups, unscored] = await Promise.all([

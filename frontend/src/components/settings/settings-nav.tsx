@@ -9,6 +9,7 @@ const TABS = [
   { value: "account", href: "/settings/account", label: "Account" },
   { value: "security", href: "/settings/security", label: "Security" },
   { value: "team", href: "/settings/team", label: "Team" },
+  { value: "departments", href: "/settings/departments", label: "Departments" },
   { value: "company", href: "/settings/company", label: "Company" },
   { value: "sso", href: "/settings/sso", label: "SSO" },
   { value: "audit", href: "/settings/audit", label: "Audit log" },

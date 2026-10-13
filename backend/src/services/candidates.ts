@@ -14,7 +14,8 @@ import {
   type CandidateOptionParams,
 } from "../validators/search";
 import type { Paged } from "../types/paged";
-import { assertCanWrite, type TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
+import { candidateAccessSql, candidateAccessWhere, jobAccessWhere, seesScores } from "./access";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
 import {
@@ -89,8 +90,11 @@ function containsPattern(q: string): string {
  * headline ILIKEs are served by trigram indexes; the resume by its GIN index.
  * Scoped to the tenant here — the tenant client can't see inside raw SQL.
  */
-function candidateFilterSql(companyId: string, params: CandidateListParams): Prisma.Sql {
-  const conditions = [Prisma.sql`"companyId" = ${companyId}`];
+function candidateFilterSql(ctx: TenantContext, params: CandidateListParams): Prisma.Sql {
+  const conditions = [
+    Prisma.sql`"companyId" = ${ctx.companyId}`,
+    candidateAccessSql(ctx, Prisma.sql`"Candidate"."id"`),
+  ];
   if (params.source) {
     conditions.push(Prisma.sql`"source" = ${params.source}::"CandidateSource"`);
   }
@@ -162,17 +166,19 @@ async function countCandidates(ctx: TenantContext, filter: Prisma.Sql): Promise<
   return rows[0]?.count ?? 0;
 }
 
-const listSelect = {
-  id: true,
-  name: true,
-  email: true,
-  headline: true,
-  source: true,
-  createdAt: true,
-  _count: { select: { applications: { where: { deletedAt: null } } } },
-} satisfies Prisma.CandidateSelect;
+function listSelect(ctx: TenantContext) {
+  return {
+    id: true,
+    name: true,
+    email: true,
+    headline: true,
+    source: true,
+    createdAt: true,
+    _count: { select: { applications: { where: { deletedAt: null, job: jobAccessWhere(ctx) } } } },
+  } satisfies Prisma.CandidateSelect;
+}
 
-type CandidateListRow = Prisma.CandidateGetPayload<{ select: typeof listSelect }>;
+type CandidateListRow = Prisma.CandidateGetPayload<{ select: ReturnType<typeof listSelect> }>;
 
 /** Loads the full rows for a page of keys, in the keys' order. */
 async function loadCandidateRows(
@@ -182,7 +188,7 @@ async function loadCandidateRows(
   if (keys.length === 0) return [];
   const rows = await tenantDb(ctx).candidate.findMany({
     where: { companyId: ctx.companyId, id: { in: keys.map((k) => k.id) } },
-    select: listSelect,
+    select: listSelect(ctx),
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
   return keys.flatMap((k) => byId.get(k.id) ?? []);
@@ -192,7 +198,7 @@ export async function listCandidates(
   ctx: TenantContext,
   params: CandidateListParams,
 ): Promise<Paged<CandidateListItem>> {
-  const filter = candidateFilterSql(ctx.companyId, params);
+  const filter = candidateFilterSql(ctx, params);
   const [counted, page] = await Promise.all([
     countCandidates(ctx, filter),
     keysetPage(candidateSort(params.sort), params, (query) => fetchCandidateKeys(ctx, filter, query)),
@@ -219,20 +225,26 @@ export async function listCandidates(
   };
 }
 
+/** A restricted role sees the candidate only through, and only with, the applications on its jobs. */
 export async function getCandidate(
   ctx: TenantContext,
   id: string,
 ): Promise<CandidateDetail | null> {
-  return tenantDb(ctx).candidate.findUnique({
-    where: { id, companyId: ctx.companyId },
+  const candidate = await tenantDb(ctx).candidate.findFirst({
+    where: { id, companyId: ctx.companyId, ...candidateAccessWhere(ctx) },
     include: {
       applications: {
-        where: { deletedAt: null },
+        where: { deletedAt: null, job: jobAccessWhere(ctx) },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         include: { job: { select: { id: true, title: true, status: true } } },
       },
     },
   });
+  if (!candidate || seesScores(ctx)) return candidate;
+  return {
+    ...candidate,
+    applications: candidate.applications.map((application) => ({ ...application, aiScore: null })),
+  };
 }
 
 /**
@@ -245,6 +257,7 @@ export async function searchCandidateOptions(
   jobId: string,
   params: CandidateOptionParams,
 ): Promise<CandidateOption[]> {
+  assertCan(ctx, "application.manage");
   const q = params.q.trim();
   return tenantDb(ctx).candidate.findMany({
     where: {
@@ -276,9 +289,9 @@ export async function exportCandidatesCsv(
   ctx: TenantContext,
   params: CandidateListParams,
 ): Promise<CandidateCsvExport> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "candidate.export");
 
-  const filter = candidateFilterSql(ctx.companyId, params);
+  const filter = candidateFilterSql(ctx, params);
   const sort = candidateSort(params.sort);
   const [{ count: rowCount }] = await tenantDb(ctx).$queryRaw<[{ count: number }]>`
     SELECT count(*)::int AS count FROM "Candidate" WHERE ${filter}
@@ -342,7 +355,7 @@ export async function createCandidate(
   ctx: TenantContext,
   input: CandidateCreateInput,
 ): Promise<Candidate> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "candidate.manage");
 
   try {
     return await tenantTransaction(ctx, async (tx) => {
@@ -372,7 +385,7 @@ export async function updateCandidate(
   ctx: TenantContext,
   input: CandidateUpdateInput,
 ): Promise<Candidate> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "candidate.manage");
   const { id, ...fields } = input;
 
   try {
@@ -402,7 +415,7 @@ export async function updateCandidate(
 }
 
 export async function deleteCandidate(ctx: TenantContext, id: string): Promise<Candidate> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "candidate.manage");
 
   try {
     return await tenantTransaction(ctx, async (tx) => {
@@ -433,7 +446,7 @@ export async function extractProfile(
   ctx: TenantContext,
   resumeText: string,
 ): Promise<CandidateProfile> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "candidate.manage");
   await assertAiBudget(ctx.companyId);
   const overQuota = await checkAiQuota({ userId: ctx.actorId, companyId: ctx.companyId });
   if (overQuota) throw new DomainError(overQuota);

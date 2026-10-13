@@ -19,11 +19,14 @@ export function ScorecardsPanel({
   scorecards,
   currentUserId,
   writer,
+  ownOnly,
 }: {
   applicationId: string;
   scorecards: ScorecardItem[];
   currentUserId: string;
   writer: boolean;
+  /** Interviewers rate blind: they get back only their own scorecard. */
+  ownOnly: boolean;
 }) {
   const own = scorecards.find((scorecard) => scorecard.reviewer.id === currentUserId) ?? null;
 
@@ -31,7 +34,11 @@ export function ScorecardsPanel({
     <Card>
       <CardHeader>
         <CardTitle>Scorecards</CardTitle>
-        <CardDescription>Human judgment beside the AI&apos;s.</CardDescription>
+        <CardDescription>
+          {ownOnly
+            ? "Your rating. Other ratings and the AI score stay hidden so they don't sway yours."
+            : "Human judgment beside the AI's."}
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {scorecards.length === 0 ? (

@@ -10,14 +10,7 @@ import { InviteMemberForm } from "@/components/settings/invite-member-form";
 import { formatDate } from "@/lib/format";
 import { revokeInviteAction } from "@/server/actions/company";
 import type { PendingInvite } from "@/server/queries/users";
-import type { Role } from "@resumerank/core/validators/enums";
-
-const ROLE_LABELS: Record<Role, string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
+import { ROLE_LABELS } from "@/lib/roles";
 
 function TeamInvites({ initialInvites }: { initialInvites: PendingInvite[] }) {
   const [invites, setInvites] = useState(initialInvites);

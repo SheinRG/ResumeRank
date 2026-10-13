@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AddCandidateDialog } from "@/components/jobs/add-candidate-dialog";
+import { HiringTeamCard } from "@/components/jobs/hiring-team-card";
 import { ApplicantsTable } from "@/components/jobs/applicants-table";
 import { ApplicantsToolbar } from "@/components/jobs/applicants-toolbar";
 import { JobActionsMenu } from "@/components/jobs/job-actions-menu";
@@ -26,10 +27,12 @@ import {
   REQUIREMENT_WEIGHT_LABELS,
 } from "@/components/jobs/labels";
 import { formatCount, formatDate } from "@/lib/format";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 import { applicationListParamsSchema } from "@resumerank/core/validators/search";
 import { listApplicationsForJob } from "@/server/queries/applications";
+import { getHiringTeam, listDepartmentOptions } from "@/server/queries/hiring-team";
 import { getJob } from "@/server/queries/jobs";
+import { listTeam } from "@/server/queries/users";
 import { getJobScoringProgress } from "@/server/queries/scoring";
 
 // Bulk scoring requests drain the queue after responding, inside this invocation.
@@ -62,18 +65,30 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
   });
 
   const user = await requireUser();
-  const writer = canWrite(user.role);
+  const canEdit = can(user.role, "job.edit");
+  const canAttach = can(user.role, "application.manage");
+  const canStaff = can(user.role, "job.staff");
+  const showScores = can(user.role, "scoring.view");
 
   const job = await getJob(id);
   if (!job) {
     notFound();
   }
 
-  const [applications, scoringProgress] = await Promise.all([
+  const [applications, scoringProgress, team, staffing] = await Promise.all([
     listApplicationsForJob(job.id, listParams),
     getJobScoringProgress(job.id),
+    getHiringTeam(job.id),
+    canStaff
+      ? Promise.all([listDepartmentOptions(), listTeam()]).then(([departments, teammates]) => ({
+          departments,
+          teammates,
+          canManageDepartments: can(user.role, "department.manage"),
+        }))
+      : null,
   ]);
-  const canScore = writer && job.requirements.length > 0 && scoringProgress !== null;
+  const canScore =
+    can(user.role, "scoring.request") && job.requirements.length > 0 && scoringProgress !== null;
 
   const hasFilters = listParams.q.trim() !== "" || listParams.stage !== undefined;
   const metaLine = [
@@ -92,8 +107,13 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
         actions={
           <div className="flex items-center gap-3">
             <JobStatusBadge status={job.status} />
-            {writer ? (
-              <JobActionsMenu jobId={job.id} status={job.status} title={job.title} />
+            {canEdit ? (
+              <JobActionsMenu
+                jobId={job.id}
+                status={job.status}
+                title={job.title}
+                canArchive={can(user.role, "job.manage")}
+              />
             ) : null}
           </div>
         }
@@ -122,7 +142,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             {job.requirements.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No requirements yet.{" "}
-                {writer ? (
+                {canEdit ? (
                   <Link
                     href={`/jobs/${job.id}/edit`}
                     className="font-medium text-primary hover:underline"
@@ -158,21 +178,24 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
         </Card>
       </div>
 
+      {team ? <HiringTeamCard jobId={job.id} team={team} staffing={staffing} /> : null}
+
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1.5">
               <CardTitle>Applicants</CardTitle>
               <CardDescription>
-                {formatCount(applications, "applicant")}, ranked by score.
+                {formatCount(applications, "applicant")}
+                {showScores ? ", ranked by score." : "."}
               </CardDescription>
             </div>
-            {writer ? (
+            {canScore || canAttach ? (
               <div className="flex flex-wrap items-center gap-2">
                 {canScore && scoringProgress ? (
                   <ScoreAllButton jobId={job.id} initialProgress={scoringProgress} />
                 ) : null}
-                <AddCandidateDialog jobId={job.id} />
+                {canAttach ? <AddCandidateDialog jobId={job.id} /> : null}
               </div>
             ) : null}
           </div>
@@ -186,7 +209,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <p>
                 Scoring is disabled until this job has requirements.{" "}
-                {writer ? (
+                {canEdit ? (
                   <Link
                     href={`/jobs/${job.id}/edit`}
                     className="font-medium underline underline-offset-2 outline-none hover:no-underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -198,7 +221,12 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             </div>
           ) : null}
 
-          <ApplicantsToolbar q={listParams.q} stage={listParams.stage} sort={listParams.sort} />
+          <ApplicantsToolbar
+            q={listParams.q}
+            stage={listParams.stage}
+            sort={listParams.sort}
+            showScores={showScores}
+          />
 
           {applications.items.length === 0 ? (
             hasFilters ? (
@@ -216,17 +244,21 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               <EmptyState
                 icon={Users}
                 title="No applicants yet"
-                description="Attach a candidate to start scoring them against this job's requirements."
-                action={
-                  writer ? (
-                    <AddCandidateDialog jobId={job.id} />
-                  ) : undefined
+                description={
+                  canAttach
+                    ? "Attach a candidate to start scoring them against this job's requirements."
+                    : "A recruiter attaches candidates to this job; they'll appear here."
                 }
+                action={canAttach ? <AddCandidateDialog jobId={job.id} /> : undefined}
               />
             )
           ) : (
             <>
-              <ApplicantsTable items={applications.items} canWrite={writer} />
+              <ApplicantsTable
+                items={applications.items}
+                canChangeStage={can(user.role, "application.stage")}
+                showScores={showScores}
+              />
               <PaginationControl
                 nextCursor={applications.nextCursor}
                 prevCursor={applications.prevCursor}

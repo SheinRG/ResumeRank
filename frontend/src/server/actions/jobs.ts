@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, tenantContext } from "@/lib/auth/guards";
 import { jobCreateSchema, jobUpdateSchema } from "@resumerank/core/validators/job";
 import {
   createJob,
@@ -24,7 +24,7 @@ export async function createJobAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("job.manage");
     const job = await createJob(tenantContext(user), parsed.data);
 
     revalidatePath("/jobs");
@@ -45,7 +45,7 @@ export async function updateJobAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("job.edit");
     const job = await updateJob(tenantContext(user), parsed.data);
 
     revalidatePath("/jobs");
@@ -58,7 +58,7 @@ export async function updateJobAction(
 
 export async function archiveJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction("archiveJob", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("job.manage");
     const job = await setJobStatus(tenantContext(user), id, "ARCHIVED");
 
     revalidatePath("/jobs");
@@ -71,7 +71,7 @@ export async function archiveJobAction(id: string): Promise<ActionResult<JobDeta
 
 export async function reopenJobAction(id: string): Promise<ActionResult<JobDetail>> {
   return runAction("reopenJob", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("job.manage");
     const job = await setJobStatus(tenantContext(user), id, "OPEN");
 
     revalidatePath("/jobs");

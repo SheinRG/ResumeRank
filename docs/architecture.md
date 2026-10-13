@@ -53,8 +53,8 @@ record via `actionOk`.
 
 ## Guards and RBAC
 
-`src/lib/auth/guards.ts` exports `requireUser`, `requireWriter`, and
-`requireAdmin`. All three re-fetch the user from the database on every call:
+`src/lib/auth/guards.ts` exports `requireUser`, `requireMember`, `requireCan`
+and `requireAdmin`. All of them re-fetch the user from the database on every call:
 
 ```ts
 export async function requireUser(): Promise<CurrentUser> {
@@ -73,11 +73,52 @@ Authorization is decided by the fresh database rows, so a role downgrade
 takes effect on the very next request instead of waiting for the JWT to
 expire. `requireMember` additionally requires an open workspace
 (narrowing the return type to `CompanyUser`, where `companyId` is non-null) —
-`requireWriter` and `requireAdmin` both call it first, so every write path
+`requireCan` and `requireAdmin` both call it first, so every write path
 already has a company to scope to before it checks verification or role.
-`requireWriter` additionally rejects unverified emails and viewer role;
-`requireAdmin` layers an owner/admin check on top. No action trusts a
-client-sent role or id.
+`requireCan(permission)` additionally rejects unverified emails and roles
+without that permission; `requireAdmin` requires owner or admin. No action
+trusts a client-sent role or id.
+
+### Roles, permissions and job access
+
+Six roles. Checks name a **permission**, never a role
+(`backend/src/auth/roles.ts`), so a custom role later is a new row in that
+table rather than a sweep through call sites:
+
+| Role | Reaches | Can |
+|---|---|---|
+| Owner, Admin | every job | everything (`department.manage` included) |
+| Recruiter (`MEMBER`) | every job | everything but managing departments |
+| Hiring manager | assigned jobs | edit them, move stages, request and see scores, read and submit scorecards |
+| Interviewer | assigned jobs | read the job and resume, submit their own scorecard |
+| Viewer | every job | read, including scores and every scorecard |
+
+The guard checks the permission (`requireCan`), and the service checks it
+again (`assertCan`) so a worker or API adapter can't skip it. **Which jobs**
+a role reaches is decided in the services, which have the data:
+`backend/src/services/access.ts` turns the context into Prisma filters
+(`jobAccessWhere`, `applicationAccessWhere`, `candidateAccessWhere`) and raw
+SQL predicates (`jobAccessSql`, `candidateAccessSql`). For company-wide roles
+they're empty; for hiring managers and interviewers a job is reachable when
+they're on its hiring team (`JobAssignment`) or in its `Department`
+(`DepartmentMember`), and candidates only through a live application on such
+a job. Outside those, ids behave as missing, exactly like another tenant's.
+
+Interviewers rate blind. A role without `scoring.view` gets every AI output
+left out by the service (score, summary, verdicts, run history, the dashboard's
+score figures, score sorting), and one without `scorecard.viewAll` gets back
+only its own scorecard — nothing to hide on the page because nothing reaches
+it. The activity feed spans every job, so it needs `activity.view`, which
+the restricted roles don't have.
+
+Assignments and department memberships reference the `Membership` row
+(`userId, companyId`) with a cascading foreign key, so leaving a workspace
+ends the access with it, whichever path removed the membership (team page,
+SCIM, account deletion). A job's hiring team and department are set from its
+Hiring team panel (`job.staff`); departments are managed in Settings →
+Departments (admins). `20261017090000_granular_rbac` adds the roles and the
+three tables, expand-only: the previous release reads an unknown role as
+read-only.
 
 ## Two-factor authentication
 
@@ -309,7 +350,7 @@ re-fetches the user and their memberships from the database on every call,
 resolves the workspace this sign-in has open, and throws unless there is one,
 returning a `CompanyUser` whose `companyId` is guaranteed non-null. Every query in `frontend/src/server/queries/` and every
 action in `frontend/src/server/actions/` calls `requireMember()` (directly,
-or transitively via `requireWriter`/`requireAdmin`) and threads its
+or transitively via `requireCan`/`requireAdmin`) and threads its
 `companyId` into the Prisma call — as a `where: { companyId, ... }` filter on
 reads, and as the `companyId` field on every `create`. `logActivity`
 (`backend/src/activity.ts`) takes `companyId` as a required field, so an
@@ -489,7 +530,7 @@ a static shell and streams whatever depends on the request:
   static 404.
 
 **One user lookup per request.** `requireUser` (and so `requireMember` /
-`requireWriter` / `requireAdmin`) is wrapped in React `cache()`, so the
+`requireCan` / `requireAdmin`) is wrapped in React `cache()`, so the
 layout, the page, `generateMetadata` and every query they call share one
 session read and one user query. Server actions and route handlers run
 outside a render, where `cache()` is a pass-through, so each call there

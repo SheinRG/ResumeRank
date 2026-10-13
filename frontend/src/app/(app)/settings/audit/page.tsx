@@ -12,34 +12,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { canAdmin, requireMember } from "@/lib/auth/guards";
+import { can, canAdmin, requireMember } from "@/lib/auth/guards";
 import { getAuditSettings } from "@/server/queries/audit";
 
 export const metadata: Metadata = { title: "Audit log · Settings" };
 
-function MemberView() {
+function MemberView({ seesActivity }: { seesActivity: boolean }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Audit log</CardTitle>
         <CardDescription>Exports, retention and streaming are managed by your workspace admins.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <p className="text-sm text-foreground">
-          Changes across the workspace are on the{" "}
-          <Link href="/activity" className="font-medium underline underline-offset-4">
-            Activity
-          </Link>{" "}
-          page.
-        </p>
-      </CardContent>
+      {seesActivity ? (
+        <CardContent>
+          <p className="text-sm text-foreground">
+            Changes across the workspace are on the{" "}
+            <Link href="/activity" className="font-medium underline underline-offset-4">
+              Activity
+            </Link>{" "}
+            page.
+          </p>
+        </CardContent>
+      ) : null}
     </Card>
   );
 }
 
 export default async function SettingsAuditPage() {
   const user = await requireMember();
-  if (!canAdmin(user.role)) return <MemberView />;
+  if (!canAdmin(user.role)) return <MemberView seesActivity={can(user.role, "activity.view")} />;
 
   const settings = await getAuditSettings();
   const isOwner = user.role === "OWNER";

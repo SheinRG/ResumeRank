@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { Candidate } from "@resumerank/core/generated/prisma/client";
-import { requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, tenantContext } from "@/lib/auth/guards";
 import {
   candidateCreateSchema,
   candidateUpdateSchema,
@@ -30,7 +30,7 @@ export async function createCandidateAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("candidate.manage");
     const candidate = await createCandidate(tenantContext(user), parsed.data);
 
     revalidatePath("/candidates");
@@ -51,7 +51,7 @@ export async function updateCandidateAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("candidate.manage");
     const candidate = await updateCandidate(tenantContext(user), parsed.data);
 
     revalidatePath("/candidates");
@@ -66,7 +66,7 @@ export async function deleteCandidateAction(
   id: string,
 ): Promise<ActionResult<Candidate>> {
   return runAction("deleteCandidate", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("candidate.manage");
     const candidate = await deleteCandidate(tenantContext(user), id);
 
     revalidatePath("/candidates");
@@ -80,7 +80,7 @@ export async function extractCandidateProfileAction(
   resumeText: unknown,
 ): Promise<ActionResult<CandidateProfile>> {
   return runAction("extractCandidateProfile", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("candidate.manage");
 
     const parsed = resumeTextSchema.safeParse(resumeText);
     if (!parsed.success) {

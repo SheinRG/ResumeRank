@@ -1,4 +1,4 @@
-import { canAdmin, canWrite } from "../auth/roles";
+import { can, canAdmin, type Permission } from "../auth/roles";
 import type { Role } from "../validators/enums";
 import { ForbiddenError } from "./errors";
 
@@ -15,14 +15,15 @@ export interface TenantContext {
 }
 
 /** Re-checked here so a worker or API adapter can't skip the role gate the session guards apply. */
-export function assertCanWrite(ctx: TenantContext): void {
-  if (!canWrite(ctx.role)) {
-    throw new ForbiddenError("Viewers have read-only access.");
-  }
-}
-
 export function assertCanAdmin(ctx: TenantContext): void {
   if (!canAdmin(ctx.role)) {
     throw new ForbiddenError("Only admins can do that.");
+  }
+}
+
+/** For work some restricted roles may do too; which jobs they may do it on is checked by the service. */
+export function assertCan(ctx: TenantContext, permission: Permission): void {
+  if (!can(ctx.role, permission)) {
+    throw new ForbiddenError("Your role doesn't allow that.");
   }
 }

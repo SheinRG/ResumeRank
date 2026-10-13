@@ -9,13 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { acceptPendingInviteAction } from "@/server/actions/company";
 import type { Role } from "@resumerank/core/validators/enums";
-
-const ROLE_LABELS: Record<Role, string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
+import { ROLE_LABELS } from "@/lib/roles";
 
 export interface OnboardingInvite {
   id: string;

@@ -1,5 +1,6 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
+import { can } from "../auth/roles";
 import type { Application, Prisma } from "../generated/prisma/client";
 import type {
   CandidateSource,
@@ -12,7 +13,8 @@ import type {
 import type { ApplicationCreateInput, ApplicationStageInput } from "../validators/application";
 import { PAGE_SIZE, type ApplicationListParams } from "../validators/search";
 import type { Paged } from "../types/paged";
-import { assertCanWrite, type TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
+import { applicationAccessWhere, jobAccessWhere, seesScores } from "./access";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
 import {
@@ -110,15 +112,16 @@ export interface ApplicationDetail {
 const SCORE_HISTORY_LIMIT = 10;
 
 function buildApplicationWhere(
-  companyId: string,
+  ctx: TenantContext,
   jobId: string,
   params: ApplicationListParams,
 ): Prisma.ApplicationWhereInput {
   const q = params.q.trim();
   return {
     jobId,
-    companyId,
+    companyId: ctx.companyId,
     deletedAt: null,
+    ...applicationAccessWhere(ctx),
     stage: params.stage,
     ...(q
       ? {
@@ -200,7 +203,8 @@ function listApplicationsPage(
       take: query.take,
       select: applicationListSelect,
     });
-  if (params.sort === "score") return keysetPage(scoreSort, params, fetch);
+  // Ranking by score would reveal the scores to a role that may not see them.
+  if (params.sort === "score" && seesScores(ctx)) return keysetPage(scoreSort, params, fetch);
   return keysetPage(
     createdAtSort<ApplicationListRow>(params.sort === "oldest" ? "asc" : "desc"),
     params,
@@ -213,16 +217,17 @@ export async function listApplicationsForJob(
   jobId: string,
   params: ApplicationListParams,
 ): Promise<Paged<ApplicationListItem>> {
-  const where = buildApplicationWhere(ctx.companyId, jobId, params);
+  const where = buildApplicationWhere(ctx, jobId, params);
+  const scored = seesScores(ctx);
   const [{ total, totalCapped }, page] = await Promise.all([
     countCapped((take) => tenantDb(ctx).application.count({ where, take })),
     listApplicationsPage(ctx, params, where),
   ]);
   const applications = page.items;
 
-  const latestRunIds = applications.flatMap((a) =>
-    a.latestScoringRunId ? [a.latestScoringRunId] : [],
-  );
+  const latestRunIds = scored
+    ? applications.flatMap((a) => (a.latestScoringRunId ? [a.latestScoringRunId] : []))
+    : [];
   const verdictGroups = latestRunIds.length
     ? await tenantDb(ctx).evaluation.groupBy({
         by: ["scoringRunId", "verdict"],
@@ -245,8 +250,8 @@ export async function listApplicationsForJob(
     return {
       id: a.id,
       stage: a.stage,
-      aiScore: a.aiScore,
-      scoredAt: a.scoredAt,
+      aiScore: scored ? a.aiScore : null,
+      scoredAt: scored ? a.scoredAt : null,
       createdAt: a.createdAt,
       candidate: a.candidate,
       evaluationCounts: (a.latestScoringRunId && countsByRun.get(a.latestScoringRunId)) || {
@@ -254,7 +259,7 @@ export async function listApplicationsForJob(
         partial: 0,
         missing: 0,
       },
-      scoringStatus: activeStatus === "QUEUED" || activeStatus === "RUNNING" ? activeStatus : null,
+      scoringStatus: scored && (activeStatus === "QUEUED" || activeStatus === "RUNNING") ? activeStatus : null,
     };
   });
 
@@ -268,14 +273,31 @@ export async function listApplicationsForJob(
   };
 }
 
+const HIDDEN_SCORING: ApplicationScoring = {
+  active: null,
+  lastFailure: null,
+  history: [],
+  injectionSignals: [],
+};
+
+/**
+ * A role without `scoring.view` gets the application with every AI output
+ * left out, and one without `scorecard.viewAll` only its own scorecard — so
+ * neither ever reaches the page, rather than being hidden by it.
+ */
 export async function getApplication(
   ctx: TenantContext,
   id: string,
 ): Promise<ApplicationDetail | null> {
-  const application = await tenantDb(ctx).application.findUnique({
-    where: { id, companyId: ctx.companyId },
+  const application = await tenantDb(ctx).application.findFirst({
+    where: { id, companyId: ctx.companyId, ...applicationAccessWhere(ctx) },
     include: {
-      job: { include: { requirements: { orderBy: { order: "asc" } } } },
+      job: {
+        include: {
+          requirements: { orderBy: { order: "asc" } },
+          department: { select: { id: true, name: true } },
+        },
+      },
       candidate: {
         select: { id: true, name: true, email: true, headline: true, source: true, createdAt: true },
       },
@@ -286,6 +308,7 @@ export async function getApplication(
         },
       },
       scorecards: {
+        where: can(ctx.role, "scorecard.viewAll") ? {} : { reviewerId: ctx.actorId },
         orderBy: { createdAt: "desc" },
         include: { reviewer: { select: { id: true, name: true, image: true } } },
       },
@@ -325,6 +348,17 @@ export async function getApplication(
   ]);
 
   const { latestScoringRun, latestScoringRunId, candidate, ...rest } = application;
+  if (!seesScores(ctx)) {
+    return {
+      ...rest,
+      aiScore: null,
+      aiSummary: null,
+      scoredAt: null,
+      candidate: { ...candidate, resumeLength: resume[0]?.length ?? 0 },
+      evaluations: [],
+      scoring: HIDDEN_SCORING,
+    };
+  }
   return {
     ...rest,
     candidate: { ...candidate, resumeLength: resume[0]?.length ?? 0 },
@@ -348,12 +382,12 @@ export async function createApplication(
   ctx: TenantContext,
   input: ApplicationCreateInput,
 ): Promise<Application> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "application.manage");
   const { jobId, candidateId } = input;
 
   const [job, candidate] = await Promise.all([
-    tenantDb(ctx).job.findUnique({
-      where: { id: jobId, companyId: ctx.companyId },
+    tenantDb(ctx).job.findFirst({
+      where: { id: jobId, companyId: ctx.companyId, ...jobAccessWhere(ctx) },
       select: { id: true, title: true, status: true },
     }),
     tenantDb(ctx).candidate.findUnique({
@@ -405,12 +439,12 @@ export async function updateStage(
   ctx: TenantContext,
   input: ApplicationStageInput,
 ): Promise<Application> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "application.stage");
   const { id, stage } = input;
 
   return tenantTransaction(ctx, async (tx) => {
-    const existing = await tx.application.findUnique({
-      where: { id, companyId: ctx.companyId, deletedAt: null },
+    const existing = await tx.application.findFirst({
+      where: { id, companyId: ctx.companyId, deletedAt: null, ...applicationAccessWhere(ctx) },
       select: { stage: true, candidate: { select: { name: true } } },
     });
     if (!existing) throw new NotFoundError(APPLICATION_NOT_FOUND);
@@ -441,10 +475,15 @@ export async function setApplicationRemoved(
   id: string,
   removed: boolean,
 ): Promise<Application> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "application.manage");
 
   try {
     return await tenantTransaction(ctx, async (tx) => {
+      const visible = await tx.application.findFirst({
+        where: { id, companyId: ctx.companyId, ...applicationAccessWhere(ctx) },
+        select: { id: true },
+      });
+      if (!visible) throw new NotFoundError(APPLICATION_NOT_FOUND);
       const { candidate, ...application } = await tx.application.update({
         where: { id, companyId: ctx.companyId },
         data: { deletedAt: removed ? new Date() : null },

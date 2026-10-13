@@ -5,7 +5,8 @@ import type { EmploymentType, JobStatus, RequirementWeight } from "../validators
 import type { JobCreateInput, JobUpdateInput } from "../validators/job";
 import { PAGE_SIZE, type JobListParams } from "../validators/search";
 import type { Paged } from "../types/paged";
-import { assertCanWrite, type TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
+import { jobAccessWhere, seesScores } from "./access";
 import { NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
 import {
@@ -49,6 +50,7 @@ export interface JobDetail {
   createdAt: Date;
   updatedAt: Date;
   requirements: JobRequirementItem[];
+  department: { id: string; name: string } | null;
 }
 
 export interface JobOption {
@@ -61,14 +63,16 @@ const JOB_NOT_FOUND = "This job no longer exists.";
 
 const withRequirements = {
   requirements: { orderBy: { order: "asc" } },
+  department: { select: { id: true, name: true } },
 } satisfies Prisma.JobInclude;
 
-function buildJobWhere(companyId: string, params: JobListParams): Prisma.JobWhereInput {
+function buildJobWhere(ctx: TenantContext, params: JobListParams): Prisma.JobWhereInput {
   const q = params.q.trim();
   return {
-    companyId,
+    companyId: ctx.companyId,
     status: params.status,
     title: q ? { contains: q, mode: "insensitive" } : undefined,
+    ...jobAccessWhere(ctx),
   };
 }
 
@@ -119,7 +123,7 @@ export async function listJobs(
   ctx: TenantContext,
   params: JobListParams,
 ): Promise<Paged<JobListItem>> {
-  const where = buildJobWhere(ctx.companyId, params);
+  const where = buildJobWhere(ctx, params);
   const [{ total, totalCapped }, page] = await Promise.all([
     countCapped((take) => tenantDb(ctx).job.count({ where, take })),
     listJobsPage(ctx, params, where),
@@ -127,7 +131,7 @@ export async function listJobs(
   const jobs = page.items;
 
   const jobIds = jobs.map((job) => job.id);
-  const scoreGroups = jobIds.length
+  const scoreGroups = jobIds.length && seesScores(ctx)
     ? await tenantDb(ctx).application.groupBy({
         by: ["jobId"],
         where: {
@@ -169,22 +173,22 @@ export async function listJobs(
 }
 
 export async function getJob(ctx: TenantContext, id: string): Promise<JobDetail | null> {
-  return tenantDb(ctx).job.findUnique({
-    where: { id, companyId: ctx.companyId },
+  return tenantDb(ctx).job.findFirst({
+    where: { id, companyId: ctx.companyId, ...jobAccessWhere(ctx) },
     include: withRequirements,
   });
 }
 
 export async function listJobOptions(ctx: TenantContext): Promise<JobOption[]> {
   return tenantDb(ctx).job.findMany({
-    where: { status: "OPEN", companyId: ctx.companyId },
+    where: { status: "OPEN", companyId: ctx.companyId, ...jobAccessWhere(ctx) },
     select: { id: true, title: true, status: true },
     orderBy: [{ title: "asc" }, { id: "asc" }],
   });
 }
 
 export async function createJob(ctx: TenantContext, input: JobCreateInput): Promise<JobDetail> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "job.manage");
   const { requirements, ...jobFields } = input;
 
   return tenantTransaction(ctx, async (tx) => {
@@ -225,16 +229,15 @@ export async function createJob(ctx: TenantContext, input: JobCreateInput): Prom
  * job (or tenant) is treated as a new requirement, never as a row to edit.
  */
 export async function updateJob(ctx: TenantContext, input: JobUpdateInput): Promise<JobDetail> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "job.edit");
   const { id, requirements, ...jobFields } = input;
 
   return tenantTransaction(ctx, async (tx) => {
-    try {
-      await tx.job.update({ where: { id, companyId: ctx.companyId }, data: jobFields });
-    } catch (error) {
-      if (isPrismaError(error, "P2025")) throw new NotFoundError(JOB_NOT_FOUND);
-      throw error;
-    }
+    const { count } = await tx.job.updateMany({
+      where: { id, companyId: ctx.companyId, ...jobAccessWhere(ctx) },
+      data: jobFields,
+    });
+    if (count === 0) throw new NotFoundError(JOB_NOT_FOUND);
 
     const existing = await tx.jobRequirement.findMany({
       where: { jobId: id },
@@ -297,7 +300,7 @@ export async function setJobStatus(
   id: string,
   status: Extract<JobStatus, "OPEN" | "ARCHIVED">,
 ): Promise<JobDetail> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "job.manage");
 
   return tenantTransaction(ctx, async (tx) => {
     let job: JobDetail;

@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const REQUIREMENT_KEYS = ["req-1", "req-2", "req-3", "req-4"];
+const TEAM_KEYS = ["team-1", "team-2"];
 const APPLICANT_KEYS = ["app-1", "app-2", "app-3", "app-4", "app-5"];
 
 export default function JobDetailLoading() {
@@ -41,6 +42,23 @@ export default function JobDetailLoading() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-9 w-full sm:w-64" />
+          {TEAM_KEYS.map((key) => (
+            <div key={key} className="flex items-center gap-3">
+              <Skeleton className="size-8 rounded-full" />
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-5 w-24" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

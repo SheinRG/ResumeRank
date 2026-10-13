@@ -24,12 +24,17 @@ export function ApplicantsToolbar({
   q,
   stage,
   sort,
+  showScores,
 }: {
   q: string;
   stage?: Stage;
   sort: ApplicationListParams["sort"];
+  /** Without it the list can't be ranked by score; the server falls back to newest. */
+  showScores: boolean;
 }) {
   const { search, setSearch, setParam } = useListFilters(q);
+  const sortOptions = showScores ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option.value !== "score");
+  const shownSort = showScores || sort !== "score" ? sort : "newest";
 
   return (
     <ToolbarShell>
@@ -52,12 +57,12 @@ export function ApplicantsToolbar({
           ))}
         </SelectContent>
       </Select>
-      <Select value={sort} onValueChange={(value) => setParam("sort", value, "score")}>
+      <Select value={shownSort} onValueChange={(value) => setParam("sort", value, "score")}>
         <SelectTrigger size="sm" className="w-40" aria-label="Sort applicants">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {SORT_OPTIONS.map((option) => (
+          {sortOptions.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>

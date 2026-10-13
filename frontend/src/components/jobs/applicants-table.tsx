@@ -29,10 +29,12 @@ import type { ApplicationListItem } from "@/server/queries/applications";
 
 export function ApplicantsTable({
   items,
-  canWrite,
+  canChangeStage,
+  showScores,
 }: {
   items: ApplicationListItem[];
-  canWrite: boolean;
+  canChangeStage: boolean;
+  showScores: boolean;
 }) {
   // Optimistic stage per application id, layered over the server-provided
   // items so URL-driven refetches (filters, pagination) always win.
@@ -69,7 +71,7 @@ export function ApplicantsTable({
       <TableHeader>
         <TableRow>
           <TableHead>Candidate</TableHead>
-          <TableHead>Score</TableHead>
+          {showScores ? <TableHead>Score</TableHead> : null}
           <TableHead>Stage</TableHead>
           <TableHead className="text-right">Applied</TableHead>
         </TableRow>
@@ -86,18 +88,20 @@ export function ApplicantsTable({
               </Link>
               <p className="text-xs text-muted-foreground">{row.candidate.email}</p>
             </TableCell>
+            {showScores ? (
+              <TableCell>
+                {row.scoringStatus ? (
+                  <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    {row.scoringStatus === "RUNNING" ? "Scoring" : "Queued"}
+                  </span>
+                ) : (
+                  <ScorePill score={row.aiScore} />
+                )}
+              </TableCell>
+            ) : null}
             <TableCell>
-              {row.scoringStatus ? (
-                <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                  {row.scoringStatus === "RUNNING" ? "Scoring" : "Queued"}
-                </span>
-              ) : (
-                <ScorePill score={row.aiScore} />
-              )}
-            </TableCell>
-            <TableCell>
-              {canWrite ? (
+              {canChangeStage ? (
                 <Select
                   value={row.stage}
                   disabled={pendingId === row.id}

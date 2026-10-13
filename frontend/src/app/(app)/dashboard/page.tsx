@@ -10,6 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { can, requireMember } from "@/lib/auth/guards";
+import { accessScope } from "@resumerank/core/auth/roles";
 import { getDashboardData } from "@/server/queries/dashboard";
 import { PipelineFunnelChart } from "@/components/dashboard/pipeline-funnel-chart";
 import { ScoreDistributionChart } from "@/components/dashboard/score-distribution-chart";
@@ -19,18 +22,30 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  const [user, data] = await Promise.all([requireMember(), getDashboardData()]);
   const { stats } = data;
   const totalApplications = data.funnel.reduce((sum, point) => sum + point.count, 0);
+  const showScores = can(user.role, "scoring.view");
+  const showActivity = can(user.role, "activity.view");
+  const wholeCompany = accessScope(user.role) === "company";
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Dashboard"
-        description="Your team's hiring pipeline at a glance."
+        description={
+          wholeCompany
+            ? "Your team's hiring pipeline at a glance."
+            : "The pipeline for the jobs you're on, at a glance."
+        }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-4 sm:grid-cols-2",
+          showScores ? "lg:grid-cols-4" : "lg:grid-cols-3",
+        )}
+      >
         <StatCard
           label="Open jobs"
           value={stats.openJobs}
@@ -54,20 +69,22 @@ export default async function DashboardPage() {
           delta={`${totalApplications} all-time`}
           icon={ClipboardList}
         />
-        <StatCard
-          label="Average score"
-          value={stats.averageScore ?? "—"}
-          delta={
-            stats.scoredApplications > 0
-              ? `across ${stats.scoredApplications} scored`
-              : "none scored yet"
-          }
-          icon={Star}
-        />
+        {showScores ? (
+          <StatCard
+            label="Average score"
+            value={stats.averageScore ?? "—"}
+            delta={
+              stats.scoredApplications > 0
+                ? `across ${stats.scoredApplications} scored`
+                : "none scored yet"
+            }
+            icon={Star}
+          />
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
+        <Card className={showScores ? undefined : "lg:col-span-2"}>
           <CardHeader>
             <CardTitle>Pipeline funnel</CardTitle>
             <CardDescription>Applications by stage</CardDescription>
@@ -76,18 +93,20 @@ export default async function DashboardPage() {
             <PipelineFunnelChart data={data.funnel} />
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Score distribution</CardTitle>
-            <CardDescription>AI scores across scored applications</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScoreDistributionChart
-              data={data.scoreDistribution}
-              averageScore={stats.averageScore}
-            />
-          </CardContent>
-        </Card>
+        {showScores ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Score distribution</CardTitle>
+              <CardDescription>AI scores across scored applications</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScoreDistributionChart
+                data={data.scoreDistribution}
+                averageScore={stats.averageScore}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Applications over time</CardTitle>
@@ -99,15 +118,17 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent activity</CardTitle>
-          <CardDescription>Latest changes across your workspace</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ActivityFeed items={data.recentActivity} />
-        </CardContent>
-      </Card>
+      {showActivity ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent activity</CardTitle>
+            <CardDescription>Latest changes across your workspace</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActivityFeed items={data.recentActivity} />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

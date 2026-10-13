@@ -56,7 +56,7 @@ export function toTeamMember({ role, createdAt, user }: TeamMemberRow): TeamMemb
 
 const USER_NOT_FOUND = "That user no longer exists.";
 
-/** Postgres sorts the native Role enum by declaration order (OWNER, ADMIN, MEMBER, VIEWER). */
+/** Postgres sorts the native Role enum by declaration order: owners first, viewers last. */
 export async function listTeam(ctx: TenantContext): Promise<TeamMember[]> {
   const members = await tenantDb(ctx).membership.findMany({
     where: { companyId: ctx.companyId },

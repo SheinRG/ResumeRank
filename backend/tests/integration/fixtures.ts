@@ -5,6 +5,8 @@ import { createCompanyInvite } from "../../src/auth/tokens";
 import type { TenantContext } from "../../src/services/context";
 import { createApplication } from "../../src/services/applications";
 import { createCandidate } from "../../src/services/candidates";
+import { addDepartmentMember, createDepartment } from "../../src/services/departments";
+import { assignToJob, setJobDepartment } from "../../src/services/hiring-team";
 import { createJob } from "../../src/services/jobs";
 import { upsertScorecard } from "../../src/services/scorecards";
 import { scorecardSchema } from "../../src/validators/application";
@@ -28,6 +30,7 @@ export interface TenantFixture {
   scoringRunId: string;
   inviteId: string;
   domainId: string;
+  departmentId: string;
   userIds: string[];
 }
 
@@ -132,6 +135,11 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     data: { companyId: company.id, domain: `${tag}.example.test`, verificationToken: tag },
   });
 
+  const department = await createDepartment(ownerCtx, { name: `Engineering ${tag}` });
+  await addDepartmentMember(ownerCtx, { departmentId: department.id, userId: member.id });
+  await setJobDepartment(ownerCtx, { jobId: job.id, departmentId: department.id });
+  await assignToJob(ownerCtx, { jobId: job.id, userId: viewer.id });
+
   return {
     companyId: company.id,
     owner: ownerCtx,
@@ -144,6 +152,7 @@ export async function createTenant(label: string): Promise<TenantFixture> {
     scoringRunId: run.id,
     inviteId: invite.id,
     domainId: domain.id,
+    departmentId: department.id,
     userIds: [owner.id, member.id, viewer.id],
   };
 }
