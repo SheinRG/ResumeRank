@@ -18,13 +18,7 @@ import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import type { CurrentUser } from "@/lib/auth/guards";
-
-const ROLE_LABELS: Record<CurrentUser["role"], string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
+import { ROLE_LABELS } from "@/lib/roles";
 
 export function UserMenu({
   user,

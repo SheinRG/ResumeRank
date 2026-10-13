@@ -16,6 +16,7 @@ const OPTIONS = [
   { value: "candidate", label: "Candidates" },
   { value: "application", label: "Applications" },
   { value: "user", label: "Users" },
+  { value: "department", label: "Departments" },
   { value: "company", label: "Workspace" },
 ] as const;
 

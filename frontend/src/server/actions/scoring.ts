@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, tenantContext } from "@/lib/auth/guards";
 import {
   requestJobScoring,
   requestScoring,
@@ -17,7 +17,7 @@ export async function requestScoringAction(
   applicationId: string,
 ): Promise<ActionResult<ScoringRequestResult>> {
   return runAction("requestScoring", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("scoring.request");
     const result = await requestScoring(tenantContext(user), applicationId);
 
     if (result.outcome === "reused") {
@@ -34,7 +34,7 @@ export async function requestJobScoringAction(
   jobId: string,
 ): Promise<ActionResult<JobScoringRequestResult>> {
   return runAction("requestJobScoring", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("scoring.request");
     const result = await requestJobScoring(tenantContext(user), jobId);
 
     if (result.queued > 0) scheduleScoringDrain();

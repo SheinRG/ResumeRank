@@ -9,10 +9,14 @@ datasource db {
   extensions = [pg_trgm]
 }
 
+/// MEMBER is the recruiter. HIRING_MANAGER and INTERVIEWER only reach the
+/// jobs they're assigned to, directly or through a department (services/access.ts).
 enum Role {
   OWNER
   ADMIN
   MEMBER
+  HIRING_MANAGER
+  INTERVIEWER
   VIEWER
 }
 
@@ -176,8 +180,10 @@ model Membership {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobAssignments    JobAssignment[]
+  departmentMembers DepartmentMember[]
 
   @@unique([userId, companyId])
   @@unique([companyId, directoryUserId])
@@ -216,6 +222,7 @@ model Company {
   loginSessions    LoginSession[]  @relation("LoginSessionCompany")
   ssoLoginSessions LoginSession[]  @relation("LoginSessionSso")
   jobs             Job[]
+  departments      Department[]
   candidates       Candidate[]
   applications     Application[]
   activities       ActivityLog[]
@@ -415,15 +422,18 @@ model Job {
   location       String?
   employmentType EmploymentType @default(FULL_TIME)
   status         JobStatus      @default(OPEN)
+  departmentId   String?
   companyId      String
   createdById    String
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  department   Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   createdBy    User             @relation("JobCreatedBy", fields: [createdById], references: [id])
   requirements JobRequirement[]
   applications Application[]
+  assignments  JobAssignment[]
 
   // List indexes end in the sort's tie-breaker, scanned in either direction
   // for keyset pagination (see services/keyset.ts).
@@ -432,6 +442,54 @@ model Job {
   @@index([companyId, title, id])
   @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Job_title_trgm_idx")
   @@index([createdById])
+  @@index([departmentId])
+}
+
+/// A team of people who see every job filed under it, so a hiring manager
+/// doesn't need adding to each new opening by hand.
+model Department {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobs    Job[]
+  members DepartmentMember[]
+
+  @@unique([companyId, name])
+}
+
+/// Keyed on the membership, so leaving the workspace ends the access with it.
+model DepartmentMember {
+  id           String   @id @default(cuid())
+  departmentId String
+  userId       String
+  companyId    String
+  createdAt    DateTime @default(now())
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Cascade)
+
+  @@unique([departmentId, userId])
+  @@index([companyId, userId])
+}
+
+/// The hiring team on one job. Keyed on the membership, so leaving the
+/// workspace ends the access with it.
+model JobAssignment {
+  id        String   @id @default(cuid())
+  jobId     String
+  userId    String
+  companyId String
+  createdAt DateTime @default(now())
+
+  job        Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [userId, companyId], references: [userId, companyId], onDelete: Cascade)
+
+  @@unique([jobId, userId])
+  @@index([companyId, userId])
 }
 
 model JobRequirement {

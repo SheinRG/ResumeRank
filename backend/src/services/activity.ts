@@ -4,10 +4,10 @@ import { canAdmin } from "../auth/roles";
 import { PAGE_SIZE } from "../validators/search";
 import type { Prisma } from "../generated/prisma/client";
 import type { Paged } from "../types/paged";
-import type { TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
 import { countCapped, createdAtSort, keysetPage, type PageParams } from "./pagination";
 
-export type ActivityEntityType = "job" | "candidate" | "application" | "user" | "company";
+export type ActivityEntityType = "job" | "candidate" | "application" | "user" | "company" | "department";
 
 export interface ActivityActor {
   id: string | null;
@@ -52,6 +52,8 @@ export async function listActivity(
   ctx: TenantContext,
   params: ActivityListParams,
 ): Promise<Paged<ActivityItem>> {
+  // The feed spans every job, so it isn't for roles scoped to some of them.
+  assertCan(ctx, "activity.view");
   const where: Prisma.ActivityLogWhereInput = {
     companyId: ctx.companyId,
     entityType: params.entityType,

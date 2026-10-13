@@ -28,10 +28,13 @@ export function JobActionsMenu({
   jobId,
   status,
   title,
+  canArchive,
 }: {
   jobId: string;
   status: JobStatus;
   title: string;
+  /** Hiring managers may edit a job but not close or reopen it. */
+  canArchive: boolean;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -77,7 +80,7 @@ export function JobActionsMenu({
               Edit
             </Link>
           </DropdownMenuItem>
-          {status === "ARCHIVED" ? (
+          {!canArchive ? null : status === "ARCHIVED" ? (
             <DropdownMenuItem
               disabled={pending}
               onSelect={(event) => {

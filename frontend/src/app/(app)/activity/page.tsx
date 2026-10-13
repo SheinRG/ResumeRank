@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { z } from "zod";
-import { Download, History } from "lucide-react";
+import { Download, History, Lock } from "lucide-react";
 
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -19,14 +19,14 @@ import {
 } from "@/components/ui/table";
 import { ActivityFilter } from "@/components/activity/activity-filter";
 import { PaginationControl } from "@/components/shared/pagination-control";
-import { canAdmin, requireMember } from "@/lib/auth/guards";
+import { can, canAdmin, requireMember } from "@/lib/auth/guards";
 import { formatCount, formatDate, formatRelative, initials } from "@/lib/format";
 import { cursorParamSchema } from "@resumerank/core/validators/search";
 import { listActivity, type ActivityEntityType } from "@/server/queries/activity";
 
 export const metadata: Metadata = { title: "Activity" };
 
-const ENTITY_VALUES = ["all", "job", "candidate", "application", "user", "company"] as const;
+const ENTITY_VALUES = ["all", "job", "candidate", "application", "user", "department", "company"] as const;
 const searchParamsSchema = z.object({
   entity: z.enum(ENTITY_VALUES).catch("all"),
   after: cursorParamSchema,
@@ -38,6 +38,7 @@ const ENTITY_LABELS: Record<ActivityEntityType, string> = {
   candidate: "Candidate",
   application: "Application",
   user: "User",
+  department: "Department",
   company: "Workspace",
 };
 
@@ -54,10 +55,29 @@ export default async function ActivityPage({
   });
 
   const entityType = parsed.entity === "all" ? undefined : parsed.entity;
-  const [user, result] = await Promise.all([
-    requireMember(),
-    listActivity({ entityType, after: parsed.after, before: parsed.before }),
-  ]);
+  const user = await requireMember();
+  if (!can(user.role, "activity.view")) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Activity" description="Changes across your workspace." />
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={Lock}
+              title="Activity is for recruiters and admins"
+              description="The log covers every job in the workspace. Your jobs' applicants are on each job's page."
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/jobs">Go to your jobs</Link>
+                </Button>
+              }
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  const result = await listActivity({ entityType, after: parsed.after, before: parsed.before });
   const hasFilter = parsed.entity !== "all";
 
   return (

@@ -18,7 +18,7 @@ import {
 import { CandidateToolbar } from "@/components/candidates/candidate-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { formatCount, formatDate } from "@/lib/format";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@resumerank/core/validators/search";
 import { listCandidates } from "@/server/queries/candidates";
 
@@ -48,7 +48,8 @@ export default async function CandidatesPage({
   });
 
   const [user, result] = await Promise.all([requireUser(), listCandidates(params)]);
-  const writer = canWrite(user.role);
+  const canManage = can(user.role, "candidate.manage");
+  const canExport = can(user.role, "candidate.export");
   const hasFilters = params.q !== "" || params.source !== undefined;
 
   return (
@@ -57,20 +58,24 @@ export default async function CandidatesPage({
         title="Candidates"
         description="Everyone you've added, across every job."
         actions={
-          writer ? (
+          canExport || canManage ? (
             <>
-              <Button asChild variant="outline" size="sm">
-                <Link href={buildExportHref(params)} prefetch={false}>
-                  <Download aria-hidden="true" />
-                  Export CSV
-                </Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link href="/candidates/new">
-                  <UserPlus aria-hidden="true" />
-                  New candidate
-                </Link>
-              </Button>
+              {canExport ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={buildExportHref(params)} prefetch={false}>
+                    <Download aria-hidden="true" />
+                    Export CSV
+                  </Link>
+                </Button>
+              ) : null}
+              {canManage ? (
+                <Button asChild size="sm">
+                  <Link href="/candidates/new">
+                    <UserPlus aria-hidden="true" />
+                    New candidate
+                  </Link>
+                </Button>
+              ) : null}
             </>
           ) : null
         }
@@ -94,7 +99,7 @@ export default async function CandidatesPage({
               description={
                 hasFilters
                   ? "Try a different search or source, or clear the filters."
-                  : writer
+                  : canManage
                     ? "Add a candidate by pasting their resume text to start screening."
                     : "Candidates your team adds will show up here."
               }
@@ -103,7 +108,7 @@ export default async function CandidatesPage({
                   <Button asChild variant="outline" size="sm">
                     <Link href="/candidates">Clear filters</Link>
                   </Button>
-                ) : writer ? (
+                ) : canManage ? (
                   <Button asChild size="sm">
                     <Link href="/candidates/new">
                       <UserPlus aria-hidden="true" />

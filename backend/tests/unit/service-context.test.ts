@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertCanAdmin, assertCanWrite, type TenantContext } from "../../src/services/context";
+import { assertCan, assertCanAdmin, type TenantContext } from "../../src/services/context";
 import { DomainError, ForbiddenError, NotFoundError } from "../../src/services/errors";
 import { ScoringError } from "../../src/scoring/parse";
 import { ExtractionError } from "../../src/extraction/parse";
@@ -11,11 +11,12 @@ function ctx(role: Role): TenantContext {
 }
 
 describe("service context assertions", () => {
-  it("lets every role but VIEWER write", () => {
-    expect(() => assertCanWrite(ctx("OWNER"))).not.toThrow();
-    expect(() => assertCanWrite(ctx("ADMIN"))).not.toThrow();
-    expect(() => assertCanWrite(ctx("MEMBER"))).not.toThrow();
-    expect(() => assertCanWrite(ctx("VIEWER"))).toThrow(ForbiddenError);
+  it("checks the role's permission", () => {
+    expect(() => assertCan(ctx("MEMBER"), "candidate.manage")).not.toThrow();
+    expect(() => assertCan(ctx("HIRING_MANAGER"), "application.stage")).not.toThrow();
+    expect(() => assertCan(ctx("HIRING_MANAGER"), "candidate.manage")).toThrow(ForbiddenError);
+    expect(() => assertCan(ctx("INTERVIEWER"), "scoring.view")).toThrow(ForbiddenError);
+    expect(() => assertCan(ctx("VIEWER"), "scorecard.submit")).toThrow(ForbiddenError);
   });
 
   it("restricts admin operations to OWNER and ADMIN", () => {

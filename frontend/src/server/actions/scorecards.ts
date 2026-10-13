@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { Scorecard } from "@resumerank/core/generated/prisma/client";
-import { requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, tenantContext } from "@/lib/auth/guards";
 import { scorecardSchema } from "@resumerank/core/validators/application";
 import { upsertScorecard } from "@resumerank/core/services/scorecards";
 import { expireTenantReads } from "@/server/cache-tags";
@@ -20,7 +20,7 @@ export async function upsertScorecardAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("scorecard.submit");
     const scorecard = await upsertScorecard(tenantContext(user), parsed.data);
 
     revalidatePath(`/applications/${scorecard.applicationId}`);

@@ -18,15 +18,9 @@ import { useActionForm } from "@/components/shared/use-action-form";
 import { inviteMemberSchema } from "@resumerank/core/validators/company";
 import { inviteMemberAction } from "@/server/actions/company";
 import type { PendingInvite } from "@/server/queries/users";
+import { INVITABLE_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 
-type InviteRole = "ADMIN" | "MEMBER" | "VIEWER";
-
-const ROLE_LABELS: Record<InviteRole, string> = {
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
-const ROLE_OPTIONS: InviteRole[] = ["ADMIN", "MEMBER", "VIEWER"];
+type InviteRole = (typeof INVITABLE_ROLES)[number];
 
 function InviteMemberForm({
   onInvited,
@@ -81,14 +75,14 @@ function InviteMemberForm({
           label="Role"
           htmlFor="invite-role"
           errors={fieldErrors.role}
-          className="sm:w-36"
+          className="sm:w-44"
         >
           <Select value={role} onValueChange={(value) => setRole(value as InviteRole)}>
             <SelectTrigger id="invite-role" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {ROLE_OPTIONS.map((option) => (
+              {INVITABLE_ROLES.map((option) => (
                 <SelectItem key={option} value={option}>
                   {ROLE_LABELS[option]}
                 </SelectItem>
@@ -106,7 +100,8 @@ function InviteMemberForm({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Inviting the same email again re-sends the invite link.
+        {ROLE_LABELS[role]}: {ROLE_DESCRIPTIONS[role]} Inviting the same email again re-sends the
+        invite link.
       </p>
     </form>
   );

@@ -21,7 +21,7 @@ import {
 import { DeleteCandidateDialog } from "@/components/candidates/delete-candidate-dialog";
 import { ResumeText } from "@/components/candidates/resume-text";
 import { formatDate } from "@/lib/format";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 import { getCandidate } from "@/server/queries/candidates";
 
 export async function generateMetadata({
@@ -45,7 +45,8 @@ export default async function CandidatePage({
   const [user, candidate] = await Promise.all([requireUser(), getCandidate(id)]);
   if (!candidate) notFound();
 
-  const writer = canWrite(user.role);
+  const canManage = can(user.role, "candidate.manage");
+  const showScores = can(user.role, "scoring.view");
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,7 +54,7 @@ export default async function CandidatePage({
         title={candidate.name}
         description={candidate.headline ?? undefined}
         actions={
-          writer ? (
+          canManage ? (
             <>
               <Button asChild variant="outline">
                 <Link href={`/candidates/${candidate.id}/edit`}>
@@ -129,7 +130,7 @@ export default async function CandidatePage({
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <StageBadge stage={application.stage} />
-                      <ScorePill score={application.aiScore} />
+                      {showScores ? <ScorePill score={application.aiScore} /> : null}
                     </div>
                   </li>
                 ))}

@@ -4,13 +4,13 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { CandidateForm } from "@/components/candidates/candidate-form";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 
 export const metadata: Metadata = { title: "New candidate" };
 
 export default async function NewCandidatePage() {
   const user = await requireUser();
-  if (!canWrite(user.role)) {
+  if (!can(user.role, "candidate.manage")) {
     redirect("/candidates");
   }
 

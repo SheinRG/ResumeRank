@@ -30,14 +30,7 @@ import { signOutMemberAction } from "@/server/actions/sessions";
 import { updateUserRoleAction } from "@/server/actions/users";
 import type { TeamMember } from "@/server/queries/users";
 import type { Role } from "@resumerank/core/validators/enums";
-
-const ROLE_LABELS: Record<Role, string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
-const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"];
+import { ALL_ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 
 export function TeamTable({
   members,
@@ -145,12 +138,12 @@ export function TeamTable({
                   disabled={pendingId === member.id}
                   onValueChange={(value) => handleRoleChange(member.id, value as Role)}
                 >
-                  <SelectTrigger size="sm" className="w-32" aria-label={`Change ${member.name}'s role`}>
+                  <SelectTrigger size="sm" className="w-40" aria-label={`Change ${member.name}'s role`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map((role) => (
-                      <SelectItem key={role} value={role}>
+                    {ALL_ROLES.map((role) => (
+                      <SelectItem key={role} value={role} title={ROLE_DESCRIPTIONS[role]}>
                         {ROLE_LABELS[role]}
                       </SelectItem>
                     ))}

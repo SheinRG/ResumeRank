@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { signIn } from "./support/auth";
-import { DEMO_VIEWER } from "./support/db";
+import {
+  addDemoInterviewer,
+  DEMO_VIEWER,
+  deleteUser,
+  uniqueTag,
+  withDb,
+  type AssignedInterviewer,
+} from "./support/db";
 
 /**
  * A viewer reads everything in the workspace but changes nothing: write
@@ -36,5 +43,43 @@ test.describe("viewer role", () => {
     const href = await profile.getAttribute("href");
     await page.goto(`${href}/edit`);
     await expect(page).toHaveURL(new RegExp(`${href}$`));
+  });
+});
+
+/**
+ * An interviewer reaches only the jobs on their hiring team, and rates blind:
+ * no AI score anywhere, and only their own scorecard.
+ */
+test.describe("interviewer role", () => {
+  let interviewer: AssignedInterviewer;
+
+  test.beforeAll(async () => {
+    interviewer = await withDb((db) => addDemoInterviewer(db, uniqueTag()));
+  });
+
+  test.afterAll(async () => {
+    if (interviewer) await withDb((db) => deleteUser(db, interviewer.userId));
+  });
+
+  test("sees only their job, without scores", async ({ page }) => {
+    await signIn(page, interviewer.email);
+
+    await page.goto("/jobs");
+    const jobLinks = page.locator('table a[href^="/jobs/"]');
+    await expect(jobLinks).toHaveCount(1);
+    await expect(jobLinks.first()).toHaveText(interviewer.jobTitle);
+    await expect(page.getByRole("columnheader", { name: "Avg score" })).toHaveCount(0);
+
+    await jobLinks.first().click();
+    await expect(page.getByText("Hiring team", { exact: true })).toBeVisible();
+    await expect(page.getByText(/ranked by score/i)).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: "Score" })).toHaveCount(0);
+
+    await page.locator('table a[href^="/applications/"]').first().click();
+    await expect(page.getByText(/Other ratings and the AI score stay hidden/)).toBeVisible();
+    await expect(page.getByText(/No AI score yet|Score history/)).toHaveCount(0);
+
+    await page.goto("/activity");
+    await expect(page.getByText("Activity is for recruiters and admins")).toBeVisible();
   });
 });

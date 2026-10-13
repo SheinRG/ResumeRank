@@ -19,7 +19,7 @@ import { JobsToolbar } from "@/components/jobs/jobs-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { EMPLOYMENT_TYPE_LABELS } from "@/components/jobs/labels";
 import { formatCount, formatDate } from "@/lib/format";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 import { jobListParamsSchema } from "@resumerank/core/validators/search";
 import { listJobs } from "@/server/queries/jobs";
 
@@ -40,7 +40,8 @@ export default async function JobsPage({
   });
 
   const user = await requireUser();
-  const writer = canWrite(user.role);
+  const canCreate = can(user.role, "job.manage");
+  const showScores = can(user.role, "scoring.view");
   const result = await listJobs(params);
   const hasFilters = params.q.trim() !== "" || params.status !== undefined;
 
@@ -50,7 +51,7 @@ export default async function JobsPage({
         title="Jobs"
         description="Create jobs with structured requirements, then score applicants against them."
         actions={
-          writer ? (
+          canCreate ? (
             <Button asChild>
               <Link href="/jobs/new">
                 <Plus aria-hidden="true" />
@@ -88,9 +89,13 @@ export default async function JobsPage({
               <EmptyState
                 icon={Briefcase}
                 title="No jobs yet"
-                description="Create your first job with a structured requirement list so scoring has a rubric."
+                description={
+                  canCreate
+                    ? "Create your first job with a structured requirement list so scoring has a rubric."
+                    : "Jobs you're assigned to, directly or through a department, will show up here."
+                }
                 action={
-                  writer ? (
+                  canCreate ? (
                     <Button asChild size="sm">
                       <Link href="/jobs/new">
                         <Plus aria-hidden="true" />
@@ -112,7 +117,7 @@ export default async function JobsPage({
                     <TableHead>Type</TableHead>
                     <TableHead className="text-right">Requirements</TableHead>
                     <TableHead className="text-right">Applicants</TableHead>
-                    <TableHead className="text-right">Avg score</TableHead>
+                    {showScores ? <TableHead className="text-right">Avg score</TableHead> : null}
                     <TableHead className="text-right">Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -142,9 +147,11 @@ export default async function JobsPage({
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {job.applicationCount}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <ScorePill score={job.averageScore} />
-                      </TableCell>
+                      {showScores ? (
+                        <TableCell className="text-right">
+                          <ScorePill score={job.averageScore} />
+                        </TableCell>
+                      ) : null}
                       <TableCell className="text-right text-muted-foreground">
                         {formatDate(job.createdAt)}
                       </TableCell>

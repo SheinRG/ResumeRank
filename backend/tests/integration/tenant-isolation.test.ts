@@ -24,6 +24,15 @@ import {
 } from "../../src/services/candidates";
 import { getCompany } from "../../src/services/company";
 import { getDashboardData } from "../../src/services/dashboard";
+import {
+  addDepartmentMember,
+  deleteDepartment,
+  listDepartmentOptions,
+  listDepartments,
+  removeDepartmentMember,
+  renameDepartment,
+} from "../../src/services/departments";
+import { assignToJob, getHiringTeam, setJobDepartment, unassignFromJob } from "../../src/services/hiring-team";
 import { NotFoundError } from "../../src/services/errors";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
 import { resetMemberMfa } from "../../src/services/mfa";
@@ -61,7 +70,7 @@ import {
 
 /** Everything tenant A's probes could conceivably touch in tenant B. */
 async function snapshot(tenant: TenantFixture) {
-  const [job, candidate, application, member, memberships, invite, domain, activityCount] = await Promise.all([
+  const [job, candidate, application, member, memberships, invite, domain, activityCount, department, assignments] = await Promise.all([
     db.job.findUnique({
       where: { id: tenant.jobId },
       include: { requirements: { orderBy: { order: "asc" } } },
@@ -76,8 +85,10 @@ async function snapshot(tenant: TenantFixture) {
     db.companyInvite.findUnique({ where: { id: tenant.inviteId } }),
     db.companyDomain.findUnique({ where: { id: tenant.domainId } }),
     db.activityLog.count({ where: { companyId: tenant.companyId } }),
+    db.department.findUnique({ where: { id: tenant.departmentId }, include: { members: true } }),
+    db.jobAssignment.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
   ]);
-  return { job, candidate, application, member, memberships, invite, domain, activityCount };
+  return { job, candidate, application, member, memberships, invite, domain, activityCount, department, assignments };
 }
 
 let a: TenantFixture;
@@ -156,6 +167,13 @@ describe("reads never return another tenant's rows", () => {
 
     const invites = await listPendingInvites(a.owner);
     expect(invites.map((i) => i.id)).toEqual([a.inviteId]);
+  });
+
+  it("lists only the caller's departments and hiring teams", async () => {
+    expect((await listDepartments(a.owner)).map((d) => d.id)).toEqual([a.departmentId]);
+    expect((await listDepartmentOptions(a.owner)).map((d) => d.id)).toEqual([a.departmentId]);
+    expect(await getHiringTeam(a.owner, b.jobId)).toBeNull();
+    expect((await getHiringTeam(a.owner, a.jobId))?.department?.id).toBe(a.departmentId);
   });
 
   it("lists only the caller's SSO domains", async () => {
@@ -316,6 +334,32 @@ describe("writes to another tenant's ids fail as not found", () => {
       NotFoundError,
     );
     expect((await db.loginSession.findUniqueOrThrow({ where: { id: loginId } })).companyId).toBe(a.companyId);
+  });
+
+  it("rejects renaming, deleting or staffing another tenant's department", async () => {
+    await expect(renameDepartment(a.owner, { id: b.departmentId, name: "Hijacked" })).rejects.toThrow(NotFoundError);
+    await expect(deleteDepartment(a.owner, { id: b.departmentId })).rejects.toThrow(NotFoundError);
+    await expect(
+      addDepartmentMember(a.owner, { departmentId: b.departmentId, userId: a.memberId }),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      removeDepartmentMember(a.owner, { departmentId: b.departmentId, userId: b.memberId }),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      addDepartmentMember(a.owner, { departmentId: a.departmentId, userId: b.memberId }),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it("rejects staffing another tenant's job or filing under its department", async () => {
+    await expect(assignToJob(a.owner, { jobId: b.jobId, userId: a.memberId })).rejects.toThrow(NotFoundError);
+    await expect(assignToJob(a.owner, { jobId: a.jobId, userId: b.memberId })).rejects.toThrow(NotFoundError);
+    await expect(unassignFromJob(a.owner, { jobId: b.jobId, userId: b.viewer.actorId })).rejects.toThrow(
+      NotFoundError,
+    );
+    await expect(setJobDepartment(a.owner, { jobId: b.jobId, departmentId: null })).rejects.toThrow(NotFoundError);
+    await expect(
+      setJobDepartment(a.owner, { jobId: a.jobId, departmentId: b.departmentId }),
+    ).rejects.toThrow(NotFoundError);
   });
 
   it("rejects verifying, auto-joining or removing another tenant's domain", async () => {

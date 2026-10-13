@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { JobForm } from "@/components/jobs/job-form";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 import { getJob } from "@/server/queries/jobs";
 
 type EditJobPageProps = {
@@ -21,7 +21,7 @@ export default async function EditJobPage({ params }: EditJobPageProps) {
   const { id } = await params;
 
   const user = await requireUser();
-  if (!canWrite(user.role)) {
+  if (!can(user.role, "job.edit")) {
     redirect(`/jobs/${id}`);
   }
 

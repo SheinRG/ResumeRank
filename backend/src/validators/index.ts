@@ -11,3 +11,4 @@ export * from "./sso";
 export * from "./mfa";
 export * from "./session";
 export * from "./audit";
+export * from "./department";

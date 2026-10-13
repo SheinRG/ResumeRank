@@ -11,7 +11,8 @@ import { ScorecardsPanel } from "@/components/applications/scorecards-panel";
 import { StageSelect } from "@/components/applications/stage-select";
 import type { ScoreBlocker } from "@/components/applications/score-button";
 import { formatDate } from "@/lib/format";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
+import type { Permission } from "@resumerank/core/auth/roles";
 import { MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
 import { getApplication, type ApplicationDetail } from "@/server/queries/applications";
 
@@ -60,13 +61,14 @@ export default async function ApplicationPage({
   if (!application) notFound();
 
   const deleted = application.deletedAt !== null;
-  const writer = canWrite(user.role);
-  const canMutate = writer && !deleted;
+  const canManage = can(user.role, "application.manage");
+  const live = (permission: Permission) => !deleted && can(user.role, permission);
+  const showScores = can(user.role, "scoring.view");
   const scored = application.aiScore !== null && application.scoredAt !== null;
 
   return (
     <div className="flex flex-col gap-6">
-      {deleted ? <RestoreBanner applicationId={application.id} canRestore={writer} /> : null}
+      {deleted ? <RestoreBanner applicationId={application.id} canRestore={canManage} /> : null}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
@@ -91,35 +93,38 @@ export default async function ApplicationPage({
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <StageBadge stage={application.stage} />
-          {canMutate ? (
-            <>
-              <StageSelect applicationId={application.id} stage={application.stage} />
-              <ApplicationMenu applicationId={application.id} />
-            </>
+          {live("application.stage") ? (
+            <StageSelect applicationId={application.id} stage={application.stage} />
           ) : null}
+          {live("application.manage") ? <ApplicationMenu applicationId={application.id} /> : null}
         </div>
       </div>
 
-      <ScorePanel
-        applicationId={application.id}
-        aiScore={application.aiScore}
-        aiSummary={application.aiSummary}
-        scoredAt={application.scoredAt}
-        evaluations={application.evaluations}
-        scoring={application.scoring}
-        writer={canMutate}
-        blocker={resolveBlocker(application)}
-      />
+      {showScores ? (
+        <>
+          <ScorePanel
+            applicationId={application.id}
+            aiScore={application.aiScore}
+            aiSummary={application.aiSummary}
+            scoredAt={application.scoredAt}
+            evaluations={application.evaluations}
+            scoring={application.scoring}
+            writer={live("scoring.request")}
+            blocker={resolveBlocker(application)}
+          />
 
-      {scored || application.evaluations.length > 0 ? (
-        <EvaluationList evaluations={application.evaluations} scored={scored} />
+          {scored || application.evaluations.length > 0 ? (
+            <EvaluationList evaluations={application.evaluations} scored={scored} />
+          ) : null}
+        </>
       ) : null}
 
       <ScorecardsPanel
         applicationId={application.id}
         scorecards={application.scorecards}
         currentUserId={user.id}
-        writer={canMutate}
+        writer={live("scorecard.submit")}
+        ownOnly={!can(user.role, "scorecard.viewAll")}
       />
     </div>
   );

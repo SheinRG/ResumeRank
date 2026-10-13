@@ -88,7 +88,7 @@ export async function joinCompany(
   client: Client,
   userId: string,
   companyId: string,
-  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER",
+  role: "OWNER" | "ADMIN" | "MEMBER" | "HIRING_MANAGER" | "INTERVIEWER" | "VIEWER",
 ): Promise<void> {
   await client.query(
     `INSERT INTO "Membership" (id, "userId", "companyId", role, "updatedAt") VALUES ($1, $2, $3, $4, now())`,
@@ -108,6 +108,39 @@ export async function addMember(client: Client, companyId: string, tag: string):
   const email = `member-${tag}@e2e.test`;
   await joinCompany(client, await createUser(client, `Member ${tag}`, email), companyId, "MEMBER");
   return email;
+}
+
+export interface AssignedInterviewer {
+  email: string;
+  userId: string;
+  jobId: string;
+  jobTitle: string;
+}
+
+/** An interviewer in the demo workspace on the hiring team of one of its jobs (the one with the most applicants). */
+export async function addDemoInterviewer(client: Client, tag: string): Promise<AssignedInterviewer> {
+  const companyId = await demoCompanyId(client);
+  const email = `interviewer-${tag}@e2e.test`;
+  const userId = await createUser(client, `Interviewer ${tag}`, email);
+  await joinCompany(client, userId, companyId, "INTERVIEWER");
+  const { rows } = await client.query<{ id: string; title: string }>(
+    `SELECT j.id, j.title FROM "Job" j
+     WHERE j."companyId" = $1
+     ORDER BY (SELECT count(*) FROM "Application" a WHERE a."jobId" = j.id AND a."deletedAt" IS NULL) DESC, j.id
+     LIMIT 1`,
+    [companyId],
+  );
+  const job = rows[0];
+  if (!job) throw new Error("Seed the database first (npm run db:seed): the demo workspace has no jobs.");
+  await client.query(
+    `INSERT INTO "JobAssignment" (id, "jobId", "userId", "companyId") VALUES ($1, $2, $3, $4)`,
+    [newId(), job.id, userId, companyId],
+  );
+  return { email, userId, jobId: job.id, jobTitle: job.title };
+}
+
+export async function deleteUser(client: Client, userId: string): Promise<void> {
+  await client.query(`DELETE FROM "User" WHERE id = $1`, [userId]);
 }
 
 /** Company deletion cascades its rows; its members' accounts are removed explicitly. */

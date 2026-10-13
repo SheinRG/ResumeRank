@@ -1,4 +1,4 @@
-import { requireMember, requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, requireMember, tenantContext } from "@/lib/auth/guards";
 import * as candidates from "@resumerank/core/services/candidates";
 import type {
   CandidateListParams,
@@ -31,13 +31,13 @@ export async function searchCandidateOptions(
   jobId: string,
   params: CandidateOptionParams,
 ): Promise<candidates.CandidateOption[]> {
-  const user = await requireWriter();
+  const user = await requireCan("application.manage");
   return candidates.searchCandidateOptions(tenantContext(user), jobId, params);
 }
 
 export async function exportCandidatesCsv(
   params: CandidateListParams,
 ): Promise<candidates.CandidateCsvExport> {
-  const user = await requireWriter();
+  const user = await requireCan("candidate.export");
   return candidates.exportCandidatesCsv(tenantContext(user), params);
 }

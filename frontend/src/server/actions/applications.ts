@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { Application } from "@resumerank/core/generated/prisma/client";
-import { requireWriter, tenantContext } from "@/lib/auth/guards";
+import { requireCan, tenantContext } from "@/lib/auth/guards";
 import {
   applicationCreateSchema,
   applicationStageSchema,
@@ -34,7 +34,7 @@ export async function createApplicationAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("application.manage");
     const application = await createApplication(tenantContext(user), parsed.data);
     revalidateApplication(application);
     return actionOk(application);
@@ -52,7 +52,7 @@ export async function updateStageAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const user = await requireWriter();
+    const user = await requireCan("application.stage");
     const application = await updateStage(tenantContext(user), parsed.data);
     revalidateApplication(application);
     return actionOk(application);
@@ -63,7 +63,7 @@ export async function softDeleteApplicationAction(
   id: string,
 ): Promise<ActionResult<Application>> {
   return runAction("softDeleteApplication", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("application.manage");
     const application = await setApplicationRemoved(tenantContext(user), id, true);
     revalidateApplication(application);
     return actionOk(application);
@@ -74,7 +74,7 @@ export async function restoreApplicationAction(
   id: string,
 ): Promise<ActionResult<Application>> {
   return runAction("restoreApplication", async () => {
-    const user = await requireWriter();
+    const user = await requireCan("application.manage");
     const application = await setApplicationRemoved(tenantContext(user), id, false);
     revalidateApplication(application);
     return actionOk(application);

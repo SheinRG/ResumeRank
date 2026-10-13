@@ -4,13 +4,13 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { JobForm } from "@/components/jobs/job-form";
-import { canWrite, requireUser } from "@/lib/auth/guards";
+import { can, requireUser } from "@/lib/auth/guards";
 
 export const metadata: Metadata = { title: "New job" };
 
 export default async function NewJobPage() {
   const user = await requireUser();
-  if (!canWrite(user.role)) {
+  if (!can(user.role, "job.manage")) {
     redirect("/jobs");
   }
 

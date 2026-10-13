@@ -18,13 +18,7 @@ import {
 import type { CurrentUser } from "@/lib/auth/guards";
 import { initials } from "@/lib/format";
 import { switchWorkspaceAction } from "@/server/actions/workspaces";
-
-const ROLE_LABELS: Record<CurrentUser["role"], string> = {
-  OWNER: "Owner",
-  ADMIN: "Admin",
-  MEMBER: "Member",
-  VIEWER: "Viewer",
-};
+import { ROLE_LABELS } from "@/lib/roles";
 
 function WorkspaceMark({ name, logoUrl, className }: { name: string; logoUrl: string | null; className: string }) {
   return (

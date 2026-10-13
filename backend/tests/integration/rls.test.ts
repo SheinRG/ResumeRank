@@ -42,6 +42,9 @@ describe("row-level security in tenant transactions", () => {
       requirementJobs: await tx.$queryRaw<IdRow[]>`SELECT DISTINCT "jobId" AS "id" FROM "JobRequirement"`,
       scorecardApplications: await tx.$queryRaw<IdRow[]>`SELECT DISTINCT "applicationId" AS "id" FROM "Scorecard"`,
       evaluationRuns: await tx.$queryRaw<IdRow[]>`SELECT DISTINCT "scoringRunId" AS "id" FROM "Evaluation"`,
+      departments: await tx.$queryRaw<IdRow[]>`SELECT "id" FROM "Department"`,
+      departmentMemberDepartments: await tx.$queryRaw<IdRow[]>`SELECT DISTINCT "departmentId" AS "id" FROM "DepartmentMember"`,
+      assignmentJobs: await tx.$queryRaw<IdRow[]>`SELECT DISTINCT "jobId" AS "id" FROM "JobAssignment"`,
     }));
 
     expect(ids(visible.companies)).toEqual([a.companyId]);
@@ -54,6 +57,9 @@ describe("row-level security in tenant transactions", () => {
     expect(ids(visible.requirementJobs)).toEqual([a.jobId]);
     expect(ids(visible.scorecardApplications)).toEqual([a.applicationId]);
     expect(ids(visible.evaluationRuns)).toEqual([a.scoringRunId]);
+    expect(ids(visible.departments)).toEqual([a.departmentId]);
+    expect(ids(visible.departmentMemberDepartments)).toEqual([a.departmentId]);
+    expect(ids(visible.assignmentJobs)).toEqual([a.jobId]);
   });
 
   it("confines raw writes to the tenant", async () => {

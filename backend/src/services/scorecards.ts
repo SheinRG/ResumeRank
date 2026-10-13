@@ -2,7 +2,8 @@ import { tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
 import type { Scorecard } from "../generated/prisma/client";
 import type { ScorecardInput } from "../validators/application";
-import { assertCanWrite, type TenantContext } from "./context";
+import { assertCan, type TenantContext } from "./context";
+import { applicationAccessWhere } from "./access";
 import { NotFoundError } from "./errors";
 
 /** The reviewer is always the acting user — a caller-supplied reviewer would let anyone rate as someone else. */
@@ -10,12 +11,12 @@ export async function upsertScorecard(
   ctx: TenantContext,
   input: ScorecardInput,
 ): Promise<Scorecard> {
-  assertCanWrite(ctx);
+  assertCan(ctx, "scorecard.submit");
   const { applicationId, rating, notes } = input;
 
   return tenantTransaction(ctx, async (tx) => {
-    const application = await tx.application.findUnique({
-      where: { id: applicationId, companyId: ctx.companyId, deletedAt: null },
+    const application = await tx.application.findFirst({
+      where: { id: applicationId, companyId: ctx.companyId, deletedAt: null, ...applicationAccessWhere(ctx) },
       select: { id: true, candidate: { select: { name: true } } },
     });
     if (!application) throw new NotFoundError("This application no longer exists.");
