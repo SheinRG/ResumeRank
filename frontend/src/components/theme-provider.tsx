@@ -3,6 +3,8 @@
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import type { ComponentProps } from "react";
 
+import "@/lib/zod-jitless";
+
 export function ThemeProvider({
   children,
   ...props

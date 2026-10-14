@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { Suspense } from "react";
 import {
   Instrument_Sans,
   JetBrains_Mono,
@@ -8,6 +10,7 @@ import {
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { NONCE_HEADER } from "@/lib/csp";
 import { siteUrl } from "@/lib/site";
 
 import "./globals.css";
@@ -67,11 +70,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+async function Document({ children }: { children: React.ReactNode }) {
+  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
   return (
     <html
       lang="en"
@@ -79,11 +79,26 @@ export default function RootLayout({
       className={`${instrumentSans.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${montserrat.variable} h-full`}
     >
       <body className="flex min-h-full flex-col antialiased">
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster />
         </ThemeProvider>
       </body>
     </html>
+  );
+}
+
+// A prerendered shell would carry scripts without this request's CSP nonce,
+// and the browser would refuse them. Reading the nonce above the document
+// makes every page render per request, so each script is stamped with it.
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <Suspense>
+      <Document>{children}</Document>
+    </Suspense>
   );
 }
