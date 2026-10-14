@@ -983,13 +983,39 @@ That is the first thing a prompt change should target.
 
 ## Security headers and CSP
 
-`next.config.ts` sets a fixed set of headers on every route via `headers()`:
-`Content-Security-Policy`, `Strict-Transport-Security` (2-year max-age, includes
+`next.config.ts` sets `Strict-Transport-Security` (2-year max-age, includes
 subdomains, preload), `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: strict-origin-when-cross-origin`, and a locked-down
-`Permissions-Policy` (camera/microphone/geolocation all denied). The CSP is
-`default-src 'self'` with `'unsafe-inline'` (and `'unsafe-eval'` in dev only)
-on `script-src` — the documented, pragmatic floor for Next.js without
-per-request nonces — `img-src` additionally allows `blob:`, `data:`, and
-Google's avatar CDN (`lh3.googleusercontent.com`) for OAuth profile images,
-and `frame-ancestors 'none'` blocks the app from being framed.
+`Referrer-Policy: strict-origin-when-cross-origin` and a locked-down
+`Permissions-Policy` (camera/microphone/geolocation all denied) on every route.
+
+The `Content-Security-Policy` is built in one place, `frontend/src/lib/csp.ts`,
+and allows no inline script anywhere:
+
+- **Pages** get a per-request nonce. `src/proxy.ts` runs on every page and page
+  data request, mints 128 random bits, puts the policy on both the request and
+  the response, and passes the nonce on in `x-nonce`.
+  `script-src 'self' 'nonce-…' 'strict-dynamic'`: Next reads the nonce from the
+  request's policy and stamps it on every script it renders, the nonced runtime
+  may load its own chunks, and the root layout hands the nonce to next-themes'
+  pre-paint theme script. `'unsafe-eval'` is added in development only (React's
+  error-stack reconstruction).
+- **Every page renders per request.** A prerendered shell would carry scripts
+  without the request's nonce, so the root layout reads it inside a
+  `<Suspense>` that wraps `<html>`; the static shell is empty and `use cache`
+  data caching is unaffected. This costs the marketing page its CDN-cached
+  shell, a deliberate trade for a policy pen tests accept.
+- **API routes** render no React and get a fixed policy with
+  `script-src 'self'` (`next.config.ts`).
+- **SAML POST binding.** `/api/oauth/authorize` may return the SSO service's
+  auto-submitting form, which uses an `onload` attribute and a one-line inline
+  script. Its policy allows exactly those two snippets by SHA-256
+  (`'unsafe-hashes'` covers only the `onload` hash) and lets the form post to any
+  `https:` host, since that is the tenant's IdP. If a library upgrade changes
+  the snippets, the page falls back to its visible Continue button.
+
+`style-src` keeps `'unsafe-inline'`: React server-renders `style` attributes
+(status chips, motion initial states) and styles cannot run script. `img-src`
+allows `blob:`, `data:` and Google's avatar CDN (`lh3.googleusercontent.com`),
+`object-src 'none'`, `base-uri 'self'`, and `frame-ancestors 'none'` blocks
+framing. Zod is configured `jitless` in the browser (`lib/zod-jitless.ts`), so
+its `new Function` capability probe doesn't file a violation on form pages.

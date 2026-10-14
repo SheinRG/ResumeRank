@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { contentSecurityPolicy, createNonce, NONCE_HEADER } from "@/lib/csp";
+
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/jobs",
@@ -20,19 +22,27 @@ function hasSessionCookie(request: NextRequest): boolean {
   );
 }
 
+function isProtected(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 /**
- * Optimistic redirect layer only. Real authentication and authorization run
- * server-side in layouts and actions (see src/lib/auth/guards.ts) — a forged
- * cookie gets past this redirect and nothing else.
+ * Issues each page request its own CSP nonce: Next reads it from the request's
+ * policy and stamps it on every script it renders, and the root layout hands
+ * it to the theme script.
+ *
+ * The redirects are an optimistic layer only. Real authentication and
+ * authorization run server-side in layouts and actions (see
+ * src/lib/auth/guards.ts) — a forged cookie gets past this redirect and
+ * nothing else.
  */
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
   const signedIn = hasSessionCookie(request);
 
-  if (
-    !signedIn &&
-    PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-  ) {
+  if (!signedIn && isProtected(pathname)) {
     const url = new URL("/login", request.url);
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
@@ -42,20 +52,19 @@ export function proxy(request: NextRequest): NextResponse {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return NextResponse.next();
+  const nonce = createNonce();
+  const policy = contentSecurityPolicy({ nonce });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(NONCE_HEADER, nonce);
+  requestHeaders.set("Content-Security-Policy", policy);
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set("Content-Security-Policy", policy);
+  return response;
 }
 
 export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/jobs/:path*",
-    "/candidates/:path*",
-    "/applications/:path*",
-    "/activity/:path*",
-    "/settings/:path*",
-    "/onboarding",
-    "/mfa/:path*",
-    "/login",
-    "/register",
-  ],
+  // Every page and page data request; API routes and build assets carry the
+  // fixed policy from next.config.ts instead.
+  matcher: ["/((?!api/|_next/static/|_next/image|favicon.ico).*)"],
 };

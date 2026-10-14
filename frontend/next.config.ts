@@ -2,42 +2,25 @@ import { config } from "dotenv";
 import { resolve } from "node:path";
 import type { NextConfig } from "next";
 
+import { contentSecurityPolicy, samlPostFormPolicy } from "./src/lib/csp";
+
 // The repo keeps a single .env at the root; Next runs with the frontend
 // workspace as cwd, so load it from one level up before the config is read.
 config({ path: resolve(process.cwd(), "../.env") });
 
-const isDev = process.env.NODE_ENV === "development";
-
-// 'unsafe-inline'/'unsafe-eval' are the pragmatic floor for Next.js without
-// per-request nonces; everything else is locked to self.
-function contentSecurityPolicy(formAction: string): string {
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data: https://lh3.googleusercontent.com",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    `form-action ${formAction}`,
-  ].join("; ");
-}
-
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy("'self'") },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
-// An identity provider using SAML's POST binding receives the login request
-// as an auto-submitted form, and its host is whatever the tenant configured.
-// Later entries win, so only this endpoint may post off-site.
-const ssoAuthorizeHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy("'self' https:") },
-];
+// Pages get a per-request nonce policy from the proxy. API responses render
+// no React, so they get a fixed policy with no inline script at all, except
+// the SAML POST-binding page, which may post off-site to the tenant's IdP.
+// Later entries win, so its policy replaces the API one.
+const apiPolicy = [{ key: "Content-Security-Policy", value: contentSecurityPolicy("none") }];
+const ssoAuthorizePolicy = [{ key: "Content-Security-Policy", value: samlPostFormPolicy() }];
 
 const nextConfig: NextConfig = {
   transpilePackages: ["@resumerank/core"],
@@ -58,7 +41,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/(.*)", headers: securityHeaders },
-      { source: "/api/oauth/authorize", headers: ssoAuthorizeHeaders },
+      { source: "/api/:path*", headers: apiPolicy },
+      { source: "/api/oauth/authorize", headers: ssoAuthorizePolicy },
     ];
   },
 };
