@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { can, canAdmin, requireMember } from "@/lib/auth/guards";
 import { getAuditSettings } from "@/server/queries/audit";
+import { getFeatures } from "@/server/queries/features";
 
 export const metadata: Metadata = { title: "Audit log · Settings" };
 
@@ -43,7 +44,7 @@ export default async function SettingsAuditPage() {
   const user = await requireMember();
   if (!canAdmin(user.role)) return <MemberView seesActivity={can(user.role, "activity.view")} />;
 
-  const settings = await getAuditSettings();
+  const [settings, features] = await Promise.all([getAuditSettings(), getFeatures()]);
   const isOwner = user.role === "OWNER";
 
   return (
@@ -51,7 +52,11 @@ export default async function SettingsAuditPage() {
       <AuditIntegrity latestSeq={settings.latestSeq} />
       <AuditExport />
       <AuditRetention retentionDays={settings.retentionDays} canChange={isOwner} />
-      <AuditStreamCard initialStream={settings.stream} canChange={isOwner} />
+      <AuditStreamCard
+        initialStream={settings.stream}
+        canChange={isOwner}
+        entitled={features["audit-streaming"]}
+      />
     </div>
   );
 }

@@ -21,4 +21,7 @@ export class NotFoundError extends DomainError {}
 
 export class ForbiddenError extends DomainError {}
 
+/** The workspace isn't entitled to the feature, whatever the actor's role. */
+export class FeatureUnavailableError extends ForbiddenError {}
+
 export class ConflictError extends DomainError {}

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/mfa/confirm-dialog";
 import { CopyValue } from "@/components/settings/copy-value";
+import { FeatureUnavailable } from "@/components/settings/feature-unavailable";
 import { FormField } from "@/components/shared/form-field";
 import { useActionForm } from "@/components/shared/use-action-form";
 import { Badge } from "@/components/ui/badge";
@@ -220,11 +221,14 @@ function SigningSecret({ secret }: { secret: string }) {
 
 function StreamActions({
   stream,
+  entitled,
   onChanged,
   onEdit,
   onRemoved,
 }: {
   stream: AuditStreamSummary;
+  /** Without it the stream can only be paused or disconnected. */
+  entitled: boolean;
   onChanged: (stream: AuditStreamSummary) => void;
   onEdit: () => void;
   onRemoved: () => void;
@@ -273,23 +277,29 @@ function StreamActions({
   const busy = pending !== null;
   return (
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" onClick={sendTest} disabled={busy}>
-        {pending === "test" ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
-        Send test event
-      </Button>
-      <Button type="button" variant="outline" onClick={toggle} disabled={busy}>
-        {pending === "toggle" ? (
-          <Loader2 className="animate-spin" aria-hidden="true" />
-        ) : stream.enabled ? (
-          <Pause aria-hidden="true" />
-        ) : (
-          <Play aria-hidden="true" />
-        )}
-        {stream.enabled ? "Pause" : "Resume"}
-      </Button>
-      <Button type="button" variant="ghost" onClick={onEdit} disabled={busy}>
-        Change destination
-      </Button>
+      {entitled ? (
+        <Button type="button" variant="outline" onClick={sendTest} disabled={busy}>
+          {pending === "test" ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+          Send test event
+        </Button>
+      ) : null}
+      {entitled || stream.enabled ? (
+        <Button type="button" variant="outline" onClick={toggle} disabled={busy}>
+          {pending === "toggle" ? (
+            <Loader2 className="animate-spin" aria-hidden="true" />
+          ) : stream.enabled ? (
+            <Pause aria-hidden="true" />
+          ) : (
+            <Play aria-hidden="true" />
+          )}
+          {stream.enabled ? "Pause" : "Resume"}
+        </Button>
+      ) : null}
+      {entitled ? (
+        <Button type="button" variant="ghost" onClick={onEdit} disabled={busy}>
+          Change destination
+        </Button>
+      ) : null}
       <ConfirmDialog
         trigger={
           <Button type="button" variant="ghost" disabled={busy}>
@@ -310,9 +320,11 @@ function StreamActions({
 export function AuditStreamCard({
   initialStream,
   canChange,
+  entitled,
 }: {
   initialStream: AuditStreamSummary | null;
   canChange: boolean;
+  entitled: boolean;
 }) {
   const [stream, setStream] = useState(initialStream);
   const [signingSecret, setSigningSecret] = useState<string | null>(null);
@@ -330,7 +342,9 @@ export function AuditStreamCard({
   }
 
   let body: React.ReactNode;
-  if (!stream) {
+  if (!stream && !entitled) {
+    body = <FeatureUnavailable feature="Audit log streaming" />;
+  } else if (!stream) {
     body = canChange ? (
       <StreamForm current={null} onSaved={handleSaved} onCancel={null} />
     ) : (
@@ -346,6 +360,7 @@ export function AuditStreamCard({
         {canChange ? (
           <StreamActions
             stream={stream}
+            entitled={entitled}
             onChanged={setStream}
             onEdit={() => {
               setSigningSecret(null);

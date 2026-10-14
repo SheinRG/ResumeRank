@@ -4,11 +4,14 @@ import type {
   DirectorySyncRequest,
   DirectorySyncResponse,
 } from "@boxyhq/saml-jackson";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 import { db } from "../db";
 import { logActivity } from "../activity";
 import { revokeWorkspaceSessions } from "../auth/sessions";
+import { companyHasFeature } from "../flags/evaluate";
+import { featureUnavailableMessage } from "../services/features";
 import { log } from "../observability/log";
 import { emailDomain } from "./domains";
 import { SSO_PRODUCT, ssoControllers } from "./jackson";
@@ -184,6 +187,33 @@ export async function applyDirectoryEvent(event: DirectorySyncEvent): Promise<vo
   }
 }
 
+function sameSecret(expected: string, given: string): boolean {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(expected), digest(given));
+}
+
+/**
+ * A company without directory sync gets a 403 its identity provider shows
+ * as a provisioning error, rather than changes stored and never applied.
+ * Only once the token checks out, so the answer says nothing to a caller
+ * who doesn't hold it; anything else is left to the directory service's own
+ * 401 and 404.
+ */
+async function refusedForEntitlement(request: DirectorySyncRequest): Promise<DirectorySyncResponse | null> {
+  const { directorySyncController } = await ssoControllers();
+  const { data: directory } = await directorySyncController.directories.get(request.directoryId);
+  if (!directory || !request.apiSecret || !sameSecret(directory.scim.secret, request.apiSecret)) return null;
+  if (await companyHasFeature(directory.tenant, "directory-sync")) return null;
+  return {
+    status: 403,
+    data: {
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+      status: "403",
+      detail: featureUnavailableMessage("directory-sync"),
+    },
+  };
+}
+
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -194,6 +224,8 @@ let queue: Promise<unknown> = Promise.resolve();
  */
 export function handleScimRequest(request: DirectorySyncRequest): Promise<DirectorySyncResponse> {
   const run = queue.then(async () => {
+    const refused = await refusedForEntitlement(request);
+    if (refused) return refused;
     const { directorySyncController } = await ssoControllers();
     return directorySyncController.requests.handle(request, applyDirectoryEvent);
   });

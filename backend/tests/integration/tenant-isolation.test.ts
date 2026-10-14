@@ -34,6 +34,7 @@ import {
 } from "../../src/services/departments";
 import { assignToJob, getHiringTeam, setJobDepartment, unassignFromJob } from "../../src/services/hiring-team";
 import { NotFoundError } from "../../src/services/errors";
+import { getFeatures } from "../../src/services/features";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
 import { resetMemberMfa } from "../../src/services/mfa";
 import { upsertScorecard } from "../../src/services/scorecards";
@@ -179,6 +180,12 @@ describe("reads never return another tenant's rows", () => {
   it("lists only the caller's SSO domains", async () => {
     const settings = await getSsoSettings(a.owner);
     expect(settings.domains.map((d) => d.id)).toEqual([a.domainId]);
+  });
+
+  it("decides features from the caller's overrides only", async () => {
+    await db.featureFlagOverride.create({ data: { companyId: b.companyId, flag: "sso", enabled: false } });
+    expect((await getFeatures(a.owner)).sso).toBe(true);
+    expect((await getFeatures(b.owner)).sso).toBe(false);
   });
 
   it("reads only the caller's company and activity", async () => {

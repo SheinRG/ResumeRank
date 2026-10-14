@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { env } from "../env";
+import { companyHasFeature } from "../flags/evaluate";
 import type { AuditStreamKind } from "../generated/prisma/enums";
 import { errorFields, log } from "../observability/log";
 import { open, seal, subkey } from "../sealed-box";
@@ -106,7 +107,31 @@ interface BatchOutcome {
 
 const NOTHING_DELIVERED: BatchOutcome = { delivered: 0, more: false };
 
+const NOT_ENTITLED_RECHECK_MS = 60 * 60 * 1000;
+export const STREAM_NOT_ENTITLED = "Audit log streaming isn't enabled for this workspace. Delivery resumes from here once it is.";
+
+/**
+ * A company that loses streaming keeps its stream and cursor: nothing is
+ * sent meanwhile, and when the feature comes back delivery picks up every
+ * entry written in between. It isn't a delivery failure, so no backoff.
+ */
+async function holdUnentitled(stream: ClaimedStream, now: Date): Promise<void> {
+  await db.auditStream.updateMany({
+    where: ownedBy(stream),
+    data: {
+      lastError: STREAM_NOT_ENTITLED,
+      nextAttemptAt: new Date(now.getTime() + NOT_ENTITLED_RECHECK_MS),
+      lockedAt: null,
+    },
+  });
+}
+
 async function deliverBatch(stream: ClaimedStream, send: SendStreamRequest, now: Date): Promise<BatchOutcome> {
+  if (!(await companyHasFeature(stream.companyId, "audit-streaming"))) {
+    await holdUnentitled(stream, now);
+    return NOTHING_DELIVERED;
+  }
+
   const secret = openStreamSecret(stream.secret, stream);
   if (secret === null) {
     log.error("audit_stream.secret_unreadable", { companyId: stream.companyId });

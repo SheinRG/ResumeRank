@@ -24,6 +24,7 @@ import type {
 } from "../validators/audit";
 import { assertCanAdmin, type TenantContext } from "./context";
 import { DomainError, ForbiddenError, NotFoundError } from "./errors";
+import { assertFeature } from "./features";
 
 export interface AuditStreamSummary {
   kind: AuditStreamKind;
@@ -190,6 +191,7 @@ async function checkDestination(url: string): Promise<void> {
  */
 export async function saveAuditStream(ctx: TenantContext, input: AuditStreamInput): Promise<SavedAuditStream> {
   assertOwner(ctx, "Only an owner can send the audit log outside ResumeRank.");
+  await assertFeature(ctx, "audit-streaming");
   await checkDestination(input.url);
   const destination = { companyId: ctx.companyId, kind: input.kind, url: input.url };
 
@@ -264,6 +266,7 @@ export async function setAuditStreamEnabled(
   input: AuditStreamEnabledInput,
 ): Promise<AuditStreamSummary> {
   assertOwner(ctx, "Only an owner can pause or resume audit streaming.");
+  if (input.enabled) await assertFeature(ctx, "audit-streaming");
 
   return tenantTransaction(ctx, async (tx) => {
     const { count } = await tx.auditStream.updateMany({
@@ -329,6 +332,7 @@ export async function testAuditStream(
   send: SendStreamRequest = postOutbound,
 ): Promise<{ sentAt: Date }> {
   assertOwner(ctx, "Only an owner can test audit streaming.");
+  await assertFeature(ctx, "audit-streaming");
   const limited = await rateLimit(`audit-stream-test:${ctx.companyId}`, STREAM_TEST_LIMIT);
   if (!limited.allowed) {
     throw new DomainError(`Too many test events. Try again in ${retryMessage(limited.retryAfterSeconds)}.`);
