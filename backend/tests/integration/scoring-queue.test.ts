@@ -20,6 +20,7 @@ import {
   getApplication,
   setApplicationRemoved,
 } from "../../src/services/applications";
+import { createWebhook, deleteWebhook } from "../../src/services/webhooks";
 import { createCandidate, updateCandidate } from "../../src/services/candidates";
 import { ForbiddenError } from "../../src/services/errors";
 import { createJob } from "../../src/services/jobs";
@@ -151,6 +152,25 @@ describe("requesting a score", () => {
 });
 
 describe("the worker", () => {
+  it("queues application.scored for subscribed webhooks in the same commit", async () => {
+    const { endpoint } = await createWebhook(a.owner, {
+      url: "https://93.184.215.14/resumerank",
+      events: ["application.scored"],
+    });
+    const { applicationId } = await addApplicant(a);
+    const { run } = await requestScoring(a.owner, applicationId);
+
+    await drainScoringQueue({ evaluate: fakeEvaluator("STRONG").evaluate, lanes: 1 });
+
+    const delivery = await db.webhookDelivery.findFirstOrThrow({ where: { endpointId: endpoint.id } });
+    expect(delivery.event).toBe("application.scored");
+    expect(delivery.payload).toMatchObject({
+      type: "application.scored",
+      data: { application: { id: applicationId, aiScore: 100 }, scoringRunId: run.id },
+    });
+    await deleteWebhook(a.owner, endpoint.id);
+  });
+
   it("scores a run and commits evaluations, pointer, score and audit row together", async () => {
     const { applicationId } = await addApplicant(a);
     const { run } = await requestScoring(a.owner, applicationId);

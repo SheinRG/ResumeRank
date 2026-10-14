@@ -27,6 +27,8 @@ import {
   type KeysetSort,
 } from "./pagination";
 import type { JobDetail } from "./jobs";
+import { applicationEventData } from "../webhooks/events";
+import { queueWebhookEvent } from "../webhooks/outbox";
 import type { ScoringRunView } from "./scoring";
 
 const APPLICATION_NOT_FOUND = "This application no longer exists.";
@@ -425,6 +427,7 @@ export async function createApplication(
         },
         tx,
       );
+      await queueWebhookEvent(tx, ctx.companyId, "application.created", applicationEventData(application));
       return application;
     });
   } catch (error) {
@@ -465,6 +468,14 @@ export async function updateStage(
       },
       tx,
     );
+    if (existing.stage !== stage) {
+      await queueWebhookEvent(
+        tx,
+        ctx.companyId,
+        "application.stage_changed",
+        applicationEventData(application, { previousStage: existing.stage }),
+      );
+    }
     return application;
   });
 }

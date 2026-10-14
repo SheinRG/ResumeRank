@@ -15,6 +15,8 @@ import {
   type ScoringJob,
 } from "./engine";
 import { computeScore } from "./math";
+import { applicationEventData } from "../webhooks/events";
+import { queueWebhookEvent } from "../webhooks/outbox";
 
 /**
  * Runs in flight at once, per tenant and overall. The per-tenant cap is also
@@ -258,7 +260,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         };
       }),
     });
-    await tx.application.update({
+    const scored = await tx.application.update({
       where: { id: run.applicationId },
       data: {
         latestScoringRunId: run.id,
@@ -277,6 +279,12 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         summary: `scored ${candidate.name} at ${aiScore}`,
       },
       tx,
+    );
+    await queueWebhookEvent(
+      tx,
+      run.companyId,
+      "application.scored",
+      applicationEventData(scored, { scoringRunId: run.id }),
     );
   });
 }

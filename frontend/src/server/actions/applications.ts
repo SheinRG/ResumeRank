@@ -14,6 +14,7 @@ import {
 } from "@resumerank/core/services/applications";
 import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
+import { scheduleWebhookDrain } from "@/server/webhook-drain";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
 
 function revalidateApplication(application: Application): void {
@@ -37,6 +38,7 @@ export async function createApplicationAction(
     const user = await requireCan("application.manage");
     const application = await createApplication(tenantContext(user), parsed.data);
     revalidateApplication(application);
+    scheduleWebhookDrain();
     return actionOk(application);
   });
 }
@@ -55,6 +57,7 @@ export async function updateStageAction(
     const user = await requireCan("application.stage");
     const application = await updateStage(tenantContext(user), parsed.data);
     revalidateApplication(application);
+    scheduleWebhookDrain();
     return actionOk(application);
   });
 }

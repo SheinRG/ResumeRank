@@ -184,6 +184,7 @@ model Membership {
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   jobAssignments    JobAssignment[]
   departmentMembers DepartmentMember[]
+  apiKeys           ApiKey[]
 
   @@unique([userId, companyId])
   @@unique([companyId, directoryUserId])
@@ -219,8 +220,8 @@ model Company {
 
   users            User[]
   memberships      Membership[]
-  loginSessions    LoginSession[]  @relation("LoginSessionCompany")
-  ssoLoginSessions LoginSession[]  @relation("LoginSessionSso")
+  loginSessions    LoginSession[]        @relation("LoginSessionCompany")
+  ssoLoginSessions LoginSession[]        @relation("LoginSessionSso")
   jobs             Job[]
   departments      Department[]
   candidates       Candidate[]
@@ -231,6 +232,7 @@ model Company {
   domains          CompanyDomain[]
   auditStream      AuditStream?
   featureOverrides FeatureFlagOverride[]
+  webhookEndpoints WebhookEndpoint[]
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -730,6 +732,76 @@ model FeatureFlagOverride {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, flag])
+}
+
+/// A token for the public REST API. It acts as the admin who created it,
+/// with their current role narrowed by `scopes`, and rides their membership:
+/// leaving the workspace deletes it. Only a hash of the secret is stored.
+model ApiKey {
+  id          String    @id @default(cuid())
+  companyId   String
+  createdById String
+  name        String
+  /// The token's first characters, shown so people can tell keys apart.
+  prefix      String
+  secretHash  String
+  scopes      String[]
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  membership Membership @relation(fields: [createdById, companyId], references: [userId, companyId], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+}
+
+/// A customer URL that receives signed event notifications.
+model WebhookEndpoint {
+  id              String    @id @default(cuid())
+  companyId       String
+  url             String
+  /// Sealed signing secret, bound to the company and URL.
+  secret          String
+  events          String[]
+  enabled         Boolean   @default(true)
+  lastDeliveredAt DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([companyId])
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+/// The outbox: one row per event per endpoint, written in the transaction
+/// that caused the event, delivered at least once with backoff.
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  companyId     String
+  endpointId    String
+  event         String
+  payload       Json
+  status        WebhookDeliveryStatus @default(PENDING)
+  attempts      Int                   @default(0)
+  nextAttemptAt DateTime              @default(now())
+  lockedAt      DateTime?
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime              @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
 }
 
 /// Sliding-window counters shared by every app instance (rate limits, failed
