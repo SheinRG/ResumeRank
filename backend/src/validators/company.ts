@@ -66,3 +66,12 @@ export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
 export const switchWorkspaceSchema = z.object({
   companyId: z.string().min(1, "Choose a workspace").max(64),
 });
+
+export const transferOwnershipSchema = z.object({
+  userId: z.string().min(1, "Choose who becomes the owner"),
+  /** The role the outgoing owner keeps; they stay in the workspace. */
+  stayAs: inviteRoleSchema,
+  confirmName: z.string().trim().min(1, "Type the workspace name to confirm"),
+  password: z.string().optional(),
+});
+export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;

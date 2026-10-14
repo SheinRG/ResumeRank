@@ -120,6 +120,19 @@ Departments (admins). `20261017090000_granular_rbac` adds the roles and the
 three tables, expand-only: the previous release reads an unknown role as
 read-only.
 
+**Ownership transfer.** A workspace may have several owners; an owner can
+make a teammate an owner from the team table, and only owners change or
+remove other owners. Handing the workspace over is its own flow (Settings →
+Company, `transferOwnership` in `services/team.ts`): one tenant transaction
+promotes the teammate and steps the caller down to the role they pick, so
+there is never a moment with no successor or an extra owner. Both updates are
+conditional on the roles just read, so if another owner changes either person
+meanwhile, the transfer aborts instead of overwriting them. The caller types
+the workspace name and, if the account has one, its password (rate-limited
+like a login). The new owner must already be a member with a verified email,
+because they take over the security policies. The audit log records it as
+`company.ownership_transfer`.
+
 ## Two-factor authentication
 
 People can add an authenticator app (TOTP), passkeys or security keys

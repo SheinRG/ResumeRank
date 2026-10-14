@@ -8,10 +8,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { db } from "@resumerank/core/db";
 import { CompanyForm } from "@/components/settings/company-form";
+import { TransferOwnership } from "@/components/settings/transfer-ownership";
 import { canAdmin, requireMember } from "@/lib/auth/guards";
 import { formatNumber } from "@/lib/format";
 import { getAiUsage, getCompany } from "@/server/queries/company";
+import { listTeam } from "@/server/queries/users";
 
 export const metadata: Metadata = { title: "Company · Settings" };
 
@@ -19,6 +22,14 @@ export default async function SettingsCompanyPage() {
   const user = await requireMember();
   const [company, aiUsage] = await Promise.all([getCompany(), getAiUsage()]);
   const canEdit = canAdmin(user.role);
+  const isOwner = user.role === "OWNER";
+  const [team, account] = isOwner
+    ? await Promise.all([
+        listTeam(),
+        db.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } }),
+      ])
+    : [[], null];
+  const successors = team.filter((member) => member.role !== "OWNER" && member.emailVerified);
   const usedPercent = Math.min(100, (aiUsage.used / aiUsage.budget) * 100);
 
   return (
@@ -53,6 +64,25 @@ export default async function SettingsCompanyPage() {
           </p>
         </CardContent>
       </Card>
+
+      {isOwner ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Transfer ownership</CardTitle>
+            <CardDescription>
+              Leaving the company or handing it over? Make a teammate the owner instead of
+              promoting and demoting by hand.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TransferOwnership
+              companyName={company.name}
+              candidates={successors}
+              hasPassword={Boolean(account?.passwordHash)}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
