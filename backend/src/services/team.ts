@@ -1,11 +1,12 @@
 import { tenantDb, tenantTransaction, type TenantTx } from "../tenant-db";
 import { logActivity } from "../activity";
+import { verifyPassword } from "../auth/password";
 import { revokeWorkspaceSessions } from "../auth/sessions";
 import { createCompanyInvite } from "../auth/tokens";
 import { queueInviteEmail } from "../email/messages";
 import { AUTH_LIMIT, rateLimit } from "../rate-limit";
 import type { Prisma } from "../generated/prisma/client";
-import type { InviteMemberInput } from "../validators/company";
+import type { InviteMemberInput, TransferOwnershipInput } from "../validators/company";
 import type { Role } from "../validators/enums";
 import type { RemoveMemberInput } from "../validators/user";
 import { assertCanAdmin, type TenantContext } from "./context";
@@ -139,6 +140,96 @@ export async function updateMemberRole(
       tx,
     );
     return user;
+  });
+}
+
+export interface OwnershipTransfer {
+  newOwner: TeamMember;
+  previousOwner: TeamMember;
+}
+
+/**
+ * Hands the owner role to a teammate and steps the caller down in one
+ * transaction, so the workspace never passes through a moment with the
+ * outgoing owner demoted and no successor (or two owners where one was
+ * meant). Typing the workspace name, and the password where the account has
+ * one, guards against a misclick or an unattended session: the outgoing
+ * owner can't undo this themselves.
+ */
+export async function transferOwnership(
+  ctx: TenantContext,
+  input: TransferOwnershipInput,
+): Promise<OwnershipTransfer> {
+  if (ctx.role !== "OWNER") {
+    throw new ForbiddenError("Only an owner can transfer ownership.");
+  }
+  const { userId, stayAs, confirmName, password } = input;
+  if (userId === ctx.actorId) {
+    throw new DomainError("Choose a teammate other than yourself.");
+  }
+
+  // Each attempt may test a password, so it's throttled like a login.
+  const limited = await rateLimit(`ownership:${ctx.actorId}`, AUTH_LIMIT);
+  if (!limited.allowed) {
+    const minutes = Math.max(1, Math.ceil(limited.retryAfterSeconds / 60));
+    throw new DomainError(
+      `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+    );
+  }
+
+  const [actor, company] = await Promise.all([
+    tenantDb(ctx).user.findUnique({ where: { id: ctx.actorId }, select: { passwordHash: true } }),
+    tenantDb(ctx).company.findUnique({ where: { id: ctx.companyId }, select: { name: true } }),
+  ]);
+  if (!actor || !company) {
+    throw new NotFoundError("Your company no longer exists.");
+  }
+  if (confirmName.trim().toLowerCase() !== company.name.trim().toLowerCase()) {
+    throw new DomainError("That isn't this workspace's name.");
+  }
+  if (actor.passwordHash && !(password && (await verifyPassword(password, actor.passwordHash)))) {
+    throw new DomainError("Your password is incorrect.");
+  }
+
+  return tenantTransaction(ctx, async (tx) => {
+    const target = await findTeammate(tx, ctx, userId);
+    if (target.role === "OWNER") {
+      throw new ConflictError(`${target.user.name} is already an owner.`);
+    }
+    // They'll hold the workspace's security policies, so the address must be proven theirs.
+    if (!target.user.emailVerified) {
+      throw new DomainError(`${target.user.name} hasn't verified their email yet.`);
+    }
+
+    // Conditional on the roles just read, so a concurrent change by another owner aborts this.
+    const promoted = await tx.membership.updateMany({
+      where: { id: target.id, companyId: ctx.companyId, role: target.role },
+      data: { role: "OWNER" },
+    });
+    const demoted = await tx.membership.updateMany({
+      where: { userId: ctx.actorId, companyId: ctx.companyId, role: "OWNER" },
+      data: { role: stayAs },
+    });
+    if (promoted.count !== 1 || demoted.count !== 1) {
+      throw new ConflictError("The team changed while you were doing this. Reload and try again.");
+    }
+
+    const [newOwner, previousOwner] = await Promise.all(
+      [userId, ctx.actorId].map(async (id) => toTeamMember(await findTeammate(tx, ctx, id))),
+    );
+    await logActivity(
+      {
+        companyId: ctx.companyId,
+        actorId: ctx.actorId,
+        action: "company.ownership_transfer",
+        entityType: "company",
+        entityId: ctx.companyId,
+        summary: `transferred ownership to ${newOwner.name}`,
+        metadata: { to: newOwner.id, fromRole: target.role, previousOwnerRole: stayAs },
+      },
+      tx,
+    );
+    return { newOwner, previousOwner };
   });
 }
 

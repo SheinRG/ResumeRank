@@ -19,9 +19,12 @@ import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { logActivity } from "@resumerank/core/activity";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
+import { transferOwnershipSchema } from "@resumerank/core/validators/company";
 import {
   removeMember,
+  transferOwnership,
   updateMemberRole,
+  type OwnershipTransfer,
   type TeamMember,
 } from "@resumerank/core/services/team";
 
@@ -261,6 +264,28 @@ export async function updateNotificationPreferencesAction(
   });
 }
 
+export async function transferOwnershipAction(
+  input: unknown,
+): Promise<ActionResult<OwnershipTransfer>> {
+  return runAction("transferOwnership", async () => {
+    const parsed = transferOwnershipSchema.safeParse(input);
+    if (!parsed.success) {
+      return actionError(
+        "Check the highlighted fields.",
+        parsed.error.flatten().fieldErrors,
+      );
+    }
+    const admin = await requireAdmin();
+    const transfer = await transferOwnership(tenantContext(admin), parsed.data);
+
+    // The caller's own role changed, so every owner-only settings page re-renders.
+    revalidatePath("/settings", "layout");
+    expireTenantReads(admin.companyId);
+
+    return actionOk(transfer);
+  });
+}
+
 export async function deleteAccountAction(
   input: unknown,
 ): Promise<ActionResult<{ deleted: true }>> {
@@ -302,7 +327,7 @@ export async function deleteAccountAction(
       if (!inheritor) {
         return actionError(
           membership.role === "OWNER"
-            ? `Transfer the owner role in ${membership.company.name} to a teammate before deleting your account.`
+            ? `Transfer ownership of ${membership.company.name} to a teammate (Settings → Company) before deleting your account.`
             : `${membership.company.name} has no other owner to inherit your data. Contact support.`,
         );
       }

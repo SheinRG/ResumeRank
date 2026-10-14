@@ -51,6 +51,7 @@ import {
   listTeam,
   removeMember,
   revokeInvite,
+  transferOwnership,
   updateMemberRole,
 } from "../../src/services/team";
 import { candidateUpdateSchema } from "../../src/validators/candidate";
@@ -310,13 +311,17 @@ describe("writes to another tenant's ids fail as not found", () => {
     await expect(requestJobScoring(a.owner, b.jobId)).rejects.toThrow(NotFoundError);
   });
 
-  it("rejects role changes, removal, MFA resets, sign-outs and invite revocation", async () => {
+  it("rejects role changes, removal, MFA resets, sign-outs, ownership transfers and invite revocation", async () => {
+    const { name } = await db.company.findUniqueOrThrow({ where: { id: a.companyId }, select: { name: true } });
     await expect(
       updateMemberRole(a.owner, { userId: b.memberId, role: "ADMIN" }),
     ).rejects.toThrow(NotFoundError);
     await expect(removeMember(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(resetMemberMfa(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
     await expect(signOutMember(a.owner, { userId: b.memberId })).rejects.toThrow(NotFoundError);
+    await expect(
+      transferOwnership(a.owner, { userId: b.memberId, stayAs: "ADMIN", confirmName: name }),
+    ).rejects.toThrow(NotFoundError);
     await expect(revokeInvite(a.owner, b.inviteId)).rejects.toThrow(NotFoundError);
   });
 
