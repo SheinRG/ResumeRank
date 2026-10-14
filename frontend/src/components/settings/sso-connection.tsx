@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CopyValue } from "@/components/settings/copy-value";
+import { FeatureUnavailable } from "@/components/settings/feature-unavailable";
 import { FormField } from "@/components/shared/form-field";
 import { useActionForm } from "@/components/shared/use-action-form";
 import { Badge } from "@/components/ui/badge";
@@ -172,10 +173,13 @@ function ConnectionForm({ onSaved }: { onSaved: (connection: SsoConnectionSummar
 export function SsoConnection({
   initialConnection,
   enforced,
+  entitled,
   serviceProvider,
 }: {
   initialConnection: SsoConnectionSummary | null;
   enforced: boolean;
+  /** Without it, an existing connection can still be disconnected but not replaced. */
+  entitled: boolean;
   serviceProvider: SsoSettings["serviceProvider"];
 }) {
   const [connection, setConnection] = useState(initialConnection);
@@ -196,10 +200,19 @@ export function SsoConnection({
             enforced={enforced}
             onRemoved={() => setConnection(null)}
           />
-          <Button type="button" variant="outline" className="w-fit" onClick={() => setReplacing(true)}>
-            Replace connection
-          </Button>
+          {entitled ? (
+            <Button type="button" variant="outline" className="w-fit" onClick={() => setReplacing(true)}>
+              Replace connection
+            </Button>
+          ) : (
+            <FeatureUnavailable
+              feature="Single sign-on"
+              detail="Members can keep signing in through this connection, but it can't be replaced. Ask ResumeRank support to turn single sign-on on."
+            />
+          )}
         </div>
+      ) : !entitled ? (
+        <FeatureUnavailable feature="Single sign-on" />
       ) : (
         <div className="flex flex-col gap-3">
           <ConnectionForm

@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CopyValue } from "@/components/settings/copy-value";
+import { FeatureUnavailable } from "@/components/settings/feature-unavailable";
 import { FormField } from "@/components/shared/form-field";
 import { useActionForm } from "@/components/shared/use-action-form";
 import { Button } from "@/components/ui/button";
@@ -93,7 +94,13 @@ function Connected({
   );
 }
 
-export function SsoDirectory({ initialDirectory }: { initialDirectory: DirectorySummary | null }) {
+export function SsoDirectory({
+  initialDirectory,
+  entitled,
+}: {
+  initialDirectory: DirectorySummary | null;
+  entitled: boolean;
+}) {
   const [directory, setDirectory] = useState<DirectorySummary | null>(initialDirectory);
   const [token, setToken] = useState<string | null>(null);
   const [type, setType] = useState<DirectoryType>("okta-scim-v2");
@@ -109,16 +116,25 @@ export function SsoDirectory({ initialDirectory }: { initialDirectory: Directory
 
   if (directory) {
     return (
-      <Connected
-        directory={directory}
-        token={token}
-        onRemoved={() => {
-          setDirectory(null);
-          setToken(null);
-        }}
-      />
+      <div className="flex flex-col gap-4">
+        {entitled ? null : (
+          <FeatureUnavailable
+            feature="Directory sync"
+            detail="Your identity provider's changes are refused until it's turned back on. Ask ResumeRank support, or disconnect it."
+          />
+        )}
+        <Connected
+          directory={directory}
+          token={token}
+          onRemoved={() => {
+            setDirectory(null);
+            setToken(null);
+          }}
+        />
+      </div>
     );
   }
+  if (!entitled) return <FeatureUnavailable feature="Directory sync" />;
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();

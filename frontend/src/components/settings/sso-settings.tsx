@@ -15,15 +15,19 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { setSsoEnforcedAction } from "@/server/actions/sso";
+import type { FeatureSet } from "@/server/queries/features";
 import type { DirectorySummary, SsoSettings } from "@/server/queries/sso";
 
 function Enforcement({
   enforced,
   canChange,
+  entitled,
   onChange,
 }: {
   enforced: boolean;
   canChange: boolean;
+  /** Without it SSO can still be made optional, never required. */
+  entitled: boolean;
   onChange: (enforced: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -50,15 +54,17 @@ function Enforcement({
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium text-foreground">Require SSO for members</p>
         <p className="text-sm text-muted-foreground">
-          {canChange
-            ? "Everyone except owners must sign in through your identity provider. Owners keep their password so a broken IdP can't lock you out."
-            : "Only an owner can change this."}
+          {!canChange
+            ? "Only an owner can change this."
+            : entitled || enforced
+              ? "Everyone except owners must sign in through your identity provider. Owners keep their password so a broken IdP can't lock you out."
+              : "Single sign-on isn't enabled for this workspace."}
         </p>
       </div>
       <Switch
         checked={enforced}
         onCheckedChange={toggle}
-        disabled={!canChange || isPending}
+        disabled={!canChange || isPending || (!entitled && !enforced)}
         aria-label="Require SSO for members"
       />
     </div>
@@ -68,10 +74,12 @@ function Enforcement({
 export function SsoSettingsPanel({
   settings,
   directory,
+  features,
   isOwner,
 }: {
   settings: SsoSettings;
   directory: DirectorySummary | null;
+  features: FeatureSet;
   isOwner: boolean;
 }) {
   const [enforced, setEnforced] = useState(settings.enforced);
@@ -103,6 +111,7 @@ export function SsoSettingsPanel({
           <SsoConnection
             initialConnection={settings.connection}
             enforced={enforced}
+            entitled={features.sso}
             serviceProvider={settings.serviceProvider}
           />
         </CardContent>
@@ -118,7 +127,7 @@ export function SsoSettingsPanel({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SsoDirectory initialDirectory={directory} />
+          <SsoDirectory initialDirectory={directory} entitled={features["directory-sync"]} />
         </CardContent>
       </Card>
 
@@ -130,7 +139,7 @@ export function SsoSettingsPanel({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Enforcement enforced={enforced} canChange={isOwner} onChange={setEnforced} />
+          <Enforcement enforced={enforced} canChange={isOwner} entitled={features.sso} onChange={setEnforced} />
         </CardContent>
       </Card>
     </div>

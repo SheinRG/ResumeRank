@@ -7,6 +7,7 @@ import { companyDirectory } from "../sso/directory";
 import { SSO_PRODUCT, ssoControllers } from "../sso/jackson";
 import type { CreateDirectoryInput } from "../validators/sso";
 import { assertCanAdmin, type TenantContext } from "./context";
+import { assertFeature } from "./features";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 
 const PROVIDER_LABELS: Record<Directory["type"], string> = {
@@ -68,6 +69,7 @@ export async function createDirectory(
 ): Promise<DirectoryCredentials> {
   assertCanAdmin(ctx);
   assertSsoAvailable();
+  await assertFeature(ctx, "directory-sync");
 
   const [existing, verifiedDomains, company] = await Promise.all([
     companyDirectory(ctx.companyId),

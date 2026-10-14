@@ -345,6 +345,72 @@ sets `app.workspace_switch` so the second trigger doesn't replay a stale role.
 Dropping `User.role`, `User.directoryUserId` and both triggers is the
 contract step for a later release.
 
+## Feature flags and entitlements
+
+A flag is decided per company, so everyone in a workspace sees the same
+thing. Flags are defined in code (`backend/src/flags/registry.ts`), each
+one either a **release** (a new feature reaching tenants gradually) or an
+**entitlement** (something a workspace may or may not use, which plans will
+grant). There is no flag vendor: state lives in Postgres like the rate
+limits and queues, so local, CI and production behave alike.
+
+**Resolution** (`flags/resolve.ts`, pure) goes in this order:
+
+1. A staff **override** for the company (`FeatureFlagOverride`).
+2. The flag's **rollout percentage**: the company's bucket, 0–99, is a
+   SHA-256 of the flag and company id. A company keeps its bucket, so raising
+   the percentage only adds companies. Each flag hashes differently, so the
+   same tenants aren't first in line for every release.
+3. The flag's **default**.
+
+Today's flags are entitlements on the enterprise features: `sso`,
+`directory-sync` and `audit-streaming`. All three default to on, so the
+flags change nothing for existing tenants until an override is set.
+
+**Enforcement** happens in the services, like roles do.
+`assertFeature(ctx, flag)` (`services/features.ts`) throws
+`FeatureUnavailableError`, a `ForbiddenError`, before a feature is turned
+on or used: saving an SSO connection, requiring SSO, connecting directory
+sync, and saving, testing or resuming an audit stream. Turning something
+*off* is never gated, so a workspace that loses a feature can still
+disconnect it. Work without a tenant context checks `companyHasFeature`
+(`flags/evaluate.ts`):
+
+- **SCIM requests** for an unentitled company get a 403 the identity provider
+  reports as a provisioning error, instead of changes being stored and never
+  applied. The check runs only once the directory's bearer token matches,
+  so callers without the token still get the usual 401 or 404.
+- **The audit stream drain** holds an unentitled company's stream in place:
+  its cursor doesn't move, there's no failure or backoff, it re-checks
+  hourly, and once the feature returns, delivery catches up on every entry
+  written meanwhile.
+- **SSO sign-in** through an existing connection keeps working. Refusing it
+  would strand members whose only way in is the identity provider, so losing
+  `sso` stops a workspace from changing or requiring SSO but doesn't lock
+  anyone out.
+
+Pages read the whole set once (`getFeatures`, `server/queries/features.ts`)
+and replace a feature's setup with a "not enabled for this workspace"
+notice (`components/settings/feature-unavailable.tsx`), keeping only the
+controls that turn it off.
+
+**Overrides are staff-only.** The tenant role may read
+`FeatureFlagOverride` (RLS, `tenant_isolation`) but not write it. Staff use
+`npm run flags`, which connects as the table owner like seeds do:
+
+```
+npm run flags -- list
+npm run flags -- show <company-slug>
+npm run flags -- set <company-slug> <flag> on|off --reason "..."
+npm run flags -- clear <company-slug> <flag>
+```
+
+Every change writes `feature.override` to the company's own audit log, so
+its admins see it in the feed under the "ResumeRank" actor. Point it at
+another database with `DATABASE_URL=...`. Rollout percentages are code
+changes, reviewed like any other. Removing a flag from the registry leaves
+its rows inert, and `20261018090000_feature_flags` is expand-only.
+
 ## Multi-tenancy
 
 ResumeRank runs many companies on one shared Postgres database, isolated by

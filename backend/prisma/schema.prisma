@@ -230,6 +230,7 @@ model Company {
   scoringRuns      ScoringRun[]
   domains          CompanyDomain[]
   auditStream      AuditStream?
+  featureOverrides FeatureFlagOverride[]
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -710,6 +711,25 @@ model AuditStream {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([enabled, nextAttemptAt])
+}
+
+/// Staff's per-company setting for one feature flag (`backend/src/flags`),
+/// written only by the flags CLI. It beats the flag's rollout and default, so
+/// it both rolls a feature out to one tenant early and holds one back.
+model FeatureFlagOverride {
+  id        String   @id @default(cuid())
+  companyId String
+  /// A key of `FLAGS`. Rows for a flag that has since been removed are ignored.
+  flag      String
+  enabled   Boolean
+  /// Why staff set it, for whoever finds it later.
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, flag])
 }
 
 /// Sliding-window counters shared by every app instance (rate limits, failed

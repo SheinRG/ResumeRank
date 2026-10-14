@@ -31,6 +31,7 @@ import type {
   SetSsoEnforcedInput,
 } from "../validators/sso";
 import { assertCanAdmin, type TenantContext } from "./context";
+import { assertFeature } from "./features";
 import { isPrismaError } from "./prisma-errors";
 import { ConflictError, DomainError, ForbiddenError, NotFoundError } from "./errors";
 
@@ -343,6 +344,7 @@ export async function saveSsoConnection(
 ): Promise<SsoConnectionSummary> {
   assertCanAdmin(ctx);
   assertSsoAvailable();
+  await assertFeature(ctx, "sso");
 
   if (input.type === "saml") {
     await assertReadableMetadata(input.metadataXml);
@@ -456,6 +458,7 @@ export async function setSsoEnforced(
 
   if (input.enforced) {
     assertSsoAvailable();
+    await assertFeature(ctx, "sso");
     const live = (await listConnections(ctx)).some((connection) => !connection.deactivated);
     if (!live) throw new ConflictError("Connect an identity provider before requiring SSO.");
   }

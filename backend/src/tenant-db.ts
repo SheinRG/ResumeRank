@@ -13,6 +13,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "Department",
   "DepartmentMember",
   "JobAssignment",
+  "FeatureFlagOverride",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([
