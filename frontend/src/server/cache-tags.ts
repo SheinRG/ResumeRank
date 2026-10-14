@@ -25,3 +25,8 @@ export function expireScoredTenants(companyIds: string[]): void {
     revalidateTag(dashboardTag(companyId), { expire: 0 });
   }
 }
+
+/** `expireTenantReads` for the public API's route handlers, where `updateTag` isn't allowed. */
+export function expireTenantReadsFromRoute(companyId: string): void {
+  revalidateTag(dashboardTag(companyId), { expire: 0 });
+}

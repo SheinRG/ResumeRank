@@ -411,6 +411,49 @@ another database with `DATABASE_URL=...`. Rollout percentages are code
 changes, reviewed like any other. Removing a flag from the registry leaves
 its rows inert, and `20261018090000_feature_flags` is expand-only.
 
+## Public API and webhooks
+
+The REST API (`/api/v1`, reference in `docs/api.md`) is a third adapter over
+the same services, next to server actions and the queue workers.
+
+**Keys.** `ApiKey` rows hold a SHA-256 of a 256-bit secret. The token
+(`rr_<id>_<secret>`, `backend/src/api/tokens.ts`) carries the row id, so
+authentication is one primary-key read. That read runs on the owner
+connection, because the key is what names the tenant; `authenticateApiKey`
+(`backend/src/api/auth.ts`) then returns an ordinary `TenantContext`. A key
+acts as its creator: the context's role is their **current** membership role,
+read on every request, and the row references that membership with a
+cascading foreign key, so leaving the workspace deletes their keys. Scopes
+(`validators/api.ts`) only narrow on top of that. `handleApi`
+(`frontend/src/server/api-route.ts`) authenticates, rate-limits per key
+(Postgres-backed, 600/min), checks the scope, maps `DomainError`s to HTTP
+statuses, and writes one `api` log line. Every route then calls the same
+service the app does, so role checks, job access and tenant scoping apply
+unchanged, and another tenant's ids answer 404. Responses go through explicit
+serializers (`backend/src/api/serialize.ts`), so a field added for the app
+never leaks into the contract. Writes are attributed to the key's creator in
+the activity log. Keys aren't subject to session policies (SSO, MFA,
+lifetime); that's why only admins can create them, and they can expire.
+
+**Webhooks.** `WebhookEndpoint` holds the URL, the subscribed events and the
+signing secret, sealed under an `AUTH_SECRET`-derived key and bound to the
+company and URL. `queueWebhookEvent` (`backend/src/webhooks/outbox.ts`)
+writes a `WebhookDelivery` row per subscribed endpoint inside the
+mutation's own tenant transaction: `createApplication`, `updateStage` (only
+when the stage really changes) and the scoring worker's commit. An event
+exists if and only if its change committed. `drainWebhooks`
+(`webhooks/delivery.ts`) claims due rows with `SKIP LOCKED`, signs the body
+like the audit stream (`t=…,v1=HMAC-SHA256`), and posts through
+`postOutbound`, which resolves and checks the address on every connection,
+so DNS rebinding can't reach internal hosts. A failure backs off (1 minute
+doubling to an hour) and is marked `FAILED` after 10 attempts. Delivery is at
+least once and unordered, so receivers dedupe on the payload `id`. Drains run
+via `after()` from the adapters that queue events (and after a scoring drain
+that finished runs), and from `GET /api/cron/webhooks`, which also purges
+settled rows after 30 days. A paused endpoint keeps queueing but is not drained, so resuming it sends everything that happened meanwhile. Settings →
+API (admins) manages keys and endpoints and shows recent deliveries.
+`20261020090000_public_api` adds the three tables with RLS (expand-only).
+
 ## Multi-tenancy
 
 ResumeRank runs many companies on one shared Postgres database, isolated by

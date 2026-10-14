@@ -13,6 +13,7 @@ const TABS = [
   { value: "company", href: "/settings/company", label: "Company" },
   { value: "sso", href: "/settings/sso", label: "SSO" },
   { value: "audit", href: "/settings/audit", label: "Audit log" },
+  { value: "api", href: "/settings/api", label: "API" },
 ] as const;
 
 export function SettingsNav() {

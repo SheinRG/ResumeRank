@@ -14,6 +14,9 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "DepartmentMember",
   "JobAssignment",
   "FeatureFlagOverride",
+  "ApiKey",
+  "WebhookEndpoint",
+  "WebhookDelivery",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

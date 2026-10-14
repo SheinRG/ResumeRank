@@ -15,6 +15,7 @@ import {
   updateStage,
 } from "../../src/services/applications";
 import {
+  createCandidate,
   deleteCandidate,
   exportCandidatesCsv,
   getCandidate,
@@ -47,6 +48,14 @@ import {
   requestJobScoring,
   requestScoring,
 } from "../../src/services/scoring";
+import { createApiKey, listApiKeys, revokeApiKey } from "../../src/services/api-keys";
+import {
+  createWebhook,
+  deleteWebhook,
+  listWebhooks,
+  sendTestWebhook,
+  setWebhookEnabled,
+} from "../../src/services/webhooks";
 import {
   listPendingInvites,
   listTeam,
@@ -55,7 +64,7 @@ import {
   transferOwnership,
   updateMemberRole,
 } from "../../src/services/team";
-import { candidateUpdateSchema } from "../../src/validators/candidate";
+import { candidateCreateSchema, candidateUpdateSchema } from "../../src/validators/candidate";
 import { jobUpdateSchema } from "../../src/validators/job";
 import {
   applicationListParamsSchema,
@@ -90,15 +99,42 @@ async function snapshot(tenant: TenantFixture) {
     db.department.findUnique({ where: { id: tenant.departmentId }, include: { members: true } }),
     db.jobAssignment.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
   ]);
-  return { job, candidate, application, member, memberships, invite, domain, activityCount, department, assignments };
+  const [apiKeys, webhookEndpoints] = await Promise.all([
+    db.apiKey.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
+    db.webhookEndpoint.findMany({
+      where: { companyId: tenant.companyId },
+      include: { deliveries: true },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+  return {
+    job,
+    candidate,
+    application,
+    member,
+    memberships,
+    invite,
+    domain,
+    activityCount,
+    department,
+    assignments,
+    apiKeys,
+    webhookEndpoints,
+  };
 }
 
 let a: TenantFixture;
 let b: TenantFixture;
 let bBefore: Awaited<ReturnType<typeof snapshot>>;
+let bApiKeyId: string;
+let bEndpointId: string;
 
 beforeAll(async () => {
   [a, b] = await Promise.all([createTenant("iso-a"), createTenant("iso-b")]);
+  bApiKeyId = (await createApiKey(b.owner, { name: "B's key", scopes: ["jobs:read"], expiresInDays: null })).key.id;
+  bEndpointId = (
+    await createWebhook(b.owner, { url: "https://93.184.215.14/isolation", events: ["application.created"] })
+  ).endpoint.id;
   bBefore = await snapshot(b);
 });
 
@@ -176,6 +212,11 @@ describe("reads never return another tenant's rows", () => {
     expect((await listDepartmentOptions(a.owner)).map((d) => d.id)).toEqual([a.departmentId]);
     expect(await getHiringTeam(a.owner, b.jobId)).toBeNull();
     expect((await getHiringTeam(a.owner, a.jobId))?.department?.id).toBe(a.departmentId);
+  });
+
+  it("lists only the caller's API keys and webhook endpoints", async () => {
+    expect((await listApiKeys(a.owner)).map((key) => key.id)).not.toContain(bApiKeyId);
+    expect((await listWebhooks(a.owner)).map((endpoint) => endpoint.id)).not.toContain(bEndpointId);
   });
 
   it("lists only the caller's SSO domains", async () => {
@@ -330,6 +371,25 @@ describe("writes to another tenant's ids fail as not found", () => {
       transferOwnership(a.owner, { userId: b.memberId, stayAs: "ADMIN", confirmName: name }),
     ).rejects.toThrow(NotFoundError);
     await expect(revokeInvite(a.owner, b.inviteId)).rejects.toThrow(NotFoundError);
+  });
+
+  it("rejects revoking another tenant's API key and changing its webhook endpoints", async () => {
+    await expect(revokeApiKey(a.owner, bApiKeyId)).rejects.toThrow(NotFoundError);
+    await expect(setWebhookEnabled(a.owner, { id: bEndpointId, enabled: false })).rejects.toThrow(NotFoundError);
+    await expect(sendTestWebhook(a.owner, bEndpointId)).rejects.toThrow(NotFoundError);
+    await expect(deleteWebhook(a.owner, bEndpointId)).rejects.toThrow(NotFoundError);
+
+    // A's changes never queue events for B's endpoint; the snapshot check below confirms it.
+    const candidate = await createCandidate(
+      a.owner,
+      candidateCreateSchema.parse({
+        name: "Webhook probe",
+        email: `webhook-probe-${Date.now()}@example.test`,
+        source: "MANUAL",
+        resumeText: RESUME_TEXT,
+      }),
+    );
+    await createApplication(a.owner, { jobId: a.jobId, candidateId: candidate.id });
   });
 
   it("refuses to open another tenant's workspace in a sign-in", async () => {

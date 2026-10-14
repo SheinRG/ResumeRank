@@ -2,6 +2,7 @@ import { after } from "next/server";
 
 import { errorFields, log } from "@resumerank/core/observability/log";
 import { drainScoringQueue } from "@resumerank/core/scoring/queue";
+import { drainWebhooks } from "@resumerank/core/webhooks/delivery";
 import { expireScoredTenants } from "@/server/cache-tags";
 
 /**
@@ -15,6 +16,8 @@ export function scheduleScoringDrain(): void {
     try {
       const { companyIds } = await drainScoringQueue();
       expireScoredTenants(companyIds);
+      // Finished runs queue `application.scored`; send them while still warm.
+      if (companyIds.length > 0) await drainWebhooks();
     } catch (error) {
       log.error("scoring.drain_failed", errorFields(error));
     }
