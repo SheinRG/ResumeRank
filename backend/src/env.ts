@@ -65,7 +65,12 @@ const envSchema = z.object({
    * without everyone having to set their authenticator app up again.
    */
   MFA_ENCRYPTION_KEY: z.string().min(32, "MFA_ENCRYPTION_KEY must be at least 32 characters").optional(),
-  /** Bearer token a scheduler sends to the /api/cron/* routes (scoring, email, audit); all are disabled without it. */
+  /**
+   * Read-write token of a private Vercel Blob store, where uploaded resume
+   * files are kept. Resume file uploads are off while it is unset.
+   */
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
+  /** Bearer token a scheduler sends to the /api/cron/* routes (scoring, resume files, email, audit); all are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 
@@ -86,6 +91,10 @@ export function env(): z.infer<typeof envSchema> {
 
 export function isGoogleAuthEnabled(): boolean {
   return Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+}
+
+export function isResumeUploadEnabled(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 export function isSsoEnabled(): boolean {

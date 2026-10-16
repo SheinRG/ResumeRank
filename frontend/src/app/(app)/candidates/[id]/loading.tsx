@@ -33,21 +33,39 @@ export default function CandidateLoading() {
             ))}
           </CardContent>
         </Card>
-        <Card className="h-fit">
-          <CardHeader>
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-4 w-40" />
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {["app-1", "app-2", "app-3"].map((key) => (
-              <div key={key} className="flex items-center justify-between gap-3">
-                <Skeleton className="h-4 flex-1" />
-                <Skeleton className="h-5 w-20" />
-                <Skeleton className="h-4 w-8" />
+        <div className="flex h-fit flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-4 w-56" />
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-1 flex-col gap-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+                <Skeleton className="h-5 w-14" />
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <Skeleton className="h-10 w-44" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-40" />
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {["app-1", "app-2", "app-3"].map((key) => (
+                <div key={key} className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-4 w-8" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

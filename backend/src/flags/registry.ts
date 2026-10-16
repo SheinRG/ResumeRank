@@ -41,6 +41,12 @@ export const FLAGS = {
     description: "Streaming audit entries to a webhook, Splunk or Datadog.",
     defaultEnabled: true,
   },
+  "resume-files": {
+    kind: "entitlement",
+    label: "Resume file uploads",
+    description: "Uploading PDF and Word resumes, which are kept and read into the candidate's resume text.",
+    defaultEnabled: true,
+  },
 } as const satisfies Record<string, FlagDefinition>;
 
 export type FeatureFlag = keyof typeof FLAGS;

@@ -18,6 +18,8 @@ import { assertCan, type TenantContext } from "./context";
 import { candidateAccessSql, candidateAccessWhere, jobAccessWhere, seesScores } from "./access";
 import { ConflictError, DomainError, NotFoundError } from "./errors";
 import { isPrismaError } from "./prisma-errors";
+import { errorFields, log } from "../observability/log";
+import { configuredBlobStore, type BlobStore } from "../storage/blob";
 import {
   COUNT_CAP,
   keysetPage,
@@ -414,12 +416,26 @@ export async function updateCandidate(
   }
 }
 
-export async function deleteCandidate(ctx: TenantContext, id: string): Promise<Candidate> {
+/**
+ * Erasure: the candidate's uploaded files go with them. Their rows cascade
+ * in the transaction; the stored originals are removed once it commits.
+ */
+export async function deleteCandidate(
+  ctx: TenantContext,
+  id: string,
+  store: BlobStore | null = configuredBlobStore(),
+): Promise<Candidate> {
   assertCan(ctx, "candidate.manage");
 
+  let blobKeys: string[];
+  let candidate: Candidate;
   try {
-    return await tenantTransaction(ctx, async (tx) => {
-      const candidate = await tx.candidate.delete({
+    [candidate, blobKeys] = await tenantTransaction(ctx, async (tx) => {
+      const files = await tx.resumeFile.findMany({
+        where: { companyId: ctx.companyId, candidateId: id },
+        select: { blobKey: true },
+      });
+      const deleted = await tx.candidate.delete({
         where: { id, companyId: ctx.companyId },
       });
       await logActivity(
@@ -428,17 +444,27 @@ export async function deleteCandidate(ctx: TenantContext, id: string): Promise<C
           actorId: ctx.actorId,
           action: "candidate.delete",
           entityType: "candidate",
-          entityId: candidate.id,
-          summary: `deleted candidate "${candidate.name}"`,
+          entityId: deleted.id,
+          summary: `deleted candidate "${deleted.name}"`,
         },
         tx,
       );
-      return candidate;
+      return [deleted, files.map((file) => file.blobKey)] as const;
     });
   } catch (error) {
     if (isPrismaError(error, "P2025")) throw new NotFoundError(CANDIDATE_NOT_FOUND);
     throw error;
   }
+
+  if (blobKeys.length > 0) {
+    try {
+      if (!store) throw new Error("Blob storage is not configured");
+      await store.delete(blobKeys);
+    } catch (error) {
+      log.error("resume_file.erasure_failed", { candidateId: id, blobKeys, ...errorFields(error) });
+    }
+  }
+  return candidate;
 }
 
 /** Every AI call is a paid LLM request, so the tenant quota is enforced here rather than trusted to each adapter. */

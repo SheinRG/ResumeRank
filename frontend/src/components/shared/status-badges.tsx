@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type {
   CandidateSource,
   JobStatus,
+  ResumeFileStatus,
   Stage,
   Verdict,
 } from "@resumerank/core/generated/prisma/enums";
@@ -112,6 +113,37 @@ export function JobStatusBadge({
       style={chip(JOB_STATUS_TOKENS[status])}
     >
       {JOB_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+export const RESUME_FILE_STATUS_LABELS: Record<ResumeFileStatus, string> = {
+  QUEUED: "Waiting",
+  RUNNING: "Reading",
+  PARSED: "Read",
+  FAILED: "Failed",
+};
+
+const RESUME_FILE_STATUS_TOKENS: Record<ResumeFileStatus, string> = {
+  QUEUED: "--stage-new",
+  RUNNING: "--stage-screening",
+  PARSED: "--verdict-strong",
+  FAILED: "--verdict-missing",
+};
+
+export function ResumeFileStatusBadge({
+  status,
+  className,
+}: {
+  status: ResumeFileStatus;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(badgeBase, className)}
+      style={chip(RESUME_FILE_STATUS_TOKENS[status])}
+    >
+      {RESUME_FILE_STATUS_LABELS[status]}
     </span>
   );
 }
