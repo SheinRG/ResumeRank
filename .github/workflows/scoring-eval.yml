@@ -35,10 +35,10 @@ jobs:
         if: env.GROQ_API_KEY == ''
         run: echo "::notice::GROQ_API_KEY is not set (e.g. a fork PR), so the scoring eval was skipped."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.GROQ_API_KEY != ''
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: env.GROQ_API_KEY != ''
         with:
           node-version: 22
@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload the full report
         if: always() && env.GROQ_API_KEY != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scoring-eval-report
           path: backend/evals/scoring/reports/latest.json
