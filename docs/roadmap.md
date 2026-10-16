@@ -169,13 +169,13 @@ Hiring AI is **high-risk under the EU AI Act** (Annex III §4) and covered by **
 
 ## Recommended sequencing
 
-1. Phase 0 sweep (one branch, one PR per concern).
-2. Service-layer extraction (1.1) — makes everything after cheaper and testable.
-3. Tenancy integration tests + Prisma tenant extension, then RLS (1.2).
-4. Observability (1.3).
-5. `ScoringRun` + queue + metering + distributed rate limits (1.4, 1.5).
-6. Data-layer indexes, keyset pagination, search, pooling (1.6), then caching (1.7). CI/CD (1.8) in parallel.
-7. SSO / SCIM / MFA / audit log (Phase 2 items 1–5).
-8. Multi-company membership and granular RBAC (Phase 2 items 6–8).
-9. Billing + feature flags + public API/webhooks + file ingestion (Phase 2 items 9–12).
+1. ✅ Phase 0 sweep (one branch, one PR per concern).
+2. ✅ Service-layer extraction (1.1) — makes everything after cheaper and testable.
+3. ✅ Tenancy integration tests + Prisma tenant extension, then RLS (1.2).
+4. ✅ Observability (1.3).
+5. ✅ `ScoringRun` + queue + metering + distributed rate limits (1.4, 1.5).
+6. ✅ Data-layer indexes, keyset pagination, search, pooling (1.6), then caching (1.7). CI/CD (1.8) in parallel.
+7. ✅ SSO / SCIM / MFA / audit log (Phase 2 items 1–5).
+8. ✅ Multi-company membership and granular RBAC (Phase 2 items 6–8).
+9. Billing + feature flags + public API/webhooks + file ingestion (Phase 2 items 9–12). Flags, the API and webhooks are done; billing and file ingestion remain.
 10. Compliance & AI trust package (Phase 3).
