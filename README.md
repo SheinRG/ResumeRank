@@ -40,9 +40,10 @@ each company that registers gets its own walled-off data.
 - **Company settings** — HR (admin/owner) edits the company profile (name,
   logo, website, description, industry, size, location) from Settings →
   Company; members see it read-only.
-- **Server-enforced RBAC** — owner / admin / member / viewer roles are
-  re-checked from the database on every mutation; the client role is never
-  trusted.
+- **Server-enforced RBAC** — owner / admin / member / viewer roles, plus
+  hiring managers and interviewers who see only the jobs they're assigned to
+  (directly or through a department). Roles are re-checked from the database
+  on every request; the client role is never trusted.
 - **Immutable activity log** — every mutation is recorded and filterable by
   entity.
 - **Dashboard** — pipeline funnel, score distribution, and application volume
