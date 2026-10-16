@@ -8,6 +8,7 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Security
 
+- Nonce-based Content Security Policy: no inline script runs on any page.
 - Login throttling now applies to every sign-in path. Previously it ran only
   in the login form, so posting to the Auth.js credentials endpoint directly
   allowed unlimited password guesses.
@@ -16,6 +17,21 @@ All notable changes to ResumeRank are documented here. The format follows
   with an `X-Forwarded-For` header.
 
 ### Added
+
+- Per-company SAML/OIDC single sign-on with enforcement and verified-domain
+  auto-join, plus SCIM 2.0 directory sync for provisioning and deprovisioning.
+- Two-factor authentication (authenticator apps, passkeys, recovery codes)
+  and an owner policy that requires it.
+- Active sessions under Settings, Security, with revocation and a per-company
+  session lifetime.
+- Tamper-evident audit log with retention, CSV/JSON export and SIEM streaming.
+- One account can belong to several companies; the sidebar switches
+  workspaces.
+- Hiring-manager and interviewer roles scoped to assigned jobs and
+  departments, and a dedicated ownership transfer flow.
+- Per-company feature flags and plan entitlements.
+- Public REST API (`/api/v1`) with scoped API keys and signed outbound
+  webhooks.
 
 - Temporary account lockout after 10 failed sign-ins in 15 minutes, with a
   message saying how long to wait.
