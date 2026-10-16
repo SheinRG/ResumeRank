@@ -116,6 +116,24 @@ enum AuditStreamKind {
   DATADOG
 }
 
+enum Plan {
+  FREE
+  TEAM
+  ENTERPRISE
+}
+
+/// Mirrors Stripe's subscription statuses.
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  UNPAID
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAUSED
+}
+
 enum EmailKind {
   VERIFY_EMAIL
   INVITE
@@ -253,6 +271,7 @@ model Company {
   featureOverrides FeatureFlagOverride[]
   webhookEndpoints WebhookEndpoint[]
   resumeFiles      ResumeFile[]
+  billingAccount   BillingAccount?
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -699,6 +718,7 @@ model ScoringRun {
 
   @@index([status, nextAttemptAt])
   @@index([companyId, status])
+  @@index([companyId, finishedAt])
   @@index([applicationId, createdAt(sort: Desc)])
   @@index([companyId, inputHash])
   @@index([actorId])
@@ -860,6 +880,46 @@ model WebhookDelivery {
 
   @@index([status, nextAttemptAt])
   @@index([endpointId, createdAt])
+}
+
+/// A company's plan and its Stripe subscription, kept in step by Stripe's
+/// webhooks. No row means the Free plan. Tenants may only attach a Stripe
+/// customer; everything else is written by the webhook (column grants in the
+/// migration), so no app path can hand a workspace a plan it didn't pay for.
+model BillingAccount {
+  id                   String              @id @default(cuid())
+  companyId            String              @unique
+  plan                 Plan                @default(FREE)
+  /// Null until a subscription exists.
+  status               SubscriptionStatus?
+  /// Paid seats (the subscription quantity); null on Free and comped plans.
+  seats                Int?
+  /// Granted without a subscription: workspaces from before billing.
+  comped               Boolean             @default(false)
+  stripeCustomerId     String?             @unique
+  stripeSubscriptionId String?             @unique
+  stripePriceId        String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean             @default(false)
+  /// When the first unpaid invoice made it past due; the grace period runs from here.
+  pastDueSince         DateTime?
+  /// Scoring runs that finished up to here have been sent to the Stripe usage
+  /// meter. Set when the first paid subscription starts, so earlier usage is
+  /// never metered.
+  meteredThrough       DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Stripe events already applied. Stripe delivers at least once, so the
+/// webhook records each id in the transaction that applies it.
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
 }
 
 /// Sliding-window counters shared by every app instance (rate limits, failed

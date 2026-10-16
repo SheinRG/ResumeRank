@@ -11,6 +11,7 @@ import {
 import { SsoSettingsPanel } from "@/components/settings/sso-settings";
 import { canAdmin, requireMember } from "@/lib/auth/guards";
 import { getFeatures } from "@/server/queries/features";
+import { isBillingEnabled } from "@resumerank/core/env";
 import { getDirectory, getSsoEnforcement, getSsoSettings } from "@/server/queries/sso";
 
 export const metadata: Metadata = { title: "SSO · Settings" };
@@ -62,6 +63,7 @@ export default async function SettingsSsoPage() {
       settings={settings}
       directory={directory}
       features={features}
+      upgradable={isBillingEnabled()}
       isOwner={user.role === "OWNER"}
     />
   );

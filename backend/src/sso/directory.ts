@@ -10,6 +10,7 @@ import { z } from "zod";
 import { db } from "../db";
 import { logActivity } from "../activity";
 import { revokeWorkspaceSessions } from "../auth/sessions";
+import { assertSeatAvailable, SeatLimitError } from "../billing/seats";
 import { companyHasFeature } from "../flags/evaluate";
 import { featureUnavailableMessage } from "../services/features";
 import { log } from "../observability/log";
@@ -99,6 +100,17 @@ async function provision(companyId: string, user: DirectoryUser): Promise<void> 
       where: { email: user.email },
       select: { id: true, emailVerified: true, memberships: { where: { companyId }, select: { id: true } } },
     });
+    if (!existing?.memberships.length) {
+      try {
+        await assertSeatAvailable(tx, companyId, { countPendingInvites: false });
+      } catch (error) {
+        if (!(error instanceof SeatLimitError)) throw error;
+        // Answered as applied, like an unverified domain: a failure would
+        // have the identity provider retry the same person indefinitely.
+        log.warn("scim.provision_skipped", { companyId, reason: "no_seat" });
+        return;
+      }
+    }
     const provisioned = existing
       ? await tx.user.update({
           where: { id: existing.id },

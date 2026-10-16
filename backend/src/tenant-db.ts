@@ -18,6 +18,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "WebhookEndpoint",
   "WebhookDelivery",
   "ResumeFile",
+  "BillingAccount",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

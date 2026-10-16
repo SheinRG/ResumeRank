@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
+import { assertSeatAvailable, SeatLimitError } from "../billing/seats";
 import { isPrismaError } from "../services/prisma-errors";
 import { companyDirectory } from "./directory";
 import { emailDomain } from "./domains";
@@ -103,6 +104,7 @@ export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignIn
             select: { id: true, name: true },
           });
       if (join) {
+        await assertSeatAvailable(tx, input.tenant, { countPendingInvites: false });
         await tx.membership.create({ data: { userId: user.id, companyId: input.tenant, role: "MEMBER" } });
         await logActivity(
           {
@@ -119,6 +121,7 @@ export async function resolveSsoSignIn(input: SsoSignInInput): Promise<SsoSignIn
       }
     });
   } catch (error) {
+    if (error instanceof SeatLimitError) return { ok: false, reason: "SsoNoSeat" };
     // A concurrent first sign-in for the same person created the account;
     // Auth.js links to it by email either way.
     if (!isPrismaError(error, "P2002")) throw error;

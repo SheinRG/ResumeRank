@@ -58,7 +58,7 @@ function Enforcement({
             ? "Only an owner can change this."
             : entitled || enforced
               ? "Everyone except owners must sign in through your identity provider. Owners keep their password so a broken IdP can't lock you out."
-              : "Single sign-on isn't enabled for this workspace."}
+              : "Single sign-on isn't available to this workspace."}
         </p>
       </div>
       <Switch
@@ -75,11 +75,14 @@ export function SsoSettingsPanel({
   settings,
   directory,
   features,
+  upgradable,
   isOwner,
 }: {
   settings: SsoSettings;
   directory: DirectorySummary | null;
   features: FeatureSet;
+  /** Billing is on, so a missing feature comes with a plan. */
+  upgradable: boolean;
   isOwner: boolean;
 }) {
   const [enforced, setEnforced] = useState(settings.enforced);
@@ -112,6 +115,7 @@ export function SsoSettingsPanel({
             initialConnection={settings.connection}
             enforced={enforced}
             entitled={features.sso}
+            upgradable={upgradable}
             serviceProvider={settings.serviceProvider}
           />
         </CardContent>
@@ -127,7 +131,11 @@ export function SsoSettingsPanel({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SsoDirectory initialDirectory={directory} entitled={features["directory-sync"]} />
+          <SsoDirectory
+            initialDirectory={directory}
+            entitled={features["directory-sync"]}
+            upgradable={upgradable}
+          />
         </CardContent>
       </Card>
 

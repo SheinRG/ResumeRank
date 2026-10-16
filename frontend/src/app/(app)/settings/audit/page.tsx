@@ -15,6 +15,7 @@ import {
 import { can, canAdmin, requireMember } from "@/lib/auth/guards";
 import { getAuditSettings } from "@/server/queries/audit";
 import { getFeatures } from "@/server/queries/features";
+import { isBillingEnabled } from "@resumerank/core/env";
 
 export const metadata: Metadata = { title: "Audit log · Settings" };
 
@@ -56,6 +57,7 @@ export default async function SettingsAuditPage() {
         initialStream={settings.stream}
         canChange={isOwner}
         entitled={features["audit-streaming"]}
+        upgradable={isBillingEnabled()}
       />
     </div>
   );

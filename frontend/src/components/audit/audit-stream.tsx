@@ -321,10 +321,12 @@ export function AuditStreamCard({
   initialStream,
   canChange,
   entitled,
+  upgradable,
 }: {
   initialStream: AuditStreamSummary | null;
   canChange: boolean;
   entitled: boolean;
+  upgradable: boolean;
 }) {
   const [stream, setStream] = useState(initialStream);
   const [signingSecret, setSigningSecret] = useState<string | null>(null);
@@ -343,7 +345,7 @@ export function AuditStreamCard({
 
   let body: React.ReactNode;
   if (!stream && !entitled) {
-    body = <FeatureUnavailable feature="Audit log streaming" />;
+    body = <FeatureUnavailable feature="Audit log streaming" upgradable={upgradable} />;
   } else if (!stream) {
     body = canChange ? (
       <StreamForm current={null} onSaved={handleSaved} onCancel={null} />
@@ -355,6 +357,13 @@ export function AuditStreamCard({
   } else {
     body = (
       <>
+        {entitled ? null : (
+          <FeatureUnavailable
+            feature="Audit log streaming"
+            upgradable={upgradable}
+            consequence="Nothing is sent meanwhile, and delivery catches up from where it stopped once it's back."
+          />
+        )}
         <StreamStatus stream={stream} />
         {signingSecret ? <SigningSecret secret={signingSecret} /> : null}
         {canChange ? (

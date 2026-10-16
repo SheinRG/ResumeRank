@@ -357,15 +357,19 @@ limits and queues, so local, CI and production behave alike.
 **Resolution** (`flags/resolve.ts`, pure) goes in this order:
 
 1. A staff **override** for the company (`FeatureFlagOverride`).
-2. The flag's **rollout percentage**: the company's bucket, 0–99, is a
+2. For entitlements while billing is on, the company's **plan** (see
+   Billing).
+3. The flag's **rollout percentage**: the company's bucket, 0–99, is a
    SHA-256 of the flag and company id. A company keeps its bucket, so raising
    the percentage only adds companies. Each flag hashes differently, so the
    same tenants aren't first in line for every release.
-3. The flag's **default**.
+4. The flag's **default**.
 
-Today's flags are entitlements on the enterprise features: `sso`,
-`directory-sync` and `audit-streaming`. All three default to on, so the
-flags change nothing for existing tenants until an override is set.
+Today's flags are all entitlements: the enterprise features `sso`,
+`directory-sync` and `audit-streaming`, and `resume-files`. All default to
+on, so with billing off nothing is gated. With billing on, Enterprise grants
+the enterprise features and every plan grants resume files. An entitlement
+no plan lists would be off for everyone, which a unit test guards against.
 
 **Enforcement** happens in the services, like roles do.
 `assertFeature(ctx, flag)` (`services/features.ts`) throws
@@ -453,6 +457,100 @@ that finished runs), and from `GET /api/cron/webhooks`, which also purges
 settled rows after 30 days. A paused endpoint keeps queueing but is not drained, so resuming it sends everything that happened meanwhile. Settings →
 API (admins) manages keys and endpoints and shows recent deliveries.
 `20261020090000_public_api` adds the three tables with RLS (expand-only).
+
+## Billing
+
+Billing is on only when `STRIPE_SECRET_KEY` is set. Without it there are no
+plans: every workspace keeps every feature and the deployment's
+`AI_TOKEN_BUDGET`, which is what a self-hosted install wants. Stripe owns
+the money (Checkout, the customer portal, invoices, card retries). ResumeRank
+owns what each plan unlocks (`backend/src/billing/plans.ts`):
+
+| Plan | Seats | AI tokens / 30 days | Adds |
+|---|---|---|---|
+| Free | 3 | 250k | |
+| Team | per seat bought | 5M | |
+| Enterprise | per seat bought | 25M | `sso`, `directory-sync`, `audit-streaming` |
+
+Prices are Stripe price ids in `STRIPE_PRICE_TEAM` / `STRIPE_PRICE_ENTERPRISE`.
+
+**State.** `BillingAccount` holds one row per company: plan, Stripe status,
+paid seats, customer and subscription ids, period and the dunning clock. No
+row means Free. Companies that existed before billing were given a
+**comped** Enterprise row by `20261022100000_billing`, so nothing they use
+went away. A comped plan holds without a subscription until the company buys
+one. `effectivePlan` (`billing/account.ts`, pure) decides what a workspace
+gets right now:
+
+- Active or trialing: the plan paid for.
+- Past due: still the plan, until `DUNNING_GRACE_DAYS` (14) after the first
+  failed invoice.
+- Anything else, or no account: Free.
+
+**What the plan drives.**
+- *Entitlements.* The plan is a flag source between a staff override and the
+  rollout (see Feature flags), so the entitlement gates need no billing code.
+- *AI budget.* `getAiBudget` uses `Company.aiTokenBudget` if set, then the
+  plan's budget. Scoring stops at the cap with an upgrade message; there is
+  no overage billing.
+- *Seats.* Every member counts, and a pending invite holds a seat.
+  `assertSeatAvailable` (`billing/seats.ts`) runs in the transaction that adds
+  the member: inviting, accepting an invite (existing or new account), SSO
+  auto-join (refused with `SsoNoSeat`, which the login page explains) and
+  SCIM provisioning (skipped and logged, since failing it would make the IdP
+  retry forever). A transaction-scoped advisory lock per company makes
+  concurrent joins queue, so the last seat can't be taken twice. Lowering
+  seats below the current headcount doesn't remove anyone; it only stops new
+  joins.
+
+**Buying.** Owners pick a plan on Settings → Billing. `startCheckout`
+creates the Stripe customer if there isn't one (idempotency key
+`customer:<companyId>`, so a double click makes one), records it, and opens
+a Checkout session with a seat per current member. Nothing about the plan
+changes on the redirect back. Plan, seat and payment-method changes, invoices
+and cancellation all happen in Stripe's customer portal (`openBillingPortal`).
+
+**The webhook** (`POST /api/webhooks/stripe`, on when `STRIPE_WEBHOOK_SECRET`
+is set) verifies Stripe's signature over the raw body, with Stripe's
+five-minute replay tolerance, before parsing anything. `applyStripeEvent`
+(`billing/webhooks.ts`):
+
+- **Re-reads the subscription from Stripe** rather than trusting the payload,
+  so late or out-of-order events still leave the latest state. A late event
+  about a subscription the company has since replaced is ignored.
+- **Is idempotent.** It records the event id in `StripeEvent` in the same
+  transaction as its effect, so a redelivery does nothing, and a failed apply
+  records nothing and is retried.
+- **Writes as the table owner**, like SCIM. It checks that the subscription's
+  customer is the company's, and ignores (and logs) prices no plan uses.
+- **Writes a `billing.subscription` audit entry** under the ResumeRank
+  actor for each change a person would care about: subscribed, plan or seats
+  changed, payment failed (with the grace date), recovered, set to cancel,
+  ended.
+
+Tenants can't grant themselves a plan, even through an app bug. The tenant
+role may read `BillingAccount`, but may only insert a plain Free row (column
+grants plus the `billing_account_tenant_insert` trigger) and only update
+`stripeCustomerId`.
+
+**Dunning.** Stripe's Smart Retries and its failed-payment emails do the
+chasing (turn both on in the Stripe dashboard). In the app, owners and
+admins see a banner on every page while a payment is past due, naming the
+date the workspace drops to Free, and Settings → Billing links to the portal.
+
+**Usage metering.** Settings → Billing shows the plan's 30-day AI usage
+against its cap, and the tokens scoring used this billing period (summed
+from `ScoringRun` prompt and completion tokens). With `STRIPE_AI_METER_EVENT`
+set, `GET /api/cron/billing` (bearer `CRON_SECRET`, hourly is plenty) also
+reports each finished run's tokens to that Stripe meter:
+
+- one event per run, identified by its id, so a re-send counts once;
+- in finish order, tracked by `BillingAccount.meteredThrough`, which starts
+  when the first paid subscription does, so earlier usage is never reported;
+- runs finished in the last five minutes wait for the next pass, in case they
+  are still committing.
+
+The meter is for visibility, since plans cap usage rather than bill it.
 
 ## Multi-tenancy
 
@@ -834,7 +932,7 @@ transaction fails, the blob is deleted again. Storage is a private Vercel Blob
 store behind a small `BlobStore` interface (`backend/src/storage/blob.ts`), so
 tests run against memory. Blobs are reachable only with the read-write token,
 never by URL. Uploads are off unless `BLOB_READ_WRITE_TOKEN` is set, and they
-are the `resume-files` entitlement (on by default).
+are the `resume-files` entitlement (on by default, and on every plan).
 
 **Parsing.** `ResumeFile` doubles as its own queue, worked like scoring runs
 (`backend/src/ingestion/queue.ts`): `SKIP LOCKED` claims, two lanes, a 15s
@@ -891,7 +989,7 @@ rows are swept opportunistically (1% of calls), so no scheduled job is needed.
 | Failed logins on one account (any IP) | `login:fail:<email>` | 10 per 15 min, cleared on success |
 | AI requests per user | `ai:user:<id>` | 30 per 10 min |
 | AI calls per company (a bulk request counts each applicant) | `ai:company:<id>` | 300 per hour |
-| AI tokens per company | `ai-tokens:company:<id>` | `AI_TOKEN_BUDGET` (5M) per rolling 30 days, or `Company.aiTokenBudget` |
+| AI tokens per company | `ai-tokens:company:<id>` | per rolling 30 days: `Company.aiTokenBudget`, else the plan's budget (billing on) or `AI_TOKEN_BUDGET` (5M) |
 
 **Login throttling runs inside the Credentials provider's `authorize()`.**
 Auth.js also exposes that provider at `POST /api/auth/callback/credentials`,

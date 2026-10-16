@@ -10,4 +10,4 @@ export function requiresSso(user: { role: Role; ssoEnforced: boolean }): boolean
 }
 
 /** Why an SSO sign-in was refused; the login page explains each one. */
-export type SsoDenial = "SsoDomainNotVerified" | "SsoAccountMismatch";
+export type SsoDenial = "SsoDomainNotVerified" | "SsoAccountMismatch" | "SsoNoSeat";

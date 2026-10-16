@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
+import { assertSeatAvailable } from "../billing/seats";
 import { withUniqueCompanySlug } from "../company";
 import type { Prisma } from "../generated/prisma/client";
 import { COMPANY_CREATE_LIMIT, rateLimit, retryMessage } from "../rate-limit";
@@ -222,6 +223,7 @@ export async function acceptInvite(
     ]);
     if (existing) throw new ConflictError(`You're already a member of ${company.name}.`);
 
+    await assertSeatAvailable(tx, invite.companyId, { countPendingInvites: false });
     await tx.membership.create({ data: { userId: actor.userId, companyId: invite.companyId, role: invite.role } });
     const access = { companyId: invite.companyId, role: invite.role, ssoEnforced: company.ssoEnforced };
     const opened = signInMayOpen(access, login?.ssoCompanyId ?? null);

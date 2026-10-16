@@ -174,12 +174,14 @@ export function SsoConnection({
   initialConnection,
   enforced,
   entitled,
+  upgradable,
   serviceProvider,
 }: {
   initialConnection: SsoConnectionSummary | null;
   enforced: boolean;
   /** Without it, an existing connection can still be disconnected but not replaced. */
   entitled: boolean;
+  upgradable: boolean;
   serviceProvider: SsoSettings["serviceProvider"];
 }) {
   const [connection, setConnection] = useState(initialConnection);
@@ -207,12 +209,13 @@ export function SsoConnection({
           ) : (
             <FeatureUnavailable
               feature="Single sign-on"
-              detail="Members can keep signing in through this connection, but it can't be replaced. Ask ResumeRank support to turn single sign-on on."
+              upgradable={upgradable}
+              consequence="Members can keep signing in through this connection, but it can't be replaced."
             />
           )}
         </div>
       ) : !entitled ? (
-        <FeatureUnavailable feature="Single sign-on" />
+        <FeatureUnavailable feature="Single sign-on" upgradable={upgradable} />
       ) : (
         <div className="flex flex-col gap-3">
           <ConnectionForm

@@ -31,6 +31,8 @@ const LOGIN_ERRORS: Record<LoginErrorCode, string> = {
     "Your company's identity provider can't sign in that email address. Ask your admin to verify its domain.",
   SsoAccountMismatch:
     "Your identity provider sent a different email than the one on your ResumeRank account. Ask your admin to check your SSO profile.",
+  SsoNoSeat:
+    "Every seat on your company's ResumeRank plan is taken. Ask an owner to add seats, then sign in again.",
 };
 
 function loginErrorMessage(code: string | undefined): string | null {

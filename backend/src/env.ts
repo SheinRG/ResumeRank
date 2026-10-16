@@ -70,7 +70,20 @@ const envSchema = z.object({
    * files are kept. Resume file uploads are off while it is unset.
    */
   BLOB_READ_WRITE_TOKEN: z.string().optional(),
-  /** Bearer token a scheduler sends to the /api/cron/* routes (scoring, resume files, email, audit); all are disabled without it. */
+  /**
+   * Turns billing on. Without it there are no plans: every workspace keeps
+   * every feature, as a self-hosted install should. Use a test-mode key
+   * (sk_test_...) anywhere but production.
+   */
+  STRIPE_SECRET_KEY: z.string().startsWith("sk_", "STRIPE_SECRET_KEY must be a Stripe secret key (sk_...)").optional(),
+  /** Signs the events Stripe posts to /api/webhooks/stripe; the endpoint is off without it. */
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_", "STRIPE_WEBHOOK_SECRET must start with whsec_").optional(),
+  /** Per-seat recurring prices for the paid plans. A plan without one can't be bought. */
+  STRIPE_PRICE_TEAM: z.string().startsWith("price_", "STRIPE_PRICE_TEAM must be a Stripe price id").optional(),
+  STRIPE_PRICE_ENTERPRISE: z.string().startsWith("price_", "STRIPE_PRICE_ENTERPRISE must be a Stripe price id").optional(),
+  /** Event name of a Stripe meter to report scoring tokens to; usage isn't reported without it. */
+  STRIPE_AI_METER_EVENT: z.string().min(1).optional(),
+  /** Bearer token a scheduler sends to the /api/cron/* routes (scoring, resume files, email, audit, billing); all are disabled without it. */
   CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
 });
 
@@ -95,6 +108,10 @@ export function isGoogleAuthEnabled(): boolean {
 
 export function isResumeUploadEnabled(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+export function isBillingEnabled(): boolean {
+  return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
 export function isSsoEnabled(): boolean {

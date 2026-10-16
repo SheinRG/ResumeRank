@@ -8,6 +8,7 @@ import { signIn } from "@/lib/auth";
 import { requireAdmin, requireUserSession, tenantContext } from "@/lib/auth/guards";
 import { hashPassword } from "@resumerank/core/auth/password";
 import { claimInvite, findValidInviteByToken } from "@resumerank/core/auth/tokens";
+import { assertSeatAvailable } from "@resumerank/core/billing/seats";
 import {
   acceptInvite,
   createWorkspace,
@@ -174,6 +175,7 @@ export async function acceptInviteAction(
           passwordHash,
         },
       });
+      await assertSeatAvailable(tx, invite.companyId, { countPendingInvites: false });
       await tx.membership.create({
         data: { userId: user.id, companyId: invite.companyId, role: invite.role },
       });

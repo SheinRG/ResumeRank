@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
-import { AI_BUDGET_EXHAUSTED, chargeAiTokens, getAiBudget } from "../ai-budget";
+import { aiBudgetExhaustedMessage, chargeAiTokens, getAiBudget } from "../ai-budget";
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { errorFields, log, withLogContext } from "../observability/log";
 import { DomainError } from "../services/errors";
@@ -197,7 +197,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
   // Re-checked per run: a 200-applicant batch must stop when the budget does.
   const { remaining } = await getAiBudget(run.companyId);
   if (remaining <= 0) {
-    await failRun(run, AI_BUDGET_EXHAUSTED);
+    await failRun(run, aiBudgetExhaustedMessage());
     return;
   }
 
