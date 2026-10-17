@@ -66,6 +66,7 @@ describe("feature flag overrides", () => {
       "directory-sync": true,
       "audit-streaming": true,
       "resume-files": true,
+      "ip-allowlist": true,
     });
   });
 

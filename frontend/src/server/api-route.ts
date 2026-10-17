@@ -3,8 +3,10 @@ import { connection, NextResponse } from "next/server";
 import type { ZodType } from "zod";
 
 import { authenticateApiKey } from "@resumerank/core/api/auth";
+import { ipAllowed } from "@resumerank/core/auth/ip-allowlist";
 import { errorFields, log, withLogContext } from "@resumerank/core/observability/log";
 import { rateLimit, type RateLimit } from "@resumerank/core/rate-limit";
+import { clientIp } from "@resumerank/core/request-ip";
 import type { TenantContext } from "@resumerank/core/services/context";
 import {
   ConflictError,
@@ -88,6 +90,13 @@ export async function handleApi(
       log.info("api", { status: response.status, durationMs: Math.round(performance.now() - started) });
       return response;
     };
+
+    // Unlike the app, owners' keys aren't exempt: a leaked key is the likelier breach.
+    if (principal.ipRanges.length > 0 && !ipAllowed(clientIp(request.headers), principal.ipRanges)) {
+      return respond(
+        errorResponse(403, "ip_not_allowed", "This workspace only accepts API requests from its allowed networks."),
+      );
+    }
 
     const limited = await rateLimit(`api:${principal.keyId}`, API_LIMIT);
     if (!limited.allowed) {

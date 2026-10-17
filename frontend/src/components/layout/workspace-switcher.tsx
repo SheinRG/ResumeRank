@@ -15,10 +15,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { CurrentUser } from "@/lib/auth/guards";
+import type { CurrentUser, WorkspaceOption } from "@/lib/auth/guards";
 import { initials } from "@/lib/format";
 import { switchWorkspaceAction } from "@/server/actions/workspaces";
 import { ROLE_LABELS } from "@/lib/roles";
+
+const BLOCKED_LABELS: Record<NonNullable<WorkspaceOption["blockedBy"]>, string> = {
+  sso: "Requires single sign-on",
+  network: "Not available on this network",
+};
 
 function WorkspaceMark({ name, logoUrl, className }: { name: string; logoUrl: string | null; className: string }) {
   return (
@@ -76,7 +81,7 @@ export function WorkspaceSwitcher({ user, onNavigate }: { user: CurrentUser; onN
           return (
             <DropdownMenuItem
               key={workspace.companyId}
-              disabled={isPending || !workspace.openable}
+              disabled={isPending || workspace.blockedBy !== null}
               onSelect={() => open(workspace.companyId)}
               className="gap-2.5"
             >
@@ -91,7 +96,7 @@ export function WorkspaceSwitcher({ user, onNavigate }: { user: CurrentUser; onN
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm">{workspace.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {workspace.openable ? ROLE_LABELS[workspace.role] : "Requires single sign-on"}
+                  {workspace.blockedBy ? BLOCKED_LABELS[workspace.blockedBy] : ROLE_LABELS[workspace.role]}
                 </span>
               </span>
               {current ? <Check className="size-4 shrink-0 text-foreground" aria-label="Current workspace" /> : null}

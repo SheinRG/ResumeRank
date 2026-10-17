@@ -5,12 +5,14 @@ import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { env } from "@resumerank/core/env";
+import { networkAllows } from "@resumerank/core/auth/ip-allowlist";
 import { can, canAdmin, type Permission } from "@resumerank/core/auth/roles";
 import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
 import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
 import { touchLoginSession } from "@resumerank/core/auth/sessions";
 import { resolveWorkspace, signInMayOpen } from "@resumerank/core/auth/workspace-policy";
 import { annotateLogContext } from "@resumerank/core/observability/log";
+import { clientIp } from "@resumerank/core/request-ip";
 import type { Role } from "@resumerank/core/validators/enums";
 import type { TenantContext } from "@resumerank/core/services/context";
 
@@ -45,10 +47,18 @@ export class MfaSetupRequiredError extends GateError {
 
 const SESSION_ENDED = "Your session has ended. Log in again to continue.";
 
+/** A live session on a network its workspace's IP allowlist doesn't include. */
+export class NetworkBlockedError extends GateError {
+  constructor() {
+    super("Your company only allows access from its approved networks. Connect to one to continue.");
+  }
+}
+
 /** Where a page sends a session its guard turned away. */
 export function gateRedirectPath(error: GateError): string {
   if (error instanceof MfaChallengeRequiredError) return "/mfa";
   if (error instanceof MfaSetupRequiredError) return "/mfa/setup";
+  if (error instanceof NetworkBlockedError) return "/network-blocked";
   return "/session-ended";
 }
 
@@ -58,8 +68,8 @@ export interface WorkspaceOption {
   name: string;
   logoUrl: string | null;
   role: Role;
-  /** False when the company requires single sign-on this sign-in didn't come through. */
-  openable: boolean;
+  /** Why this sign-in can't open it: the company requires SSO it didn't come through, or blocks this network. */
+  blockedBy: "sso" | "network" | null;
 }
 
 export interface CurrentUser {
@@ -142,6 +152,10 @@ export interface SignedInSession {
   /** This sign-in: the id of its LoginSession row, and what a second-factor proof is bound to. */
   loginId: string;
   mfa: MfaGate;
+  /** Whether the open workspace's IP allowlist admits this request. */
+  network: "allowed" | "blocked";
+  /** The address the allowlist was judged on, shown to people it blocks. */
+  clientIp: string;
 }
 
 /**
@@ -151,7 +165,9 @@ export interface SignedInSession {
  * user's has been revoked and is rejected the same way, as is one whose
  * LoginSession row was revoked, went idle or outlived its workspace's session
  * lifetime, and one whose workspace requires single sign-on from its own
- * identity provider when this sign-in didn't come through it.
+ * identity provider when this sign-in didn't come through it. The open
+ * workspace's IP allowlist is judged here too, but reported rather than
+ * thrown: getting back on an approved network is all it takes.
  *
  * The workspace is the one this sign-in has open (`LoginSession.companyId`)
  * while the user still belongs to it; after they leave it, wherever a new
@@ -193,6 +209,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
               mfaRequired: true,
               sessionLifetimeMinutes: true,
               sessionIdleMinutes: true,
+              ipAllowlist: { select: { cidr: true } },
             },
           },
         },
@@ -211,10 +228,12 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
   const [login] = loginSessions;
   if (!login) throw new GateError(SESSION_ENDED);
 
-  const workspaces = memberships.map(({ role, companyId, company }) => ({
+  const ip = clientIp(await headers());
+  const workspaces = memberships.map(({ role, companyId, company: { ipAllowlist, ...company } }) => ({
     ...company,
     role,
     companyId,
+    ipRanges: ipAllowlist.map((range) => range.cidr),
   }));
   const ssoCompanyId = login.ssoCompanyId;
   const active = resolveWorkspace(workspaces, { opened: login.companyId, preferred, ssoCompanyId });
@@ -246,11 +265,13 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
         name: workspace.name,
         logoUrl: workspace.logoUrl,
         role: workspace.role,
-        openable: signInMayOpen(workspace, ssoCompanyId),
+        blockedBy: !signInMayOpen(workspace, ssoCompanyId) ? "sso" : !networkAllows(workspace, ip) ? "network" : null,
       })),
     },
     loginId,
     mfa,
+    network: active && !networkAllows(active, ip) ? "blocked" : "allowed",
+    clientIp: ip,
   };
 });
 
@@ -260,11 +281,26 @@ export interface UserSession {
   loginId: string;
 }
 
-/** A fully signed-in session (live, any second factor proven), for actions that act on the sign-in itself. */
-export const requireUserSession = cache(async (): Promise<UserSession> => {
-  const { user, loginId, mfa } = await getSignedInSession();
+function assertSecondFactor(mfa: MfaGate): void {
   if (mfa === "challenge") throw new MfaChallengeRequiredError();
   if (mfa === "setup") throw new MfaSetupRequiredError();
+}
+
+/**
+ * For switching workspace: second factor proven, but the open workspace may
+ * block this network, since moving to one that doesn't is the way out.
+ */
+export async function requireWorkspaceSwitch(): Promise<UserSession> {
+  const { user, loginId, mfa } = await getSignedInSession();
+  assertSecondFactor(mfa);
+  return { user, loginId };
+}
+
+/** A fully signed-in session (live, any second factor proven, on an allowed network), for actions that act on the sign-in itself. */
+export const requireUserSession = cache(async (): Promise<UserSession> => {
+  const { user, loginId, mfa, network } = await getSignedInSession();
+  assertSecondFactor(mfa);
+  if (network === "blocked") throw new NetworkBlockedError();
   return { user, loginId };
 });
 

@@ -272,6 +272,7 @@ model Company {
   webhookEndpoints WebhookEndpoint[]
   resumeFiles      ResumeFile[]
   billingAccount   BillingAccount?
+  ipAllowlist      IpAllowlistEntry[]
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -293,6 +294,21 @@ model CompanyDomain {
   @@unique([companyId, domain])
   // Any company may claim a domain, but only one can verify it.
   @@unique([domain], map: "CompanyDomain_verified_domain_key", where: raw("\"verifiedAt\" IS NOT NULL"))
+}
+
+/// A network members may use the workspace from. With none, any network will
+/// do; with some, every request from elsewhere is refused (owners excepted).
+model IpAllowlistEntry {
+  id        String   @id @default(cuid())
+  companyId String
+  /// Canonical CIDR (`auth/ip-allowlist.ts`), so the same range can't be added twice.
+  cidr      String
+  label     String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, cidr])
 }
 
 model CompanyInvite {

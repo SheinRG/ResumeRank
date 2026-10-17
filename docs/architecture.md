@@ -234,6 +234,43 @@ in `services/sessions.ts`: the owner-only lifetime policy and an admin's
 "sign out everywhere" for a teammate. Tokens issued before sign-ins were
 recorded have no row, so they ended once when this shipped.
 
+## IP allowlisting
+
+Owners can restrict a workspace to listed networks (Settings → Security).
+`IpAllowlistEntry` holds one canonical CIDR per row, IPv4 or IPv6, up to 50.
+With none, nothing is restricted; the first range turns it on.
+
+**Parsing and matching** live in `backend/src/auth/ip-allowlist.ts`, with no
+Node modules, because the shared Zod schema and the settings card use it in
+the browser too. A range is stored in canonical form, so `2001:0DB8::/32` and
+`2001:db8::/32` are one row; a range with host bits set (`10.1.2.3/8`) is
+refused with the network it probably meant, never silently widened. An
+IPv4-mapped IPv6 address is matched as IPv4. The client IP comes from
+`clientIp()` (see Rate limiting), and an address it can't establish matches
+no range, so a misconfigured proxy fails closed.
+
+**Enforcement.** The guards read each workspace's ranges in the same query
+that resolves the user, and judge the open workspace against this request's
+IP. A blocked session isn't ended: `getSignedInSession` reports
+`network: "blocked"` and `requireUserSession` throws `NetworkBlockedError`,
+which pages turn into `/network-blocked`. That page shows the IP the decision
+was made on and offers "Try again", the user's other workspaces this network
+may open (the switch action uses `requireWorkspaceSwitch`, which allows a
+blocked network since leaving is the way out), and sign-out. The switcher marks
+such workspaces "Not available on this network". Owners are exempt in the app,
+as they are from SSO enforcement, so a wrong range can't lock a company out of
+the setting that fixes it. API keys are not exempt: `authenticateApiKey`
+returns the ranges and `handleApi` answers `403 ip_not_allowed` before the
+rate limit or scope check, whoever created the key. SCIM requests come from
+the identity provider's servers and aren't checked.
+
+It's the `ip-allowlist` entitlement (Enterprise). As with every entitlement,
+adding a range needs it and removing one never does, and existing ranges keep
+being enforced without it, since dropping a restriction because a plan lapsed
+would be the wrong failure. Every change is audited
+(`company.ip_allowlist_add` / `_remove`). `20261023090000_ip_allowlist` adds
+the table with RLS (expand-only).
+
 ## Audit log
 
 `ActivityLog` is the audit trail, and it is tamper-evident. The
@@ -366,7 +403,7 @@ limits and queues, so local, CI and production behave alike.
 4. The flag's **default**.
 
 Today's flags are all entitlements: the enterprise features `sso`,
-`directory-sync` and `audit-streaming`, and `resume-files`. All default to
+`directory-sync`, `audit-streaming` and `ip-allowlist`, and `resume-files`. All default to
 on, so with billing off nothing is gated. With billing on, Enterprise grants
 the enterprise features and every plan grants resume files. An entitlement
 no plan lists would be off for everyone, which a unit test guards against.

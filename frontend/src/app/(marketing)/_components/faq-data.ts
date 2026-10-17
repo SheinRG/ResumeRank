@@ -34,6 +34,6 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "What does it cost?",
     answer:
-      "There's a free plan for up to three members. Team and Enterprise are billed per seat through Stripe, with larger AI budgets; Enterprise adds single sign-on, directory sync and audit log streaming. ResumeRank is open source, and a self-hosted install without Stripe keeps every feature.",
+      "There's a free plan for up to three members. Team and Enterprise are billed per seat through Stripe, with larger AI budgets; Enterprise adds single sign-on, directory sync, audit log streaming and IP allowlisting. ResumeRank is open source, and a self-hosted install without Stripe keeps every feature.",
   },
 ];

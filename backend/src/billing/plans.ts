@@ -31,10 +31,10 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   },
   ENTERPRISE: {
     label: "Enterprise",
-    description: "Single sign-on, directory sync and audit log streaming, with the largest AI budget.",
+    description: "Single sign-on, directory sync, audit log streaming and IP allowlisting, with the largest AI budget.",
     includedSeats: null,
     aiTokens: 25_000_000,
-    entitlements: ["resume-files", "sso", "directory-sync", "audit-streaming"],
+    entitlements: ["resume-files", "sso", "directory-sync", "audit-streaming", "ip-allowlist"],
   },
 };
 

@@ -6,6 +6,7 @@ import {
   gateRedirectPath,
   MfaChallengeRequiredError,
   MfaSetupRequiredError,
+  NetworkBlockedError,
   requireUser,
   SsoRequiredError,
 } from "@/lib/auth/guards";
@@ -22,8 +23,12 @@ export async function GET(): Promise<never> {
   try {
     await requireUser();
   } catch (error) {
-    // A session that owes a second factor is alive; it only has a step left.
-    if (error instanceof MfaChallengeRequiredError || error instanceof MfaSetupRequiredError) {
+    // A session that owes a second factor, or is on the wrong network, is alive; it only has a step left.
+    if (
+      error instanceof MfaChallengeRequiredError ||
+      error instanceof MfaSetupRequiredError ||
+      error instanceof NetworkBlockedError
+    ) {
       redirect(gateRedirectPath(error));
     }
     if (error instanceof GateError) {

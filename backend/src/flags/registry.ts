@@ -47,6 +47,12 @@ export const FLAGS = {
     description: "Uploading PDF and Word resumes, which are kept and read into the candidate's resume text.",
     defaultEnabled: true,
   },
+  "ip-allowlist": {
+    kind: "entitlement",
+    label: "IP allowlisting",
+    description: "Restricting the workspace and its API keys to listed networks.",
+    defaultEnabled: true,
+  },
 } as const satisfies Record<string, FlagDefinition>;
 
 export type FeatureFlag = keyof typeof FLAGS;

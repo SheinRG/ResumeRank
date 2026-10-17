@@ -18,12 +18,15 @@ import { formatDate, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { openBillingPortalAction, startCheckoutAction } from "@/server/actions/billing";
 import type { BillingOverview, PlanOption } from "@/server/queries/billing";
+import type { FeatureFlag } from "@resumerank/core/flags/registry";
 import type { ActionResult } from "@resumerank/core/types/action";
 
-const FEATURE_LABELS: Record<string, string> = {
+const FEATURE_LABELS: Record<FeatureFlag, string> = {
+  "resume-files": "PDF and Word resume uploads",
   sso: "Single sign-on (SAML / OIDC)",
   "directory-sync": "Directory sync (SCIM)",
   "audit-streaming": "Audit log streaming to your SIEM",
+  "ip-allowlist": "IP allowlisting",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -229,7 +232,7 @@ function PlanCard({
         {option.entitlements.map((flag) => (
           <li key={flag} className="flex gap-2">
             <Check className="mt-0.5 size-4 shrink-0 text-accent-foreground" aria-hidden="true" />
-            {FEATURE_LABELS[flag] ?? flag}
+            {FEATURE_LABELS[flag]}
           </li>
         ))}
       </ul>
