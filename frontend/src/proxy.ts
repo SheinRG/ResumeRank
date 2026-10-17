@@ -12,6 +12,7 @@ const PROTECTED_PREFIXES = [
   "/onboarding",
   "/mfa",
   "/network-blocked",
+  "/password-change",
 ];
 
 const AUTH_PAGES = ["/login", "/register"];

@@ -54,10 +54,18 @@ export class NetworkBlockedError extends GateError {
   }
 }
 
+/** A password sign-in whose password falls short of the current policy. */
+export class PasswordChangeRequiredError extends GateError {
+  constructor() {
+    super("Your company's password policy has changed. Choose a new password to continue.");
+  }
+}
+
 /** Where a page sends a session its guard turned away. */
 export function gateRedirectPath(error: GateError): string {
   if (error instanceof MfaChallengeRequiredError) return "/mfa";
   if (error instanceof MfaSetupRequiredError) return "/mfa/setup";
+  if (error instanceof PasswordChangeRequiredError) return "/password-change";
   if (error instanceof NetworkBlockedError) return "/network-blocked";
   return "/session-ended";
 }
@@ -152,6 +160,8 @@ export interface SignedInSession {
   /** This sign-in: the id of its LoginSession row, and what a second-factor proof is bound to. */
   loginId: string;
   mfa: MfaGate;
+  /** Whether this sign-in must set a new password before it can do anything else. */
+  passwordChange: boolean;
   /** Whether the open workspace's IP allowlist admits this request. */
   network: "allowed" | "blocked";
   /** The address the allowlist was judged on, shown to people it blocks. */
@@ -216,7 +226,14 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
       },
       loginSessions: {
         where: { id: loginId },
-        select: { createdAt: true, lastSeenAt: true, revokedAt: true, companyId: true, ssoCompanyId: true },
+        select: {
+          createdAt: true,
+          lastSeenAt: true,
+          revokedAt: true,
+          companyId: true,
+          ssoCompanyId: true,
+          passwordChangeRequired: true,
+        },
       },
     },
   });
@@ -270,6 +287,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     },
     loginId,
     mfa,
+    passwordChange: login.passwordChangeRequired,
     network: active && !networkAllows(active, ip) ? "blocked" : "allowed",
     clientIp: ip,
   };
@@ -296,10 +314,21 @@ export async function requireWorkspaceSwitch(): Promise<UserSession> {
   return { user, loginId };
 }
 
-/** A fully signed-in session (live, any second factor proven, on an allowed network), for actions that act on the sign-in itself. */
-export const requireUserSession = cache(async (): Promise<UserSession> => {
-  const { user, loginId, mfa, network } = await getSignedInSession();
+/**
+ * For changing your own password: second factor proven, but a sign-in held
+ * for a new password is admitted, since changing it is what releases it.
+ */
+export async function requirePasswordChange(): Promise<UserSession> {
+  const { user, loginId, mfa } = await getSignedInSession();
   assertSecondFactor(mfa);
+  return { user, loginId };
+}
+
+/** A fully signed-in session (live, any second factor proven, password within policy, on an allowed network), for actions that act on the sign-in itself. */
+export const requireUserSession = cache(async (): Promise<UserSession> => {
+  const { user, loginId, mfa, passwordChange, network } = await getSignedInSession();
+  assertSecondFactor(mfa);
+  if (passwordChange) throw new PasswordChangeRequiredError();
   if (network === "blocked") throw new NetworkBlockedError();
   return { user, loginId };
 });

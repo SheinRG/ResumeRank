@@ -34,6 +34,8 @@ export interface NewLoginSession {
   ipAddress: string | null;
   /** The company whose identity provider vouched for this sign-in, for SSO. */
   ssoCompanyId: string | null;
+  /** A password sign-in whose password the current policy no longer accepts. */
+  passwordChangeRequired?: boolean;
 }
 
 export interface LoginSessionSummary {

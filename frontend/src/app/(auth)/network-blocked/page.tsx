@@ -35,6 +35,7 @@ async function NetworkBlockedPage() {
   const session = await loadSession();
   if (session.mfa === "challenge") redirect("/mfa");
   if (session.mfa === "setup") redirect("/mfa/setup");
+  if (session.passwordChange) redirect("/password-change");
   if (session.network === "allowed") redirect("/dashboard");
 
   const { user, clientIp } = session;

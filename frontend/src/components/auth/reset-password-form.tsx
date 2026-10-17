@@ -9,14 +9,17 @@ import { AuthAlert } from "@/components/auth/auth-alert";
 import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
-import { resetPasswordSchema } from "@resumerank/core/validators/auth";
+import type { PasswordPolicy } from "@resumerank/core/auth/password-policy";
+import { resetPasswordSchemaFor } from "@resumerank/core/validators/auth";
+import { passwordHint } from "@/lib/password-hint";
 import { resetPasswordAction } from "@/server/actions/auth";
 
 type ResetPasswordFormProps = {
   token?: string;
+  policy: PasswordPolicy;
 };
 
-function ResetPasswordForm({ token }: ResetPasswordFormProps) {
+function ResetPasswordForm({ token, policy }: ResetPasswordFormProps) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     setFormError(null);
     setFieldError(null);
 
-    const parsed = resetPasswordSchema.safeParse({ token, password });
+    const parsed = resetPasswordSchemaFor(policy.minLength).safeParse({ token, password });
     if (!parsed.success) {
       setFieldError(parsed.error.flatten().fieldErrors.password?.[0] ?? null);
       return;
@@ -94,7 +97,7 @@ function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         label="New password"
         htmlFor="reset-password"
         errors={fieldError ? [fieldError] : undefined}
-        hint="At least 8 characters."
+        hint={passwordHint(policy)}
       >
         <PasswordInput
           id="reset-password"

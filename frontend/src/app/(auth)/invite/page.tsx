@@ -4,6 +4,7 @@ import { CircleX } from "lucide-react";
 
 import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
+import { companyPasswordPolicy } from "@resumerank/core/auth/password-policy";
 import { findValidInviteByToken } from "@resumerank/core/auth/tokens";
 import {
   Card,
@@ -150,6 +151,7 @@ async function InvitePage({ searchParams }: InvitePageProps) {
     );
   }
 
+  const passwordPolicy = await companyPasswordPolicy(invite.companyId);
   return (
     <FadeIn>
       <Card>
@@ -160,7 +162,7 @@ async function InvitePage({ searchParams }: InvitePageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <InviteSignupForm token={token} email={invite.email} />
+          <InviteSignupForm token={token} email={invite.email} policy={passwordPolicy} />
         </CardContent>
       </Card>
     </FadeIn>

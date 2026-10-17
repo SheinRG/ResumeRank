@@ -250,6 +250,11 @@ model Company {
   sessionLifetimeMinutes Int      @default(43200)
   /// Sessions end after this long without a request.
   sessionIdleMinutes     Int      @default(10080)
+  /// Shortest password a member may set. Accounts span workspaces, so the
+  /// strictest policy among a person's workspaces applies (auth/password-policy.ts).
+  passwordMinLength      Int      @default(8)
+  /// Refuse passwords found in known breaches (Have I Been Pwned, k-anonymity).
+  passwordBreachCheck    Boolean  @default(false)
   /// Audit entries older than this are deleted; null keeps them forever.
   auditRetentionDays     Int?
   createdAt              DateTime @default(now())
@@ -375,21 +380,24 @@ model VerificationToken {
 /// company allows, so revoking takes effect on the next request. Auth.js's
 /// own `Session` model stays unused under the JWT strategy.
 model LoginSession {
-  id           String       @id
-  userId       String
-  method       SignInMethod
-  userAgent    String?
-  ipAddress    String?
-  createdAt    DateTime     @default(now())
+  id                     String       @id
+  userId                 String
+  method                 SignInMethod
+  userAgent              String?
+  ipAddress              String?
+  createdAt              DateTime     @default(now())
   /// Written at most once a minute (see auth/session-policy.ts).
-  lastSeenAt   DateTime     @default(now())
-  revokedAt    DateTime?
+  lastSeenAt             DateTime     @default(now())
+  revokedAt              DateTime?
   /// The workspace this sign-in has open. Each sign-in switches on its own, so
   /// a laptop and a phone can have different companies open.
-  companyId    String?
+  companyId              String?
   /// The company whose identity provider vouched for this sign-in. Only that
   /// company's single sign-on requirement is met by it.
-  ssoCompanyId String?
+  ssoCompanyId           String?
+  /// The password this sign-in used falls short of the current policy; the
+  /// guards hold the session at /password-change until it sets a new one.
+  passwordChangeRequired Boolean      @default(false)
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   company    Company? @relation("LoginSessionCompany", fields: [companyId], references: [id], onDelete: SetNull)

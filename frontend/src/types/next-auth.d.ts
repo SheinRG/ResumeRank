@@ -19,6 +19,8 @@ declare module "next-auth" {
 
   interface User {
     sessionVersion?: number;
+    /** Set by the password provider when the password falls short of the account's policy; recorded on the sign-in. */
+    passwordChangeRequired?: boolean;
   }
 }
 

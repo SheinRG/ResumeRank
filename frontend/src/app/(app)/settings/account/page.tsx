@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { accountPasswordPolicy } from "@resumerank/core/auth/password-policy";
 import { db } from "@resumerank/core/db";
 import {
   Card,
@@ -17,10 +18,13 @@ export const metadata: Metadata = { title: "Account · Settings" };
 
 export default async function SettingsAccountPage() {
   const user = await requireUser();
-  const record = await db.user.findUnique({
-    where: { id: user.id },
-    select: { passwordHash: true, notifyByEmail: true },
-  });
+  const [record, passwordPolicy] = await Promise.all([
+    db.user.findUnique({
+      where: { id: user.id },
+      select: { passwordHash: true, notifyByEmail: true },
+    }),
+    accountPasswordPolicy(user.id),
+  ]);
   const hasPassword = Boolean(record?.passwordHash);
   const notifyByEmail = record?.notifyByEmail ?? true;
 
@@ -37,7 +41,7 @@ export default async function SettingsAccountPage() {
         </CardHeader>
         <CardContent>
           {hasPassword ? (
-            <ChangePasswordForm />
+            <ChangePasswordForm policy={passwordPolicy} />
           ) : (
             <p className="text-sm text-muted-foreground">
               Manage your password through your Google account.

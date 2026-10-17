@@ -9,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion";
+import { accountPasswordPolicy, DEFAULT_PASSWORD_POLICY } from "@resumerank/core/auth/password-policy";
+import { findPasswordResetUser } from "@resumerank/core/auth/tokens";
 
 export const metadata: Metadata = {
   title: "Reset password",
@@ -20,6 +22,8 @@ type ResetPasswordPageProps = {
 
 async function ResetPasswordPage({ searchParams }: ResetPasswordPageProps) {
   const { token } = await searchParams;
+  const owner = token ? await findPasswordResetUser(token) : null;
+  const policy = owner ? await accountPasswordPolicy(owner) : DEFAULT_PASSWORD_POLICY;
 
   return (
     <FadeIn>
@@ -31,7 +35,7 @@ async function ResetPasswordPage({ searchParams }: ResetPasswordPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResetPasswordForm token={token} />
+          <ResetPasswordForm token={token} policy={policy} />
         </CardContent>
       </Card>
     </FadeIn>
