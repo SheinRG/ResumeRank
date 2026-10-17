@@ -53,6 +53,7 @@ activity log under the creator's name.
   | 400 | `invalid_request` | Malformed JSON, or fields that fail validation (`details` maps each field to its messages) |
   | 401 | `unauthorized` | Missing, unknown, revoked or expired key |
   | 403 | `insufficient_scope` / `forbidden` | The key lacks the scope, or the creator's role can't do this |
+  | 403 | `ip_not_allowed` | The workspace has an IP allowlist and the request came from outside it |
   | 404 | `not_found` | No such record **in this workspace**, or one the creator can't reach. Ids from other workspaces look exactly like missing ones |
   | 409 | `conflict` | E.g. the candidate is already on that job, or the email is taken |
   | 422 | `unprocessable` | A valid request the current state refuses, e.g. adding to an archived job |

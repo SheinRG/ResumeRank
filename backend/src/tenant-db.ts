@@ -19,6 +19,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "WebhookDelivery",
   "ResumeFile",
   "BillingAccount",
+  "IpAllowlistEntry",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

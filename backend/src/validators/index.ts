@@ -15,3 +15,4 @@ export * from "./department";
 export * from "./feature-flag";
 export * from "./api";
 export * from "./billing";
+export * from "./ip-allowlist";

@@ -8,6 +8,9 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Security
 
+- IP allowlisting: owners can limit a workspace and its API keys to listed
+  networks (IPv4 or IPv6 ranges). People elsewhere see which address was
+  refused and can switch to another workspace; owners keep access.
 - Nonce-based Content Security Policy: no inline script runs on any page.
 - Login throttling now applies to every sign-in path. Previously it ran only
   in the login form, so posting to the Auth.js credentials endpoint directly

@@ -126,7 +126,7 @@ describe("the Free plan", () => {
   it("is what a company without a billing account gets", async () => {
     const overview = await getBillingOverview(free.owner);
     expect(overview).toMatchObject({ enabled: true, plan: "FREE", status: null, seats: { used: 3, limit: 3 } });
-    expect(await getFeatures(free.owner)).toEqual({ "resume-files": true, sso: false, "directory-sync": false, "audit-streaming": false });
+    expect(await getFeatures(free.owner)).toEqual({ "resume-files": true, sso: false, "directory-sync": false, "audit-streaming": false, "ip-allowlist": false });
     expect((await getAiBudget(free.companyId)).budget).toBe(250_000);
   });
 
@@ -165,7 +165,7 @@ describe("comped plans", () => {
     const comped = await createTenant("billing-comped");
     try {
       await db.billingAccount.create({ data: { companyId: comped.companyId, plan: "ENTERPRISE", comped: true } });
-      expect(await getFeatures(comped.owner)).toEqual({ "resume-files": true, sso: true, "directory-sync": true, "audit-streaming": true });
+      expect(await getFeatures(comped.owner)).toEqual({ "resume-files": true, sso: true, "directory-sync": true, "audit-streaming": true, "ip-allowlist": true });
       expect((await getBillingOverview(comped.owner)).seats.limit).toBeNull();
     } finally {
       await destroyTenant(comped);
@@ -226,7 +226,7 @@ describe("checkout and the Stripe webhook", () => {
     live = { ...live, priceId: STRIPE_ENV.STRIPE_PRICE_ENTERPRISE, quantity: 8 };
     stripe.subscriptions.set(live.id, live);
     expect(await applyStripeEvent(updated(live), stripe)).toBe("applied");
-    expect(await getFeatures(paid.owner)).toEqual({ "resume-files": true, sso: true, "directory-sync": true, "audit-streaming": true });
+    expect(await getFeatures(paid.owner)).toEqual({ "resume-files": true, sso: true, "directory-sync": true, "audit-streaming": true, "ip-allowlist": true });
     expect((await getBillingOverview(paid.owner)).seats.limit).toBe(8);
   });
 

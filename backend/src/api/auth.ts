@@ -7,6 +7,8 @@ export interface ApiPrincipal {
   ctx: TenantContext;
   keyId: string;
   scopes: readonly ApiScope[];
+  /** The workspace's IP allowlist; requests from elsewhere are refused, whoever created the key. */
+  ipRanges: readonly string[];
 }
 
 /** Writing `lastUsedAt` on every call would turn each read into a write. */
@@ -35,7 +37,9 @@ export async function authenticateApiKey(token: string, now = new Date()): Promi
       expiresAt: true,
       revokedAt: true,
       lastUsedAt: true,
-      membership: { select: { role: true } },
+      membership: {
+        select: { role: true, company: { select: { ipAllowlist: { select: { cidr: true } } } } },
+      },
     },
   });
   if (!key || !secretMatches(parsed.secret, key.secretHash)) return null;
@@ -48,5 +52,6 @@ export async function authenticateApiKey(token: string, now = new Date()): Promi
     ctx: { companyId: key.companyId, actorId: key.createdById, role: key.membership.role },
     keyId: key.id,
     scopes: key.scopes.filter(isApiScope),
+    ipRanges: key.membership.company.ipAllowlist.map((range) => range.cidr),
   };
 }

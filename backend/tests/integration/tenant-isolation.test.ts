@@ -34,6 +34,7 @@ import {
   renameDepartment,
 } from "../../src/services/departments";
 import { assignToJob, getHiringTeam, setJobDepartment, unassignFromJob } from "../../src/services/hiring-team";
+import { listIpRanges, removeIpRange } from "../../src/services/ip-allowlist";
 import { NotFoundError } from "../../src/services/errors";
 import { getFeatures } from "../../src/services/features";
 import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../../src/services/jobs";
@@ -470,6 +471,17 @@ describe("writes to another tenant's ids fail as not found", () => {
       setDomainAutoJoin(a.owner, { domainId: b.domainId, autoJoin: false }),
     ).rejects.toThrow(NotFoundError);
     await expect(removeDomain(a.owner, { domainId: b.domainId })).rejects.toThrow(NotFoundError);
+  });
+
+  it("hides another tenant's IP ranges and refuses to remove them", async () => {
+    const range = await db.ipAllowlistEntry.create({ data: { companyId: b.companyId, cidr: "198.51.100.0/24" } });
+    try {
+      expect((await listIpRanges(a.owner)).map((item) => item.id)).not.toContain(range.id);
+      await expect(removeIpRange(a.owner, { rangeId: range.id })).rejects.toThrow(NotFoundError);
+      expect(await db.ipAllowlistEntry.findUnique({ where: { id: range.id } })).not.toBeNull();
+    } finally {
+      await db.ipAllowlistEntry.delete({ where: { id: range.id } });
+    }
   });
 
   it("leaves every row of the other tenant exactly as it was", async () => {
