@@ -34,6 +34,6 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "What does it cost?",
     answer:
-      "ResumeRank is a demo/trial project, not a commercial product — there's no billing. Create an account and try the full flow with your own job and candidates.",
+      "There's a free plan for up to three members. Team and Enterprise are billed per seat through Stripe, with larger AI budgets; Enterprise adds single sign-on, directory sync and audit log streaming. ResumeRank is open source, and a self-hosted install without Stripe keeps every feature.",
   },
 ];

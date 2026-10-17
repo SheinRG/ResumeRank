@@ -14,3 +14,4 @@ export * from "./audit";
 export * from "./department";
 export * from "./feature-flag";
 export * from "./api";
+export * from "./billing";

@@ -42,6 +42,7 @@ function list(): void {
 async function show(slug: string): Promise<void> {
   const report = await describeCompanyFlags(slug);
   write(`${report.company.name} (${report.company.slug}, ${report.company.id})`);
+  write(`  plan: ${report.plan ?? "none (billing is off)"}`);
   for (const { flag, decision, reason } of report.flags) {
     const why = reason ? ` — ${reason}` : "";
     write(`  ${flag}: ${decision.enabled ? "on" : "off"} (${decision.source}${why})`);

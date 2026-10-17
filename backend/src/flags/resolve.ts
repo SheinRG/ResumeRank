@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 
+import { planGrants, type Plan } from "../billing/plans";
 import { FEATURE_FLAGS, flagDefinition, isFeatureFlag, type FeatureFlag, type FlagDefinition } from "./registry";
 
-export type FlagSource = "override" | "rollout" | "default";
+export type FlagSource = "override" | "plan" | "rollout" | "default";
 
 export interface FlagDecision {
   enabled: boolean;
@@ -27,15 +28,21 @@ export function rolloutBucket(flag: FeatureFlag, companyId: string): number {
   return digest.readUInt32BE(0) % 100;
 }
 
-/** Pure, so the order of precedence is unit-testable: override, then rollout, then default. */
+/**
+ * Pure, so the order of precedence is unit-testable: a staff override, then
+ * the plan (entitlements only, and only while billing is on, which is when
+ * `plan` isn't null), then the rollout, then the default.
+ */
 export function decideFlag(
   flag: FeatureFlag,
   companyId: string,
   override: boolean | undefined,
+  plan: Plan | null = null,
   definition: FlagDefinition = flagDefinition(flag),
 ): FlagDecision {
   if (override !== undefined) return { enabled: override, source: "override" };
-  const { rolloutPercent, defaultEnabled } = definition;
+  const { kind, rolloutPercent, defaultEnabled } = definition;
+  if (kind === "entitlement" && plan !== null) return { enabled: planGrants(plan, flag), source: "plan" };
   if (rolloutPercent !== undefined && rolloutBucket(flag, companyId) < rolloutPercent) {
     return { enabled: true, source: "rollout" };
   }
@@ -50,15 +57,19 @@ export function overridesByFlag(rows: readonly OverrideRow[]): Map<FeatureFlag, 
   return overrides;
 }
 
-export function decideAll(companyId: string, rows: readonly OverrideRow[]): Record<FeatureFlag, FlagDecision> {
+export function decideAll(
+  companyId: string,
+  rows: readonly OverrideRow[],
+  plan: Plan | null,
+): Record<FeatureFlag, FlagDecision> {
   const overrides = overridesByFlag(rows);
   return Object.fromEntries(
-    FEATURE_FLAGS.map((flag) => [flag, decideFlag(flag, companyId, overrides.get(flag))]),
+    FEATURE_FLAGS.map((flag) => [flag, decideFlag(flag, companyId, overrides.get(flag), plan)]),
   ) as Record<FeatureFlag, FlagDecision>;
 }
 
-export function featureSet(companyId: string, rows: readonly OverrideRow[]): FeatureSet {
-  const decisions = decideAll(companyId, rows);
+export function featureSet(companyId: string, rows: readonly OverrideRow[], plan: Plan | null): FeatureSet {
+  const decisions = decideAll(companyId, rows, plan);
   return Object.fromEntries(
     FEATURE_FLAGS.map((flag) => [flag, decisions[flag].enabled]),
   ) as FeatureSet;

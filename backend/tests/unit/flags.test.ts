@@ -17,23 +17,23 @@ const companies = Array.from({ length: 2000 }, (_, index) => `company-${index}`)
 describe("feature flag resolution", () => {
   it("lets an override beat the rollout and the default", () => {
     expect(decideFlag("sso", "c1", false)).toEqual({ enabled: false, source: "override" });
-    expect(decideFlag("sso", "c1", true, release(0))).toEqual({ enabled: true, source: "override" });
-    expect(decideFlag("sso", "c1", false, release(100))).toEqual({ enabled: false, source: "override" });
+    expect(decideFlag("sso", "c1", true, null, release(0))).toEqual({ enabled: true, source: "override" });
+    expect(decideFlag("sso", "c1", false, null, release(100))).toEqual({ enabled: false, source: "override" });
   });
 
   it("falls back to the default without an override or rollout", () => {
     expect(decideFlag("sso", "c1", undefined)).toEqual({ enabled: FLAGS.sso.defaultEnabled, source: "default" });
-    expect(decideFlag("sso", "c1", undefined, release(0))).toEqual({ enabled: false, source: "default" });
+    expect(decideFlag("sso", "c1", undefined, null, release(0))).toEqual({ enabled: false, source: "default" });
   });
 
   it("rolls out to everyone at 100% and no one at 0%", () => {
-    expect(companies.every((id) => decideFlag("sso", id, undefined, release(100)).source === "rollout")).toBe(true);
-    expect(companies.some((id) => decideFlag("sso", id, undefined, release(0)).enabled)).toBe(false);
+    expect(companies.every((id) => decideFlag("sso", id, undefined, null, release(100)).source === "rollout")).toBe(true);
+    expect(companies.some((id) => decideFlag("sso", id, undefined, null, release(0)).enabled)).toBe(false);
   });
 
   it("gives each company a stable bucket, so raising the percentage only adds companies", () => {
     const at = (percent: number) =>
-      new Set(companies.filter((id) => decideFlag("sso", id, undefined, release(percent)).enabled));
+      new Set(companies.filter((id) => decideFlag("sso", id, undefined, null, release(percent)).enabled));
     const ten = at(10);
     const fifty = at(50);
     expect([...ten].every((id) => fifty.has(id))).toBe(true);
@@ -55,7 +55,7 @@ describe("feature flag resolution", () => {
     const set = featureSet("c1", [
       { flag: "audit-streaming", enabled: false },
       { flag: "retired-flag", enabled: true },
-    ]);
+    ], null);
     expect(Object.keys(set).sort()).toEqual([...FEATURE_FLAGS].sort());
     expect(set["audit-streaming"]).toBe(false);
     expect(set.sso).toBe(true);

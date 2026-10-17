@@ -1,4 +1,6 @@
 import { db } from "../db";
+import { BILLING_STATE_SELECT, billingPlan } from "../billing/account";
+import type { Plan } from "../billing/plans";
 import { logActivity } from "../activity";
 import { NotFoundError } from "../services/errors";
 import type { FlagOverrideInput } from "../validators/feature-flag";
@@ -39,8 +41,14 @@ function summaryOf(flag: FeatureFlag, enabled: boolean | null): string {
   return `${enabled ? "turned on" : "turned off"} ${label} for this workspace`;
 }
 
+async function planOf(companyId: string): Promise<Plan | null> {
+  const account = await db.billingAccount.findUnique({ where: { companyId }, select: BILLING_STATE_SELECT });
+  return billingPlan(account);
+}
+
 export async function setFlagOverride(input: FlagOverrideInput): Promise<FlagOverrideChange> {
   const company = await findCompany(input.companySlug);
+  const plan = await planOf(company.id);
   const where = { companyId_flag: { companyId: company.id, flag: input.flag } };
 
   return db.$transaction(async (tx) => {
@@ -52,7 +60,7 @@ export async function setFlagOverride(input: FlagOverrideInput): Promise<FlagOve
       previous,
       override: input.enabled,
       changed,
-      decision: decideFlag(input.flag, company.id, input.enabled ?? undefined),
+      decision: decideFlag(input.flag, company.id, input.enabled ?? undefined, plan),
     });
     if (previous === input.enabled) return result(false);
 
@@ -83,19 +91,25 @@ export async function setFlagOverride(input: FlagOverrideInput): Promise<FlagOve
 
 export interface CompanyFlagReport {
   company: CompanyRef;
+  /** Null while billing is off. */
+  plan: Plan | null;
   flags: Array<{ flag: FeatureFlag; decision: FlagDecision; reason: string | null }>;
 }
 
 export async function describeCompanyFlags(slug: string): Promise<CompanyFlagReport> {
   const company = await findCompany(slug);
-  const rows = await db.featureFlagOverride.findMany({
-    where: { companyId: company.id },
-    select: { flag: true, enabled: true, reason: true },
-  });
-  const decisions = decideAll(company.id, rows);
+  const [rows, plan] = await Promise.all([
+    db.featureFlagOverride.findMany({
+      where: { companyId: company.id },
+      select: { flag: true, enabled: true, reason: true },
+    }),
+    planOf(company.id),
+  ]);
+  const decisions = decideAll(company.id, rows, plan);
   const reasons = new Map(rows.map((row) => [row.flag, row.reason]));
   return {
     company,
+    plan,
     flags: FEATURE_FLAGS.map((flag) => ({ flag, decision: decisions[flag], reason: reasons.get(flag) ?? null })),
   };
 }

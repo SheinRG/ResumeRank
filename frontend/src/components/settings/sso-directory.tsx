@@ -97,9 +97,11 @@ function Connected({
 export function SsoDirectory({
   initialDirectory,
   entitled,
+  upgradable,
 }: {
   initialDirectory: DirectorySummary | null;
   entitled: boolean;
+  upgradable: boolean;
 }) {
   const [directory, setDirectory] = useState<DirectorySummary | null>(initialDirectory);
   const [token, setToken] = useState<string | null>(null);
@@ -120,7 +122,8 @@ export function SsoDirectory({
         {entitled ? null : (
           <FeatureUnavailable
             feature="Directory sync"
-            detail="Your identity provider's changes are refused until it's turned back on. Ask ResumeRank support, or disconnect it."
+            upgradable={upgradable}
+            consequence="Your identity provider's changes are refused meanwhile; you can still disconnect it."
           />
         )}
         <Connected
@@ -134,7 +137,7 @@ export function SsoDirectory({
       </div>
     );
   }
-  if (!entitled) return <FeatureUnavailable feature="Directory sync" />;
+  if (!entitled) return <FeatureUnavailable feature="Directory sync" upgradable={upgradable} />;
 
   function handleSubmit(formEvent: React.FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();

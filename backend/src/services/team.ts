@@ -3,6 +3,7 @@ import { logActivity } from "../activity";
 import { verifyPassword } from "../auth/password";
 import { revokeWorkspaceSessions } from "../auth/sessions";
 import { createCompanyInvite } from "../auth/tokens";
+import { assertSeatAvailable } from "../billing/seats";
 import { queueInviteEmail } from "../email/messages";
 import { AUTH_LIMIT, rateLimit } from "../rate-limit";
 import type { Prisma } from "../generated/prisma/client";
@@ -317,6 +318,7 @@ export async function inviteMember(
   }
 
   const invite = await tenantTransaction(ctx, async (tx) => {
+    await assertSeatAvailable(tx, ctx.companyId, { countPendingInvites: true, excludeInviteEmail: email });
     const created = await createCompanyInvite(
       { companyId: ctx.companyId, email, role, invitedById: ctx.actorId },
       tx,

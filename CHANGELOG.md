@@ -36,6 +36,10 @@ All notable changes to ResumeRank are documented here. The format follows
   for audit and its text, read in the background (with OCR for scanned PDFs),
   becomes the candidate's resume text. Off unless `BLOB_READ_WRITE_TOKEN` is
   set.
+- Billing through Stripe: Free, Team and Enterprise plans with per-seat
+  pricing, seat limits, AI token allowances, Enterprise-only entitlements and
+  a 14-day grace period after a failed payment. Off unless
+  `STRIPE_SECRET_KEY` is set; existing workspaces were moved to Enterprise.
 
 - Temporary account lockout after 10 failed sign-ins in 15 minutes, with a
   message saying how long to wait.
