@@ -814,6 +814,59 @@ with a retry. The job page's *Score all unscored* button shows batch progress
 and refreshes the ranking as scores land; table rows show *Queued* /
 *Scoring* in place of a score. The application page lists the score history.
 
+## Resume files
+
+Recruiters can upload a candidate's PDF or Word (.docx) resume from the
+candidate page; the original is kept for audit and its text becomes the
+candidate's resume text, which scoring reads as before.
+
+**Upload.** `uploadResumeFile` (`backend/src/services/resume-files.ts`)
+decides the type from the file's bytes (`ingestion/sniff.ts`: a `%PDF-`
+header, or a zip holding `word/document.xml`), never from the browser's MIME
+type or the name. The blob key is `<companyId>/resumes/<uuid>.<ext>`, made
+on the server, so nothing the uploader sends reaches a storage path, and the
+uploader's file name is only cleaned up for display and download. Files are
+capped at 4 MB, because Vercel caps a function's request body at 4.5 MB (the
+server-action `bodySizeLimit` is raised to match), and uploads are rate-limited
+per user (60 per 10 minutes). The blob is written first, then the
+`ResumeFile` row and its audit entry in one tenant transaction; if that
+transaction fails, the blob is deleted again. Storage is a private Vercel Blob
+store behind a small `BlobStore` interface (`backend/src/storage/blob.ts`), so
+tests run against memory. Blobs are reachable only with the read-write token,
+never by URL. Uploads are off unless `BLOB_READ_WRITE_TOKEN` is set, and they
+are the `resume-files` entitlement (on by default).
+
+**Parsing.** `ResumeFile` doubles as its own queue, worked like scoring runs
+(`backend/src/ingestion/queue.ts`): `SKIP LOCKED` claims, two lanes, a 15s
+claiming budget so a drain ends inside the route's 60s, three attempts with
+backoff, and recovery of files a dead worker left `RUNNING`. Drains run via
+`after()` from the upload action and from the candidate page's status poll
+(`GET /api/candidates/[id]/resume-files`, every 2.5s while a file is
+pending), with `GET /api/cron/resume-files` as the backstop. `unpdf` reads a
+PDF's text layer; when that yields too little to score, the first four pages
+are rendered with `@napi-rs/canvas` and read by Tesseract (English data
+bundled, no network fetch). `mammoth` reads .docx. The text is normalized
+(`ingestion/text.ts`) and capped at the resume length limit, and it stays
+untrusted: invisible characters are kept, since scoring flags text hidden with
+them. A file that can't be read (encrypted, corrupt, too little text) fails
+at once with a message for the uploader; other errors retry. The parsed text
+replaces the candidate's resume text unless a newer upload has already been
+read, so files finishing out of order can't bring back an old resume. Those
+readers load native binaries, WebAssembly and language data by path, so they
+are `serverExternalPackages`, with `outputFileTracingIncludes` shipping their
+data with the three routes that parse.
+
+**Access.** Everyone who can see the candidate sees their files (a resume
+isn't AI output, so blind interviewers see them too); other jobs' and other
+tenants' file ids behave as missing. Downloads always go out as attachments,
+because a crafted PDF rendered inline from our origin could run in the app's
+context, and each one is recorded in the audit log. Deleting a candidate
+removes their files: the rows cascade in the transaction and the blobs are
+deleted once it commits (a failed blob delete is logged for follow-up).
+Tenants have no `DELETE` on the table. Tenant offboarding (Phase 3) must also
+delete the company's blob prefix. `20261022090000_resume_files` adds the table
+with RLS (expand-only).
+
 ## Rate limiting
 
 All limits live in Postgres (`backend/src/rate-limit.ts`), so they hold

@@ -40,6 +40,7 @@ import { getJob, listJobOptions, listJobs, setJobStatus, updateJob } from "../..
 import { resetMemberMfa } from "../../src/services/mfa";
 import { upsertScorecard } from "../../src/services/scorecards";
 import { signOutMember } from "../../src/services/sessions";
+import { getResumeFileDownload, listResumeFiles, uploadResumeFile } from "../../src/services/resume-files";
 import { getSsoSettings, removeDomain, setDomainAutoJoin, verifyDomain } from "../../src/services/sso";
 import { closeSso } from "../../src/sso/jackson";
 import {
@@ -78,10 +79,12 @@ import {
   RESUME_TEXT,
   type TenantFixture,
 } from "./fixtures";
+import { memoryBlobStore } from "../memory-blob-store";
+import { textPdf } from "../resume-files";
 
 /** Everything tenant A's probes could conceivably touch in tenant B. */
 async function snapshot(tenant: TenantFixture) {
-  const [job, candidate, application, member, memberships, invite, domain, activityCount, department, assignments] = await Promise.all([
+  const [job, candidate, application, member, memberships, invite, domain, activityCount, department, assignments, resumeFiles] = await Promise.all([
     db.job.findUnique({
       where: { id: tenant.jobId },
       include: { requirements: { orderBy: { order: "asc" } } },
@@ -98,6 +101,7 @@ async function snapshot(tenant: TenantFixture) {
     db.activityLog.count({ where: { companyId: tenant.companyId } }),
     db.department.findUnique({ where: { id: tenant.departmentId }, include: { members: true } }),
     db.jobAssignment.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
+    db.resumeFile.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
   ]);
   const [apiKeys, webhookEndpoints] = await Promise.all([
     db.apiKey.findMany({ where: { companyId: tenant.companyId }, orderBy: { id: "asc" } }),
@@ -120,6 +124,7 @@ async function snapshot(tenant: TenantFixture) {
     assignments,
     apiKeys,
     webhookEndpoints,
+    resumeFiles,
   };
 }
 
@@ -128,6 +133,8 @@ let b: TenantFixture;
 let bBefore: Awaited<ReturnType<typeof snapshot>>;
 let bApiKeyId: string;
 let bEndpointId: string;
+const blobs = memoryBlobStore();
+let bResumeFileId: string;
 
 beforeAll(async () => {
   [a, b] = await Promise.all([createTenant("iso-a"), createTenant("iso-b")]);
@@ -135,6 +142,13 @@ beforeAll(async () => {
   bEndpointId = (
     await createWebhook(b.owner, { url: "https://93.184.215.14/isolation", events: ["application.created"] })
   ).endpoint.id;
+  bResumeFileId = (
+    await uploadResumeFile(
+      b.owner,
+      { candidateId: b.candidateId, fileName: "b.pdf", bytes: textPdf(["Tenant B resume"]) },
+      blobs,
+    )
+  ).id;
   bBefore = await snapshot(b);
 });
 
@@ -273,6 +287,11 @@ describe("reads never return another tenant's rows", () => {
     expect(events.every((event) => event.companyId === a.companyId)).toBe(true);
   });
 
+  it("lists and downloads only the caller's resume files", async () => {
+    expect(await listResumeFiles(a.owner, b.candidateId)).toEqual([]);
+    await expect(getResumeFileDownload(a.owner, bResumeFileId, blobs)).rejects.toThrow(NotFoundError);
+  });
+
   it("exports only the caller's candidates", async () => {
     const { rowCount, stream } = await exportCandidatesCsv(
       a.owner,
@@ -330,7 +349,15 @@ describe("writes to another tenant's ids fail as not found", () => {
       resumeText: RESUME_TEXT,
     });
     await expect(updateCandidate(a.owner, input)).rejects.toThrow(NotFoundError);
-    await expect(deleteCandidate(a.owner, b.candidateId)).rejects.toThrow(NotFoundError);
+    await expect(deleteCandidate(a.owner, b.candidateId, blobs)).rejects.toThrow(NotFoundError);
+  });
+
+  it("refuses to upload a resume file to another tenant's candidate", async () => {
+    const before = blobs.blobs.size;
+    await expect(
+      uploadResumeFile(a.owner, { candidateId: b.candidateId, fileName: "x.pdf", bytes: textPdf(["x"]) }, blobs),
+    ).rejects.toThrow(NotFoundError);
+    expect(blobs.blobs.size).toBe(before);
   });
 
   it("refuses to attach another tenant's job or candidate", async () => {

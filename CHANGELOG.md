@@ -32,6 +32,10 @@ All notable changes to ResumeRank are documented here. The format follows
 - Per-company feature flags and plan entitlements.
 - Public REST API (`/api/v1`) with scoped API keys and signed outbound
   webhooks.
+- PDF and Word resume uploads on the candidate page. The original is kept
+  for audit and its text, read in the background (with OCR for scanned PDFs),
+  becomes the candidate's resume text. Off unless `BLOB_READ_WRITE_TOKEN` is
+  set.
 
 - Temporary account lockout after 10 failed sign-ins in 15 minutes, with a
   message saying how long to wait.

@@ -77,6 +77,24 @@ enum ScoringRunStatus {
   FAILED
 }
 
+enum ResumeFileStatus {
+  QUEUED
+  RUNNING
+  PARSED
+  FAILED
+}
+
+enum ResumeFileKind {
+  PDF
+  DOCX
+}
+
+/// How a resume file's text was read: its own text layer, or OCR of the rendered pages.
+enum ResumeExtraction {
+  TEXT
+  OCR
+}
+
 /// What a stored WebAuthn challenge was issued for; each is single-use.
 enum WebAuthnCeremony {
   REGISTRATION
@@ -157,6 +175,7 @@ model User {
   scorecards          Scorecard[]
   activities          ActivityLog[]
   scoringRuns         ScoringRun[]
+  resumeFilesUploaded ResumeFile[]
   invitesSent         CompanyInvite[]      @relation("InvitesSent")
   totpFactor          TotpFactor?
   webAuthnCredentials WebAuthnCredential[]
@@ -233,6 +252,7 @@ model Company {
   auditStream      AuditStream?
   featureOverrides FeatureFlagOverride[]
   webhookEndpoints WebhookEndpoint[]
+  resumeFiles      ResumeFile[]
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -527,6 +547,7 @@ model Candidate {
   company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy    User          @relation("CandidateCreatedBy", fields: [createdById], references: [id])
   applications Application[]
+  resumeFiles  ResumeFile[]
 
   @@unique([companyId, email])
   @@index([companyId, createdAt(sort: Desc), id(sort: Desc)])
@@ -536,6 +557,43 @@ model Candidate {
   @@index([headline(ops: raw("gin_trgm_ops"))], type: Gin, map: "Candidate_headline_trgm_idx")
   @@index([resumeTsv], type: Gin)
   @@index([createdById])
+}
+
+/// An uploaded resume file. The original stays in blob storage for audit;
+/// parsing it is queued, and its text becomes the candidate's resume text.
+model ResumeFile {
+  id             String            @id
+  companyId      String
+  candidateId    String
+  uploadedById   String?
+  /// Always `<companyId>/resumes/<id>.<ext>`, never built from client input.
+  blobKey        String            @unique
+  /// The uploader's file name, cleaned, for display and download only.
+  fileName       String
+  kind           ResumeFileKind
+  sizeBytes      Int
+  /// sha256 of the original, so an audit can show the stored file is the uploaded one.
+  sha256         String
+  status         ResumeFileStatus  @default(QUEUED)
+  attempts       Int               @default(0)
+  nextAttemptAt  DateTime          @default(now())
+  lockedAt       DateTime?
+  finishedAt     DateTime?
+  extraction     ResumeExtraction?
+  extractedChars Int?
+  /// User-safe failure reason, shown on the candidate page.
+  error          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  candidate  Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([companyId, candidateId, createdAt(sort: Desc)])
+  @@index([candidateId])
+  @@index([uploadedById])
 }
 
 model Application {

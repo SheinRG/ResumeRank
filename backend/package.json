@@ -25,14 +25,20 @@
   "dependencies": {
     "@boxyhq/saml-jackson": "26.2.0",
     "@boxyhq/saml20": "1.21.0",
+    "@napi-rs/canvas": "1.0.9",
     "@opentelemetry/api": "^1.9.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@simplewebauthn/server": "14.0.3",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@vercel/blob": "2.8.0",
     "bcryptjs": "^3.0.3",
     "groq-sdk": "^1.6.0",
+    "mammoth": "1.13.0",
     "nodemailer": "^10.1.0",
     "resend": "^6.32.1",
+    "tesseract.js": "7.0.0",
+    "unpdf": "1.8.1",
     "zod": "^4.6.6"
   },
   "devDependencies": {

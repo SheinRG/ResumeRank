@@ -61,7 +61,12 @@ afterAll(async () => {
 
 describe("feature flag overrides", () => {
   it("leaves every existing feature on until staff change one", async () => {
-    expect(await getFeatures(a.owner)).toEqual({ sso: true, "directory-sync": true, "audit-streaming": true });
+    expect(await getFeatures(a.owner)).toEqual({
+      sso: true,
+      "directory-sync": true,
+      "audit-streaming": true,
+      "resume-files": true,
+    });
   });
 
   it("applies an override to that company alone and records it in its audit log", async () => {

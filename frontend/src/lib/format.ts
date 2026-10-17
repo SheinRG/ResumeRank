@@ -10,6 +10,13 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
+/** "820 KB", "3.4 MB": file sizes as people read them, in powers of 1024. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** "1 job", "25 jobs", or "1,000+ jobs" once a list stops counting exactly. */
 export function formatCount(
   count: { total: number; totalCapped: boolean },

@@ -180,6 +180,13 @@ export const COMPANY_CREATE_LIMIT: RateLimit = { max: 5, windowMs: 24 * 60 * 60 
 export const AI_USER_LIMIT: RateLimit = { max: 30, windowMs: 10 * 60 * 1000 };
 export const AI_COMPANY_LIMIT: RateLimit = { max: 300, windowMs: 60 * 60 * 1000 };
 
+/**
+ * Each upload stores a file and queues parsing (OCR can take seconds a page).
+ * Per user, so a script can't fill a company's storage; generous enough to
+ * attach a stack of resumes in one sitting.
+ */
+export const RESUME_UPLOAD_LIMIT: RateLimit = { max: 60, windowMs: 10 * 60 * 1000 };
+
 export function retryMessage(retryAfterSeconds: number): string {
   const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;

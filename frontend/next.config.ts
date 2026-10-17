@@ -25,13 +25,36 @@ const ssoAuthorizePolicy = [{ key: "Content-Security-Policy", value: samlPostFor
 const nextConfig: NextConfig = {
   transpilePackages: ["@resumerank/core"],
   // The SSO service lazily requires database drivers it never uses here
-  // (TypeORM, Mongo, MSSQL); bundling it would try to resolve them all.
-  serverExternalPackages: ["@boxyhq/saml-jackson"],
+  // (TypeORM, Mongo, MSSQL); bundling it would try to resolve them all. The
+  // resume readers load native binaries, worker threads, WebAssembly and
+  // language data by path at runtime, so they too stay in node_modules.
+  serverExternalPackages: [
+    "@boxyhq/saml-jackson",
+    "@napi-rs/canvas",
+    "@tesseract.js-data/eng",
+    "mammoth",
+    "tesseract.js",
+    "unpdf",
+  ],
+  // Those runtime paths are invisible to file tracing; ship them with every
+  // route that reads resume files (the upload action's page, the poll, the cron).
+  outputFileTracingIncludes: Object.fromEntries(
+    ["/candidates/\\[id\\]", "/api/candidates/\\[id\\]/resume-files", "/api/cron/resume-files"].map((route) => [
+      route,
+      [
+        "../node_modules/@tesseract.js-data/eng/4.0.0/**/*",
+        "../node_modules/tesseract.js/src/worker-script/**/*",
+        "../node_modules/tesseract.js-core/*",
+      ],
+    ]),
+  ),
   cacheComponents: true,
   // Pin the monorepo root so file tracing spans backend + frontend and does not
   // latch onto an unrelated lockfile higher up the filesystem.
   turbopack: { root: resolve(process.cwd(), "..") },
   experimental: {
+    // Resume uploads are files of up to 4 MB, plus the multipart envelope.
+    serverActions: { bodySizeLimit: "4.5mb" },
     // Persist Turbopack's compile graph to .next between dev restarts, and cut
     // per-route first-visit compiles by only bundling named imports actually
     // used from these export-heavy packages.
