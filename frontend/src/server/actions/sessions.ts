@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   requireAdmin,
+  requireRecentAuth,
   requireUserSession,
   tenantContext,
   type UserSession,
@@ -61,6 +62,7 @@ export async function setSessionPolicyAction(input: unknown): Promise<ActionResu
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const policy = await setSessionPolicy(tenantContext(admin), parsed.data);
     revalidatePath(SECURITY_PATH);
     expireTenantReads(admin.companyId);

@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@resumerank/core/db";
 import { env } from "@resumerank/core/env";
 import { networkAllows } from "@resumerank/core/auth/ip-allowlist";
+import { authenticatedAt, isRecentlyAuthenticated } from "@resumerank/core/auth/step-up";
 import { can, canAdmin, type Permission } from "@resumerank/core/auth/roles";
 import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
 import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
@@ -58,6 +59,17 @@ export class NetworkBlockedError extends GateError {
 export class PasswordChangeRequiredError extends GateError {
   constructor() {
     super("Your company's password policy has changed. Choose a new password to continue.");
+  }
+}
+
+/**
+ * A sensitive action from a sign-in that hasn't proved itself recently. Not a
+ * dead session: the client catches it (`code: "reauth_required"`), asks the
+ * person to confirm it's them, and retries.
+ */
+export class ReauthRequiredError extends GateError {
+  constructor() {
+    super("Confirm it's you to continue.");
   }
 }
 
@@ -162,6 +174,8 @@ export interface SignedInSession {
   mfa: MfaGate;
   /** Whether this sign-in must set a new password before it can do anything else. */
   passwordChange: boolean;
+  /** When this sign-in last proved who it is: signing in, or a step-up since. */
+  authenticatedAt: Date;
   /** Whether the open workspace's IP allowlist admits this request. */
   network: "allowed" | "blocked";
   /** The address the allowlist was judged on, shown to people it blocks. */
@@ -233,6 +247,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
           companyId: true,
           ssoCompanyId: true,
           passwordChangeRequired: true,
+          reauthenticatedAt: true,
         },
       },
     },
@@ -288,6 +303,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     loginId,
     mfa,
     passwordChange: login.passwordChangeRequired,
+    authenticatedAt: authenticatedAt(login),
     network: active && !networkAllows(active, ip) ? "blocked" : "allowed",
     clientIp: ip,
   };
@@ -357,6 +373,15 @@ export async function requireMfaEnrollment(): Promise<UserSession> {
   const { user, loginId, mfa } = await getSignedInSession();
   if (mfa === "challenge") throw new MfaChallengeRequiredError();
   return { user, loginId };
+}
+
+/**
+ * For sensitive actions, after their usual guard: the sign-in must have
+ * proved who it is within the step-up window (`auth/step-up.ts`).
+ */
+export async function requireRecentAuth(): Promise<void> {
+  const { authenticatedAt: at } = await getSignedInSession();
+  if (!isRecentlyAuthenticated(at)) throw new ReauthRequiredError();
 }
 
 /** Narrows to a user who has a company — onboarding must run before this passes. */

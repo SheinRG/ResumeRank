@@ -234,6 +234,40 @@ in `services/sessions.ts`: the owner-only lifetime policy and an admin's
 "sign out everywhere" for a teammate. Tokens issued before sign-ins were
 recorded have no row, so they ended once when this shipped.
 
+## Step-up re-authentication
+
+Sensitive actions need a sign-in that proved who it is in the last 10 minutes
+(`STEP_UP_WINDOW_MINUTES`, `backend/src/auth/step-up.ts`), so a session left
+open on a shared machine, or a stolen cookie, can't mint API keys or switch
+security settings off. "Proved" means signing in (`LoginSession.createdAt`) or
+a step-up since (`LoginSession.reauthenticatedAt`, per sign-in, so confirming
+on a laptop says nothing about a phone).
+
+**Server.** After its usual guard, a sensitive action calls
+`requireRecentAuth()`, which throws `ReauthRequiredError`; `runAction` turns it
+into `{ ok: false, code: "reauth_required" }`. Gated today: creating API keys
+and webhook endpoints; SSO connection, enforcement and directory changes; the
+MFA, session and password policies and the IP allowlist; removing your own
+authenticator app or passkey and regenerating recovery codes; resetting a
+teammate's MFA; changing a teammate's role; audit retention and streaming; and
+the candidate and audit-log exports (GET routes, which re-check and answer
+403). Ownership transfer and account deletion already ask for the password.
+
+**Client.** `StepUpProvider` (in the `(app)` layout) gives `useStepUp()`, a
+wrapper that runs an action and, on `reauth_required`, opens the "Confirm it's
+you" dialog and runs the action again once confirmed. `useActionForm` goes
+through it, so forms need nothing extra; components that call an action
+directly wrap the call, and export buttons use `StepUpDownload`, which
+confirms first and then lets the browser fetch the file. The dialog offers
+what the account has: password (rate-limited like sign-in), authenticator
+code or passkey (the sign-in checks, with their attempt limits, single-use
+codes and audit entries). Recovery codes aren't offered, so a routine
+confirmation can't use one up. An account with none of these (SSO or Google
+without a second factor) is asked to sign out and back in, which starts a
+fresh window. Every confirmation and wrong password is audited
+(`auth.reauthenticated` / `auth.reauth_failed`). `20261023110000_step_up` adds
+the column (expand-only).
+
 ## Password policy
 
 Owners set a minimum length (8–64) and whether to refuse breached passwords

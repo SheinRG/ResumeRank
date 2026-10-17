@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { setSsoEnforcedAction } from "@/server/actions/sso";
 import type { FeatureSet } from "@/server/queries/features";
 import type { DirectorySummary, SsoSettings } from "@/server/queries/sso";
@@ -31,11 +32,12 @@ function Enforcement({
   onChange: (enforced: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function toggle(next: boolean) {
     onChange(next);
     startTransition(async () => {
-      const result = await setSsoEnforcedAction({ enforced: next });
+      const result = await withStepUp(() => setSsoEnforcedAction({ enforced: next }));
       if (!result.ok) {
         onChange(!next);
         toast.error(result.error);

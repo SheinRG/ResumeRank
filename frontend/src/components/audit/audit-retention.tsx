@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { setAuditRetentionAction } from "@/server/actions/audit";
 import { AUDIT_RETENTION_DAYS, auditRetentionSchema } from "@resumerank/core/validators/audit";
 
@@ -53,6 +54,7 @@ export function AuditRetention({
   const [value, setValue] = useState(retentionDays === null ? FOREVER : String(retentionDays));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
   const days = toDays(value);
   const dirty = days !== saved;
 
@@ -63,7 +65,7 @@ export function AuditRetention({
       return false;
     }
     setError(null);
-    const result = await setAuditRetentionAction(parsed.data);
+    const result = await withStepUp(() => setAuditRetentionAction(parsed.data));
     if (!result.ok) {
       setError(result.fieldErrors?.retentionDays?.[0] ?? null);
       toast.error(result.error);

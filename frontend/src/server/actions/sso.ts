@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { signIn } from "@/lib/auth";
-import { requireAdmin, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requireRecentAuth, tenantContext } from "@/lib/auth/guards";
 import { isSsoEnabled } from "@resumerank/core/env";
 import { rateLimit, retryMessage, SSO_START_LIMIT } from "@resumerank/core/rate-limit";
 import { clientIp } from "@resumerank/core/request-ip";
@@ -141,6 +141,7 @@ export async function saveSsoConnectionAction(
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const connection = await saveSsoConnection(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -151,6 +152,7 @@ export async function saveSsoConnectionAction(
 export async function removeSsoConnectionAction(): Promise<ActionResult<{ removed: true }>> {
   return runAction("removeSsoConnection", async () => {
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const removed = await removeSsoConnection(tenantContext(admin));
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -165,6 +167,7 @@ export async function setSsoEnforcedAction(
     const parsed = setSsoEnforcedSchema.safeParse(input);
     if (!parsed.success) return actionError("Choose whether to require SSO.");
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const result = await setSsoEnforced(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -177,6 +180,7 @@ export async function createDirectoryAction(input: unknown): Promise<ActionResul
     const parsed = createDirectorySchema.safeParse(input);
     if (!parsed.success) return actionError("Choose your identity provider.");
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const directory = await createDirectory(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -187,6 +191,7 @@ export async function createDirectoryAction(input: unknown): Promise<ActionResul
 export async function removeDirectoryAction(): Promise<ActionResult<{ removed: true }>> {
   return runAction("removeDirectory", async () => {
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const removed = await removeDirectory(tenantContext(admin));
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);

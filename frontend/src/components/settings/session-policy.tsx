@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { setSessionPolicyAction } from "@/server/actions/sessions";
 import type { SessionPolicy } from "@/server/queries/sessions";
 import { sessionPolicySchema } from "@resumerank/core/validators/session";
@@ -97,6 +98,7 @@ export function SessionPolicyCard({ policy, canChange }: { policy: SessionPolicy
   const [idleMinutes, setIdle] = useState(policy.idleMinutes);
   const [errors, setErrors] = useState<Partial<Record<keyof SessionPolicy, string>>>({});
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   const dirty = lifetimeMinutes !== policy.lifetimeMinutes || idleMinutes !== policy.idleMinutes;
 
@@ -109,7 +111,7 @@ export function SessionPolicyCard({ policy, canChange }: { policy: SessionPolicy
     }
     setErrors({});
     startTransition(async () => {
-      const result = await setSessionPolicyAction(parsed.data);
+      const result = await withStepUp(() => setSessionPolicyAction(parsed.data));
       if (!result.ok) {
         setErrors({
           lifetimeMinutes: result.fieldErrors?.lifetimeMinutes?.[0],

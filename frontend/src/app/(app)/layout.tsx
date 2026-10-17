@@ -5,6 +5,7 @@ import { canAdmin, GateError, gateRedirectPath, requireUser, type CurrentUser } 
 import { AppShell } from "@/components/layout/app-shell";
 import { AppShellSkeleton } from "@/components/layout/app-shell-skeleton";
 import { PaymentBanner } from "@/components/layout/payment-banner";
+import { StepUpProvider } from "@/components/step-up/step-up-provider";
 import { VerifyBanner } from "@/components/layout/verify-banner";
 
 async function loadCurrentUser(): Promise<CurrentUser> {
@@ -25,18 +26,20 @@ async function SignedInShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AppShell user={user}>
-      {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
-      {canAdmin(user.role) ? (
-        // Its own boundary, so a slow billing read never holds up the page.
-        <Suspense fallback={null}>
-          <PaymentBanner />
-        </Suspense>
-      ) : null}
-      <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
-      </main>
-    </AppShell>
+    <StepUpProvider>
+      <AppShell user={user}>
+        {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
+        {canAdmin(user.role) ? (
+          // Its own boundary, so a slow billing read never holds up the page.
+          <Suspense fallback={null}>
+            <PaymentBanner />
+          </Suspense>
+        ) : null}
+        <main className="flex-1">
+          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
+        </main>
+      </AppShell>
+    </StepUpProvider>
   );
 }
 

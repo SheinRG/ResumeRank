@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import {
   createDirectorySchema,
   DIRECTORY_TYPES,
@@ -48,10 +49,11 @@ function Connected({
   onRemoved: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function remove() {
     startTransition(async () => {
-      const result = await removeDirectoryAction();
+      const result = await withStepUp(() => removeDirectoryAction());
       if (!result.ok) {
         toast.error(result.error);
         return;

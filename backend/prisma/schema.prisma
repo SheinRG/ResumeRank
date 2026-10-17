@@ -398,6 +398,9 @@ model LoginSession {
   /// The password this sign-in used falls short of the current policy; the
   /// guards hold the session at /password-change until it sets a new one.
   passwordChangeRequired Boolean      @default(false)
+  /// When this sign-in last re-proved who it is (step-up). Sensitive actions
+  /// need this or the sign-in itself to be recent (auth/step-up.ts).
+  reauthenticatedAt      DateTime?
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   company    Company? @relation("LoginSessionCompany", fields: [companyId], references: [id], onDelete: SetNull)

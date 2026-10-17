@@ -24,6 +24,7 @@ import {
 import { ConfirmDialog } from "@/components/mfa/confirm-dialog";
 import { RemoveMemberDialog } from "@/components/settings/remove-member-dialog";
 import { Button } from "@/components/ui/button";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { initials } from "@/lib/format";
 import { resetMemberMfaAction } from "@/server/actions/mfa";
 import { signOutMemberAction } from "@/server/actions/sessions";
@@ -46,6 +47,7 @@ export function TeamTable({
   const [rows, setRows] = useState(members);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function handleRoleChange(userId: string, role: Role) {
     const previous = rows;
@@ -54,7 +56,7 @@ export function TeamTable({
     );
     setPendingId(userId);
     startTransition(async () => {
-      const result = await updateUserRoleAction({ userId, role });
+      const result = await withStepUp(() => updateUserRoleAction({ userId, role }));
       setPendingId(null);
       if (!result.ok) {
         setRows(previous);
@@ -79,7 +81,7 @@ export function TeamTable({
   }
 
   async function resetMfa(member: TeamMember): Promise<boolean> {
-    const result = await resetMemberMfaAction({ userId: member.id });
+    const result = await withStepUp(() => resetMemberMfaAction({ userId: member.id }));
     if (!result.ok) {
       toast.error(result.error);
       return false;

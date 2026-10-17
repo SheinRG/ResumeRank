@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 import { useState } from "react";
 
 import { FormField } from "@/components/shared/form-field";
-import { Button } from "@/components/ui/button";
+import { StepUpDownload } from "@/components/step-up/step-up-download";
 import {
   Card,
   CardContent,
@@ -52,15 +52,13 @@ export function AuditExport() {
   if (parsed.success && parsed.data.from) query.set("from", parsed.data.from);
   if (parsed.success && parsed.data.to) query.set("to", parsed.data.to);
 
-  // A plain download link rather than a fetch: the browser streams the file
-  // to disk instead of this page holding a large export in memory.
-  function checkRange(clickEvent: React.MouseEvent<HTMLAnchorElement>) {
+  function checkRange(): boolean {
     if (parsed.success) {
       setErrors({});
-      return;
+      return true;
     }
-    clickEvent.preventDefault();
     setErrors(parsed.error.flatten().fieldErrors);
+    return false;
   }
 
   return (
@@ -97,12 +95,13 @@ export function AuditExport() {
             </FormField>
           </div>
           <div>
-            <Button asChild variant="outline">
-              <a href={`/activity/export?${query.toString()}`} download onClick={checkRange}>
-                <Download aria-hidden="true" />
-                Download export
-              </a>
-            </Button>
+            <StepUpDownload
+              href={`/activity/export?${query.toString()}`}
+              icon={<Download aria-hidden="true" />}
+              beforeDownload={checkRange}
+            >
+              Download export
+            </StepUpDownload>
           </div>
         </div>
       </CardContent>

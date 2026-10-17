@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { formatDate, formatNumber, formatRelative } from "@/lib/format";
 import {
   removeAuditStreamAction,
@@ -235,6 +236,7 @@ function StreamActions({
 }) {
   const [pending, setPending] = useState<"test" | "toggle" | null>(null);
   const [, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function sendTest() {
     setPending("test");
@@ -264,7 +266,7 @@ function StreamActions({
   }
 
   async function remove(): Promise<boolean> {
-    const result = await removeAuditStreamAction();
+    const result = await withStepUp(() => removeAuditStreamAction());
     if (!result.ok) {
       toast.error(result.error);
       return false;
