@@ -234,6 +234,45 @@ in `services/sessions.ts`: the owner-only lifetime policy and an admin's
 "sign out everywhere" for a teammate. Tokens issued before sign-ins were
 recorded have no row, so they ended once when this shipped.
 
+## Password policy
+
+Owners set a minimum length (8–64) and whether to refuse breached passwords
+(Settings → Security). Following NIST SP 800-63B there are no composition
+rules and no forced rotation, which push people toward predictable passwords.
+Both live on `Company` (`passwordMinLength`, `passwordBreachCheck`).
+
+**Which policy applies.** A password belongs to an account, and an account
+can be in several workspaces, so `accountPasswordPolicy`
+(`backend/src/auth/password-policy.ts`) takes the strictest of its
+workspaces' policies: the longest minimum, and the breach check if any asks
+for it. Accepting an invite uses that company's policy; registering uses the
+defaults.
+
+**Where it's enforced.** Every path that sets a password (change, reset,
+invite sign-up) parses with the shared schema built from the policy's length
+(`passwordSchemaFor` and the `…SchemaFor` factories, which the forms also use
+with the policy their page passes in) and then calls `assertPasswordAllowed`,
+which rechecks the length and runs the breach check. A reset checks the new
+password before it uses up the link (`findPasswordResetUser`), so a refused
+password leaves the link working. Existing passwords are judged at their next
+password sign-in, the only time the password is in hand: `authorize()` checks
+it, and a shortfall is recorded on the new `LoginSession`
+(`passwordChangeRequired`). The guards then throw
+`PasswordChangeRequiredError` (after any second-factor step) and pages send the
+session to `/password-change`; only `requirePasswordChange`, used by the
+change-password action, admits it, and a successful change clears the flag.
+Sessions already open aren't interrupted, and SSO and Google sign-ins have no
+password to judge.
+
+**Breach check.** `pwnedPasswordsLookup` (`auth/breached-password.ts`) uses Have
+I Been Pwned's range API by k-anonymity: only the first five hex characters of
+the password's SHA-1 are sent, with response padding on, and the suffix is
+matched locally. It times out after 3 seconds, and an outage lets the password
+through rather than locking people out of setting or using one; each outage is
+logged (`password.breach_check_unavailable`). Policy changes are audited
+(`company.password_policy`). `20261023100000_password_policy` adds the columns
+(expand-only; the defaults keep today's behaviour).
+
 ## IP allowlisting
 
 Owners can restrict a workspace to listed networks (Settings → Security).

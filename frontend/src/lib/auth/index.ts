@@ -11,6 +11,7 @@ import { db } from "@resumerank/core/db";
 import { isGoogleAuthEnabled, isSsoEnabled } from "@resumerank/core/env";
 import { logAuthEvent } from "@resumerank/core/auth/audit";
 import { verifyPassword } from "@resumerank/core/auth/password";
+import { accountPasswordPolicy, passwordShortfall } from "@resumerank/core/auth/password-policy";
 import { readMfaProof } from "@resumerank/core/auth/mfa/proof";
 import { MAX_SESSION_MINUTES } from "@resumerank/core/auth/session-policy";
 import { endLoginSession, startLoginSession } from "@resumerank/core/auth/sessions";
@@ -105,12 +106,16 @@ const providers = [
         throw new SsoRequiredSignin();
       }
 
+      // Only here is the password in hand, so a policy tightened since it was
+      // set is caught at sign-in; the guards then hold the session until it's changed.
+      const shortfall = await passwordShortfall(password, await accountPasswordPolicy(user.id));
       return {
         id: user.id,
         name: user.name,
         email: user.email,
         image: user.image,
         sessionVersion: user.sessionVersion,
+        passwordChangeRequired: shortfall !== null,
       };
     },
   }),
@@ -207,6 +212,7 @@ async function recordLoginSession(
   loginId: string,
   userId: string,
   account: { provider: string; providerAccountId: string } | null | undefined,
+  passwordChangeRequired: boolean,
 ) {
   const requestHeaders = await headers();
   const ip = clientIp(requestHeaders);
@@ -218,6 +224,7 @@ async function recordLoginSession(
     userAgent: requestHeaders.get("user-agent"),
     ipAddress: ip === UNKNOWN_IP ? null : ip,
     ssoCompanyId: method === "SSO" && account ? ssoTenantOf(account.providerAccountId) : null,
+    passwordChangeRequired,
   });
 }
 
@@ -279,7 +286,7 @@ export const {
         // records how the sign-in started and which workspace it has open.
         token.loginId = randomUUID();
         delete token.mfaEpoch;
-        await recordLoginSession(token.loginId, user.id, account);
+        await recordLoginSession(token.loginId, user.id, account, user.passwordChangeRequired === true);
       }
       if (trigger === "update" && token.id) {
         // An explicit refresh (after the user changes their own password)

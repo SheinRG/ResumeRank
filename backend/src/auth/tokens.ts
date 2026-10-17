@@ -70,6 +70,16 @@ export async function createPasswordResetToken(
   return raw;
 }
 
+/** The account a live reset link belongs to, without using it up: for checking the new password first. */
+export async function findPasswordResetUser(raw: string): Promise<string | null> {
+  const record = await db.passwordResetToken.findUnique({
+    where: { tokenHash: sha256(raw) },
+    select: { userId: true, usedAt: true, expiresAt: true },
+  });
+  if (!record || record.usedAt !== null || record.expiresAt < new Date()) return null;
+  return record.userId;
+}
+
 export async function consumePasswordResetToken(
   raw: string,
 ): Promise<string | null> {

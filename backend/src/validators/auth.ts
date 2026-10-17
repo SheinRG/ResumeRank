@@ -8,10 +8,23 @@ export const emailSchema = z
   .max(254, "Email is too long")
   .email("Enter a valid email address");
 
-export const passwordSchema = z
-  .string()
-  .min(8, "Password must be at least 8 characters")
-  .max(128, "Password must be at most 128 characters");
+/** The floor every password meets, whatever a workspace's policy; policies can only raise it. */
+export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_PASSWORD_LENGTH = 128;
+
+/**
+ * A new password under a policy's minimum length. Forms build it from the
+ * policy they were given; the server checks again against the policy it
+ * resolves itself (auth/password-policy.ts), along with the breach check.
+ */
+export function passwordSchemaFor(minLength: number) {
+  return z
+    .string()
+    .min(minLength, `Password must be at least ${minLength} characters`)
+    .max(MAX_PASSWORD_LENGTH, `Password must be at most ${MAX_PASSWORD_LENGTH} characters`);
+}
+
+export const passwordSchema = passwordSchemaFor(MIN_PASSWORD_LENGTH);
 
 export const registerSchema = z.object({
   name: z
@@ -35,8 +48,11 @@ export const forgotPasswordSchema = z.object({
 });
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Reset token is missing"),
-  password: passwordSchema,
-});
+export function resetPasswordSchemaFor(minLength: number) {
+  return z.object({
+    token: z.string().min(1, "Reset token is missing"),
+    password: passwordSchemaFor(minLength),
+  });
+}
+export const resetPasswordSchema = resetPasswordSchemaFor(MIN_PASSWORD_LENGTH);
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

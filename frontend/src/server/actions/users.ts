@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { refreshSession, signOut } from "@/lib/auth";
-import { requireAdmin, requireUser, requireUserSession, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requirePasswordChange, requireUser, tenantContext } from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
   changePasswordSchema,
@@ -14,6 +14,7 @@ import {
   updateProfileSchema,
 } from "@resumerank/core/validators/user";
 import { hashPassword, verifyPassword } from "@resumerank/core/auth/password";
+import { accountPasswordPolicy, assertPasswordAllowed } from "@resumerank/core/auth/password-policy";
 import { revokeUserSessions } from "@resumerank/core/auth/sessions";
 import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
@@ -148,7 +149,7 @@ export async function changePasswordAction(
         parsed.error.flatten().fieldErrors,
       );
     }
-    const { user: currentUser, loginId } = await requireUserSession();
+    const { user: currentUser, loginId } = await requirePasswordChange();
 
     const record = await db.user.findUnique({
       where: { id: currentUser.id },
@@ -180,8 +181,11 @@ export async function changePasswordAction(
       });
     }
 
+    await assertPasswordAllowed(parsed.data.newPassword, await accountPasswordPolicy(currentUser.id), "newPassword");
+
     // Signs out every other device; this one is re-stamped so the user who
-    // just proved the old password stays signed in.
+    // just proved the old password stays signed in, and released if the
+    // password policy was holding it.
     const passwordHash = await hashPassword(parsed.data.newPassword);
     const companyId = currentUser.companyId;
     await db.$transaction(async (tx) => {
@@ -190,6 +194,10 @@ export async function changePasswordAction(
         data: { passwordHash, sessionVersion: { increment: 1 } },
       });
       await revokeUserSessions(tx, currentUser.id, loginId);
+      await tx.loginSession.updateMany({
+        where: { id: loginId, userId: currentUser.id },
+        data: { passwordChangeRequired: false },
+      });
       if (companyId) {
         await logActivity(
           {

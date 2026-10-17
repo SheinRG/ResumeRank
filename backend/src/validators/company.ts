@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { emailSchema, passwordSchema } from "./auth";
+import { emailSchema, MIN_PASSWORD_LENGTH, passwordSchema, passwordSchemaFor } from "./auth";
 import { optionalText } from "./helpers";
 import { roleSchema } from "./enums";
 
@@ -52,15 +52,18 @@ export const inviteMemberSchema = z.object({
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
-export const acceptInviteSchema = z.object({
-  token: z.string().min(1, "Invite token is missing"),
-  name: z
-    .string()
-    .trim()
-    .min(2, "Name must be at least 2 characters")
-    .max(80, "Name must be at most 80 characters"),
-  password: passwordSchema,
-});
+export function acceptInviteSchemaFor(minLength: number) {
+  return z.object({
+    token: z.string().min(1, "Invite token is missing"),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Name must be at least 2 characters")
+      .max(80, "Name must be at most 80 characters"),
+    password: passwordSchemaFor(minLength),
+  });
+}
+export const acceptInviteSchema = acceptInviteSchemaFor(MIN_PASSWORD_LENGTH);
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
 
 export const switchWorkspaceSchema = z.object({

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { passwordSchema } from "./auth";
+import { MIN_PASSWORD_LENGTH, passwordSchemaFor } from "./auth";
 
 // A profile avatar is either an uploaded picture — downscaled to a square by
 // the client and inlined as a base64 data URL, so there is no blob store to
@@ -31,10 +31,13 @@ export const updateProfileSchema = z.object({
 });
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Enter your current password"),
-  newPassword: passwordSchema,
-});
+export function changePasswordSchemaFor(minLength: number) {
+  return z.object({
+    currentPassword: z.string().min(1, "Enter your current password"),
+    newPassword: passwordSchemaFor(minLength),
+  });
+}
+export const changePasswordSchema = changePasswordSchemaFor(MIN_PASSWORD_LENGTH);
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const notificationPreferencesSchema = z.object({

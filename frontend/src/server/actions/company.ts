@@ -7,6 +7,7 @@ import { db } from "@resumerank/core/db";
 import { signIn } from "@/lib/auth";
 import { requireAdmin, requireUserSession, tenantContext } from "@/lib/auth/guards";
 import { hashPassword } from "@resumerank/core/auth/password";
+import { assertPasswordAllowed, companyPasswordPolicy } from "@resumerank/core/auth/password-policy";
 import { claimInvite, findValidInviteByToken } from "@resumerank/core/auth/tokens";
 import { assertSeatAvailable } from "@resumerank/core/billing/seats";
 import {
@@ -161,6 +162,7 @@ export async function acceptInviteAction(
     if (existing) {
       return actionError("An account with this email already exists. Log in instead.");
     }
+    await assertPasswordAllowed(parsed.data.password, await companyPasswordPolicy(invite.companyId), "password");
 
     const passwordHash = await hashPassword(parsed.data.password);
     const created = await db.$transaction(async (tx) => {

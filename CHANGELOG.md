@@ -8,6 +8,10 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Security
 
+- Password policy: owners set a minimum length and can refuse passwords
+  found in known breaches (checked by k-anonymity, so the password never
+  leaves the server). Existing passwords that fall short are changed at
+  their next sign-in.
 - IP allowlisting: owners can limit a workspace and its API keys to listed
   networks (IPv4 or IPv6 ranges). People elsewhere see which address was
   refused and can switch to another workspace; owners keep access.

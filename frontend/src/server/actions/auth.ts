@@ -12,7 +12,9 @@ import {
   consumeVerificationToken,
   createPasswordResetToken,
   createVerificationToken,
+  findPasswordResetUser,
 } from "@resumerank/core/auth/tokens";
+import { accountPasswordPolicy, assertPasswordAllowed } from "@resumerank/core/auth/password-policy";
 import { queuePasswordResetEmail, queueVerificationEmail } from "@resumerank/core/email/messages";
 import { loginBlocked } from "@resumerank/core/auth/login-throttle";
 import { AUTH_LIMIT, rateLimit } from "@resumerank/core/rate-limit";
@@ -229,12 +231,14 @@ export async function resetPasswordAction(
       );
     }
 
+    const expired = "This reset link is invalid, expired, or already used. Request a new one.";
+    // Checked before the link is used up, so a refused password leaves it working.
+    const owner = await findPasswordResetUser(parsed.data.token);
+    if (!owner) return actionError(expired);
+    await assertPasswordAllowed(parsed.data.password, await accountPasswordPolicy(owner), "password");
+
     const userId = await consumePasswordResetToken(parsed.data.token);
-    if (!userId) {
-      return actionError(
-        "This reset link is invalid, expired, or already used. Request a new one.",
-      );
-    }
+    if (!userId) return actionError(expired);
 
     // A reset usually means the old password is compromised, so every session
     // signed in with it is revoked.

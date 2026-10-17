@@ -10,15 +10,17 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/shared/form-field";
 import { Input } from "@/components/ui/input";
 import { useActionForm } from "@/components/shared/use-action-form";
-import { acceptInviteSchema } from "@resumerank/core/validators/company";
+import type { PasswordPolicy } from "@resumerank/core/auth/password-policy";
+import { acceptInviteSchemaFor } from "@resumerank/core/validators/company";
+import { passwordHint } from "@/lib/password-hint";
 import { acceptInviteAction } from "@/server/actions/company";
 
-function InviteSignupForm({ token, email }: { token: string; email: string }) {
+function InviteSignupForm({ token, email, policy }: { token: string; email: string; policy: PasswordPolicy }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const { fieldErrors, formError, isPending, submit } = useActionForm({
-    schema: acceptInviteSchema,
+    schema: acceptInviteSchemaFor(policy.minLength),
     action: acceptInviteAction,
     onSuccess: () => router.push("/dashboard"),
   });
@@ -49,7 +51,7 @@ function InviteSignupForm({ token, email }: { token: string; email: string }) {
         label="Password"
         htmlFor="invite-password"
         errors={fieldErrors.password}
-        hint="At least 8 characters."
+        hint={passwordHint(policy)}
       >
         <PasswordInput
           id="invite-password"
