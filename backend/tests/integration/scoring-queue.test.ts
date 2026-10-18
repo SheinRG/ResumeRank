@@ -486,7 +486,7 @@ describe("bulk scoring", () => {
     await addApplicant(b, { jobId: job.id, resumeText: "Too short to score." });
 
     const first = await requestJobScoring(b.owner, job.id);
-    expect(first).toEqual({ queued: 2, alreadyQueued: 0, skipped: 1, remaining: 0 });
+    expect(first).toEqual({ queued: 2, alreadyQueued: 0, skipped: 1, excluded: 0, remaining: 0 });
     expect(await getJobScoringProgress(b.owner, job.id)).toEqual({
       queued: 2,
       running: 0,

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FileText, Mail, Pencil } from "lucide-react";
+import { FileJson, FileText, Mail, Pencil } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -21,8 +21,10 @@ import {
 import { DeleteCandidateDialog } from "@/components/candidates/delete-candidate-dialog";
 import { ResumeFiles } from "@/components/candidates/resume-files";
 import { ResumeText } from "@/components/candidates/resume-text";
+import { CandidateAiCard } from "@/components/compliance/candidate-ai-card";
+import { StepUpDownload } from "@/components/step-up/step-up-download";
 import { formatDate } from "@/lib/format";
-import { can, requireUser } from "@/lib/auth/guards";
+import { can, canAdmin, requireUser } from "@/lib/auth/guards";
 import { getCandidate } from "@/server/queries/candidates";
 import { getResumeFilesPanel } from "@/server/queries/resume-files";
 
@@ -62,6 +64,14 @@ export default async function CandidatePage({
         actions={
           canManage ? (
             <>
+              {canAdmin(user.role) ? (
+                <StepUpDownload
+                  href={`/candidates/${candidate.id}/data-export`}
+                  icon={<FileJson aria-hidden="true" />}
+                >
+                  Export data
+                </StepUpDownload>
+              ) : null}
               <Button asChild variant="outline">
                 <Link href={`/candidates/${candidate.id}/edit`}>
                   <Pencil aria-hidden="true" />
@@ -159,6 +169,13 @@ export default async function CandidatePage({
               )}
             </CardContent>
           </Card>
+
+          <CandidateAiCard
+            candidateId={candidate.id}
+            aiNoticeAt={candidate.aiNoticeAt}
+            aiOptOutAt={candidate.aiOptOutAt}
+            canManage={canManage}
+          />
         </div>
       </div>
     </div>

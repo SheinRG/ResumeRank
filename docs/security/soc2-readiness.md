@@ -102,7 +102,7 @@ These criteria cover the organisation more than the code.
 | Criterion | Control | Evidence | Gap / verify |
 | --- | --- | --- | --- |
 | C1.1 Confidential information is identified and protected | Resume text, candidate contact details and AI outputs are tenant-scoped and reachable only by role and job assignment; secrets sealed at rest | Tenancy and RBAC evidence above | **Gap:** a data classification policy naming these categories |
-| C1.2 Confidential information is disposed of | Deleting candidates or a company deletes their resume blobs; audit-log retention purge | `docs/architecture.md` (Resume files, Audit log) | **Gap:** per-tenant retention and offboarding (roadmap Phase 3, GDPR) |
+| C1.2 Confidential information is disposed of | Candidate erasure removes every record and file; per-company candidate retention with a scheduled purge; workspace export and deletion; audit-log retention purge | `docs/architecture.md` (Data lifecycle, Audit log); `data-lifecycle.test.ts` | None |
 
 ## Policies to adopt
 

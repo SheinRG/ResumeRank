@@ -56,6 +56,9 @@ export async function SiteFooter() {
           >
             Security
           </Link>
+          <Link href="/ai" className="transition-colors hover:text-brand-cream">
+            Model card
+          </Link>
           <Link
             href="/login"
             className="transition-colors hover:text-brand-cream"

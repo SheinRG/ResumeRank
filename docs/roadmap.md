@@ -132,20 +132,20 @@ Ranked by enterprise-deal impact.
 Hiring AI is **high-risk under the EU AI Act** (Annex III §4) and covered by **NYC Local Law 144**. Doing this well is a selling point, not overhead.
 
 ### Compliance
-- [ ] Immutable scoring runs (Phase 1.4) → every historical score is reproducible and explainable.
-- [ ] Decision log tying each human stage change to the AI output visible at that moment (human-oversight record).
-- [ ] Optional PII / protected-attribute redaction before scoring (name, age, photo descriptions, etc.).
-- [ ] Optional voluntary demographic self-ID, stored separately from scoring; selection-rate / impact-ratio reports for bias audits.
-- [ ] Per-tenant candidate notice + opt-out / consent flags.
-- [ ] Model card / AI documentation page; DPA covering the LLM sub-processor (resume PII goes to Groq).
+- [x] Immutable scoring runs (Phase 1.4) → every historical score is reproducible and explainable. → A finished run and its evaluations can't be updated or deleted by any role, the owner included: the `scoring_record_guard` trigger lets through only work on unfinished runs, cascades from an erased candidate or deleted company, and the foreign keys clearing a deleted user or requirement. Each run stores exactly what the model was given (`ScoringRun.input`: job, requirements and the resume text as sent) and whether it was redacted, so a score can be explained however the job or resume changed since. See `docs/architecture.md` (AI compliance).
+- [x] Decision log tying each human stage change to the AI output visible at that moment (human-oversight record). → Every stage change's audit entry carries the score, run, model and prompt version the decider had on screen (or that they had none, or that their role doesn't see scores), so the record is sealed into the hash chain with the decision. The application page shows it as a "Decision record"; interviewers never learn a score from it.
+- [x] Optional PII / protected-attribute redaction before scoring (name, age, photo descriptions, etc.). → Settings → Compliance: names, emails, phones, profile links, stated ages and labelled lines (date of birth, gender, nationality, marital status, religion, photo…) are masked before the model reads the resume (`scoring/redact.ts`, rule-based so it's explainable; dates and year ranges stay for experience requirements). Quotes are verified against the redacted text, and the input hash covers it.
+- [x] Optional voluntary demographic self-ID, stored separately from scoring; selection-rate / impact-ratio reports for bias audits. → A signed per-application link (no stored token) opens a public form with EEO-1 sex and race/ethnicity questions and "prefer not to say". Answers live in `SelfIdResponse`, are never shown per person or read by scoring, and feed an admin-only impact ratio report (selection and scoring rates, LL144's above-median scoring rate, intersectional, categories under 2% left out of the ratios, four-fifths flag, CSV).
+- [x] Per-tenant candidate notice + opt-out / consent flags. → A public notice page per company (`/ai-notice/<slug>`, custom wording plus the standard LL144 / EU AI Act details), candidate flags for "given the notice" and "opted out" with their dates, an opt-out that refuses scoring everywhere (single, bulk, and runs already queued), and an optional policy requiring the notice before scoring.
+- [x] Model card / AI documentation page; DPA covering the LLM sub-processor (resume PII goes to Groq). → `/ai` states intended use, inputs, evaluation (read from the committed eval baseline, so it can't drift), limitations and oversight; `docs/legal/dpa.md` is a DPA template with the sub-processor annex. Signing DPAs with Groq and the other providers is outside the code.
 
 ### GDPR / data lifecycle
-- [ ] Candidate erasure is incomplete: activity summaries embed names (`added candidate "${name}"`, `rated X 4/5`). → Store entity ids in the log, render names at read time (or redact on erasure).
-- [ ] Data-subject access export per candidate.
-- [ ] Per-tenant retention policy + auto-purge of candidates and AI outputs.
-- [ ] Tenant offboarding: full export + deletion.
-- [ ] Data residency: `Company.region`, per-region DB/cell routing.
-- [ ] Consider column-level encryption for resume text / PII.
+- [x] Candidate erasure is incomplete: activity summaries embed names (`added candidate "${name}"`, `rated X 4/5`). → Store entity ids in the log, render names at read time (or redact on erasure). → Summaries say `{candidate}` and carry the id (`audit/candidate-ref.ts`); the feeds and exports put the current name back, and an erased candidate reads as "a deleted candidate". Resume file names are left out too. Entries written before this release keep the names they were sealed with (the chain forbids edits); they age out with audit retention.
+- [x] Data-subject access export per candidate. → Admins download everything held about a candidate as JSON (profile, resume, files, applications, decisions, ratings, scoring runs with their inputs, self-identification, activity), behind step-up and audited; teammates' names are left out as third-party data.
+- [x] Per-tenant retention policy + auto-purge of candidates and AI outputs. → Owners choose how long inactive candidates are kept (180 days to 3 years); `GET /api/cron/retention` deletes candidates with no change to them or their applications in that time, with their files, scores and answers, recording a count but never who.
+- [x] Tenant offboarding: full export + deletion. → Owners export the whole workspace as JSON Lines (secrets left out) and delete it after typing its name and a step-up: the Stripe subscription is cancelled first (a Stripe error stops everything), SSO connections and directories are removed from Jackson, sessions open in it are revoked, the company row cascades every tenant table, and resume originals are deleted from blob storage. Members keep their accounts.
+- [ ] Data residency: `Company.region`, per-region DB/cell routing. → Designed, not built: it needs a second database and deployment in another region before any code can be tested (see `docs/architecture.md`, Data residency).
+- [ ] Consider column-level encryption for resume text / PII. → Considered and deferred: encrypting `resumeText` would disable full-text candidate search (the generated `tsvector`), and the provider already encrypts at rest; the reasoning and the trigger to revisit are in `docs/architecture.md` (Column encryption).
 
 ### Scoring quality & safety
 - [x] **Provider abstraction**: `LlmProvider` interface (or AI SDK / AI Gateway) with fallback model, circuit breaker, timeouts, shared retry/parse helper. Today `groq-sdk` is hardcoded, a client is created per call (`engine.ts:69`), and scoring/extraction duplicate the retry loop. → `ai/llm.ts`: `LlmProvider` + `completeJson` (shared corrective retry, per-request timeout, `GROQ_FALLBACK_MODEL` on transient/404 failures, per-process circuit breaker); one pooled Groq client. Verified live: a retired primary model falls through to the fallback.
@@ -178,4 +178,4 @@ Hiring AI is **high-risk under the EU AI Act** (Annex III §4) and covered by **
 7. ✅ SSO / SCIM / MFA / audit log (Phase 2 items 1–5).
 8. ✅ Multi-company membership and granular RBAC (Phase 2 items 6–8).
 9. ✅ Billing + feature flags + public API/webhooks + file ingestion (Phase 2 items 9–12).
-10. Compliance & AI trust package (Phase 3).
+10. ✅ Compliance & AI trust package (Phase 3), except data residency and column encryption.

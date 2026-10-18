@@ -1,5 +1,6 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import { can } from "../auth/roles";
 import type { Application, Prisma } from "../generated/prisma/client";
 import type {
@@ -30,6 +31,7 @@ import type { JobDetail } from "./jobs";
 import { applicationEventData } from "../webhooks/events";
 import { queueWebhookEvent } from "../webhooks/outbox";
 import type { ScoringRunView } from "./scoring";
+import { decisionContext, listStageDecisions, type StageDecision } from "./decisions";
 
 const APPLICATION_NOT_FOUND = "This application no longer exists.";
 
@@ -76,6 +78,8 @@ export interface ApplicationCandidateDetail {
   source: CandidateSource;
   /** Trimmed resume length; the page only needs to know whether it's scorable, not the text. */
   resumeLength: number;
+  aiNoticeAt: Date | null;
+  aiOptOutAt: Date | null;
   createdAt: Date;
 }
 
@@ -109,6 +113,9 @@ export interface ApplicationDetail {
   evaluations: EvaluationItem[];
   scorecards: ScorecardItem[];
   scoring: ApplicationScoring;
+  /** The company requires the AI notice before a candidate is scored. */
+  aiNoticeRequired: boolean;
+  decisions: StageDecision[];
 }
 
 const SCORE_HISTORY_LIMIT = 10;
@@ -301,8 +308,18 @@ export async function getApplication(
         },
       },
       candidate: {
-        select: { id: true, name: true, email: true, headline: true, source: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          headline: true,
+          source: true,
+          aiNoticeAt: true,
+          aiOptOutAt: true,
+          createdAt: true,
+        },
       },
+      company: { select: { aiNoticeRequired: true } },
       latestScoringRun: {
         select: {
           injectionSignals: true,
@@ -318,7 +335,7 @@ export async function getApplication(
   });
   if (!application) return null;
 
-  const [active, mostRecent, succeeded, resume] = await Promise.all([
+  const [active, mostRecent, succeeded, resume, decisions] = await Promise.all([
     tenantDb(ctx).scoringRun.findFirst({
       where: { applicationId: id, status: { in: ["QUEUED", "RUNNING"] } },
       select: {
@@ -347,9 +364,10 @@ export async function getApplication(
       FROM "Candidate"
       WHERE "id" = ${application.candidateId} AND "companyId" = ${ctx.companyId}
     `,
+    listStageDecisions(ctx, id),
   ]);
 
-  const { latestScoringRun, latestScoringRunId, candidate, ...rest } = application;
+  const { latestScoringRun, latestScoringRunId, candidate, company, ...rest } = application;
   if (!seesScores(ctx)) {
     return {
       ...rest,
@@ -359,6 +377,8 @@ export async function getApplication(
       candidate: { ...candidate, resumeLength: resume[0]?.length ?? 0 },
       evaluations: [],
       scoring: HIDDEN_SCORING,
+      aiNoticeRequired: company.aiNoticeRequired,
+      decisions,
     };
   }
   return {
@@ -377,6 +397,8 @@ export async function getApplication(
       history: succeeded.map((run) => ({ ...run, current: run.id === latestScoringRunId })),
       injectionSignals: latestScoringRun?.injectionSignals ?? [],
     },
+    aiNoticeRequired: company.aiNoticeRequired,
+    decisions,
   };
 }
 
@@ -423,7 +445,8 @@ export async function createApplication(
           action: "application.create",
           entityType: "application",
           entityId: application.id,
-          summary: `attached ${candidate.name} to "${job.title}"`,
+          summary: `attached ${CANDIDATE_REF} to "${job.title}"`,
+          metadata: { candidateId },
         },
         tx,
       );
@@ -448,7 +471,13 @@ export async function updateStage(
   return tenantTransaction(ctx, async (tx) => {
     const existing = await tx.application.findFirst({
       where: { id, companyId: ctx.companyId, deletedAt: null, ...applicationAccessWhere(ctx) },
-      select: { stage: true, candidate: { select: { name: true } } },
+      select: {
+        stage: true,
+        candidateId: true,
+        latestScoringRun: {
+          select: { id: true, aiScore: true, finishedAt: true, model: true, promptVersion: true },
+        },
+      },
     });
     if (!existing) throw new NotFoundError(APPLICATION_NOT_FOUND);
 
@@ -463,8 +492,13 @@ export async function updateStage(
         action: "application.stage",
         entityType: "application",
         entityId: application.id,
-        summary: `moved ${existing.candidate.name} to ${stage}`,
-        metadata: { from: existing.stage, to: stage },
+        summary: `moved ${CANDIDATE_REF} to ${stage}`,
+        metadata: {
+          candidateId: existing.candidateId,
+          from: existing.stage,
+          to: stage,
+          ai: decisionContext(ctx, existing.latestScoringRun),
+        },
       },
       tx,
     );
@@ -508,8 +542,9 @@ export async function setApplicationRemoved(
           entityType: "application",
           entityId: application.id,
           summary: removed
-            ? `removed ${candidate.name} from the pipeline`
-            : `restored ${candidate.name} to the pipeline`,
+            ? `removed ${CANDIDATE_REF} from the pipeline`
+            : `restored ${CANDIDATE_REF} to the pipeline`,
+          metadata: { candidateId: application.candidateId },
         },
         tx,
       );

@@ -1,5 +1,6 @@
 import { tenantDb } from "../tenant-db";
 import { AUTH_ACTION_PREFIX } from "../auth/audit";
+import { referencedCandidateId, renderSummary } from "../audit/candidate-ref";
 import { canAdmin } from "../auth/roles";
 import { PAGE_SIZE } from "../validators/search";
 import type { Prisma } from "../generated/prisma/client";
@@ -29,6 +30,36 @@ const SYSTEM_ACTIONS: ReadonlySet<string> = new Set(["audit.purge", "feature.ove
 export function toActivityActor(actor: ActivityActor | null, action: string): ActivityActor {
   if (actor) return actor;
   return SYSTEM_ACTIONS.has(action) ? SYSTEM_ACTOR : DELETED_ACTOR;
+}
+
+interface SummaryRow {
+  summary: string;
+  entityType: string;
+  entityId: string;
+  metadata: Prisma.JsonValue | null;
+}
+
+/**
+ * Puts candidates' current names back into summaries, which store only a
+ * reference (audit/candidate-ref.ts); an erased candidate reads as deleted.
+ */
+export async function withCandidateNames<T extends SummaryRow>(ctx: TenantContext, rows: T[]): Promise<T[]> {
+  const ids = [...new Set(rows.flatMap((row) => referencedCandidateId(row) ?? []))];
+  const names =
+    ids.length === 0
+      ? new Map<string, string>()
+      : new Map(
+          (
+            await tenantDb(ctx).candidate.findMany({
+              where: { companyId: ctx.companyId, id: { in: ids } },
+              select: { id: true, name: true },
+            })
+          ).map((candidate) => [candidate.id, candidate.name]),
+        );
+  return rows.map((row) => {
+    const id = referencedCandidateId(row);
+    return { ...row, summary: renderSummary(row.summary, id ? (names.get(id) ?? null) : null) };
+  });
 }
 
 export interface ActivityListParams extends PageParams {
@@ -71,7 +102,10 @@ export async function listActivity(
       }),
     ),
   ]);
-  const items = page.items.map((row) => ({ ...row, actor: toActivityActor(row.actor, row.action) }));
+  const items = await withCandidateNames(
+    ctx,
+    page.items.map((row) => ({ ...row, actor: toActivityActor(row.actor, row.action) })),
+  );
 
   return {
     items,

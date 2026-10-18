@@ -1,6 +1,7 @@
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { csvRow } from "../csv";
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import { assertAiBudget, chargeAiTokens } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
 import { extractCandidateProfile, type CandidateProfile } from "../extraction/engine";
@@ -65,6 +66,8 @@ export interface CandidateDetail {
   headline: string | null;
   source: CandidateSource;
   resumeText: string;
+  aiNoticeAt: Date | null;
+  aiOptOutAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   applications: CandidateApplicationItem[];
@@ -371,7 +374,7 @@ export async function createCandidate(
           action: "candidate.create",
           entityType: "candidate",
           entityId: candidate.id,
-          summary: `added candidate "${candidate.name}"`,
+          summary: `added ${CANDIDATE_REF}`,
         },
         tx,
       );
@@ -403,7 +406,7 @@ export async function updateCandidate(
           action: "candidate.update",
           entityType: "candidate",
           entityId: candidate.id,
-          summary: `updated candidate "${candidate.name}"`,
+          summary: `updated ${CANDIDATE_REF}`,
         },
         tx,
       );
@@ -445,7 +448,7 @@ export async function deleteCandidate(
           action: "candidate.delete",
           entityType: "candidate",
           entityId: deleted.id,
-          summary: `deleted candidate "${deleted.name}"`,
+          summary: `deleted ${CANDIDATE_REF}`,
         },
         tx,
       );

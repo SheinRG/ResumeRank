@@ -20,6 +20,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "ResumeFile",
   "BillingAccount",
   "IpAllowlistEntry",
+  "SelfIdResponse",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([

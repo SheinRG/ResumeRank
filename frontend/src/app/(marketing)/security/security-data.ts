@@ -82,7 +82,9 @@ export const CONTROL_GROUPS: ControlGroup[] = [
       "Resume and job text is sent to the model only to score that application. ResumeRank doesn't train models on your data.",
       "Untrusted text is fenced off from the instructions, and attempts to steer the model are flagged to the recruiter rather than obeyed.",
       "Every verdict must quote the resume. A quote that isn't found in the resume is discarded, and a strong verdict without verified evidence is downgraded.",
-      "Each scoring run is append-only and records the model, prompt version and settings that produced it.",
+      "Each scoring run is locked by the database once finished and keeps exactly what the model was given, so any score can be explained later.",
+      "Workspaces can hide names, contact details and protected attributes from the model, require the AI notice first, and candidates can opt out of AI scoring entirely.",
+      "Every stage change records what the AI had shown the person who made it, and admins can run impact-ratio reports from voluntary self-identification.",
     ],
   },
   {
@@ -116,8 +118,8 @@ export const PROGRAM: ProgramItem[] = [
   },
   {
     title: "Data processing agreement",
-    status: "planned",
-    body: "A DPA covering our sub-processors, including the AI model provider, is being prepared.",
+    status: "in-progress",
+    body: "Our DPA template, with the sub-processor annex and AI-specific terms, is published in the repository. Ask us to sign one.",
   },
 ];
 

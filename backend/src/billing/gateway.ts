@@ -40,6 +40,8 @@ export interface BillingGateway {
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<string>;
   retrieveSubscription(id: string): Promise<SubscriptionSnapshot>;
   reportUsage(input: UsageInput): Promise<void>;
+  /** Ends the subscription now, without a final invoice for the rest of the period. */
+  cancelSubscription(id: string): Promise<void>;
 }
 
 let cached: { key: string; client: Stripe } | null = null;
@@ -103,6 +105,9 @@ export function stripeGateway(): BillingGateway {
     },
     async retrieveSubscription(id) {
       return toSnapshot(await client().subscriptions.retrieve(id));
+    },
+    async cancelSubscription(id) {
+      await client().subscriptions.cancel(id, { invoice_now: false, prorate: false });
     },
     async reportUsage({ customerId, tokens, identifier, timestamp }) {
       const eventName = env().STRIPE_AI_METER_EVENT;

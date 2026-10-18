@@ -219,3 +219,6 @@ export async function checkAiQuota({
   }
   return null;
 }
+
+/** Per IP: the self-identification form is public, reached by a signed link. */
+export const SELF_ID_LIMIT: RateLimit = { max: 20, windowMs: 15 * 60 * 1000 };

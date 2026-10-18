@@ -18,3 +18,4 @@ export * from "./billing";
 export * from "./ip-allowlist";
 export * from "./password-policy";
 export * from "./step-up";
+export * from "./compliance";
