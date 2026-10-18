@@ -8,6 +8,10 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Security
 
+- Trust center: a public `/security` page describes the security controls,
+  states the compliance status plainly, and lists the sub-processors this
+  deployment actually uses. Vulnerabilities are reported privately through
+  GitHub (`SECURITY.md`, `/.well-known/security.txt`).
 - Step-up re-authentication: creating API keys, changing security settings,
   roles or SSO, and exporting candidates or the audit log ask you to confirm
   it's you (password, authenticator code or passkey) unless you signed in or

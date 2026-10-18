@@ -42,14 +42,20 @@ export async function SiteFooter() {
         </div>
         <nav
           aria-label="Footer"
-          className="flex gap-[26px] text-[13.5px] text-[#8a91a0]"
+          className="flex flex-wrap gap-x-[26px] gap-y-2 text-[13.5px] text-[#8a91a0]"
         >
-          <a href="#why" className="transition-colors hover:text-brand-cream">
+          <Link href="/#why" className="transition-colors hover:text-brand-cream">
             Why
-          </a>
-          <a href="#faq" className="transition-colors hover:text-brand-cream">
+          </Link>
+          <Link href="/#faq" className="transition-colors hover:text-brand-cream">
             FAQ
-          </a>
+          </Link>
+          <Link
+            href="/security"
+            className="transition-colors hover:text-brand-cream"
+          >
+            Security
+          </Link>
           <Link
             href="/login"
             className="transition-colors hover:text-brand-cream"
