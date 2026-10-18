@@ -29,6 +29,9 @@ function describeRequest(result: JobScoringRequestResult): string {
   if (result.skipped > 0) {
     parts.push(`${plural(result.skipped, "applicant")} skipped — resume too short to score.`);
   }
+  if (result.excluded > 0) {
+    parts.push(`${plural(result.excluded, "applicant")} left out — opted out of AI scoring or not yet given the AI notice.`);
+  }
   if (result.remaining > 0) {
     parts.push(`${result.remaining} more will need another click.`);
   }

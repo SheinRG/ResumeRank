@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { db } from "@resumerank/core/db";
 import { CompanyForm } from "@/components/settings/company-form";
 import { TransferOwnership } from "@/components/settings/transfer-ownership";
+import { WorkspaceOffboarding } from "@/components/compliance/workspace-offboarding";
 import { canAdmin, requireMember } from "@/lib/auth/guards";
 import { formatNumber } from "@/lib/format";
 import { getAiUsage, getCompany } from "@/server/queries/company";
@@ -83,6 +84,8 @@ export default async function SettingsCompanyPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {isOwner ? <WorkspaceOffboarding companyName={company.name} /> : null}
     </div>
   );
 }

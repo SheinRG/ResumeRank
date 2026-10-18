@@ -1,5 +1,6 @@
 import { tenantTransaction } from "../tenant-db";
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import type { Scorecard } from "../generated/prisma/client";
 import type { ScorecardInput } from "../validators/application";
 import { assertCan, type TenantContext } from "./context";
@@ -17,7 +18,7 @@ export async function upsertScorecard(
   return tenantTransaction(ctx, async (tx) => {
     const application = await tx.application.findFirst({
       where: { id: applicationId, companyId: ctx.companyId, deletedAt: null, ...applicationAccessWhere(ctx) },
-      select: { id: true, candidate: { select: { name: true } } },
+      select: { id: true, candidateId: true },
     });
     if (!application) throw new NotFoundError("This application no longer exists.");
 
@@ -33,7 +34,8 @@ export async function upsertScorecard(
         action: "scorecard.upsert",
         entityType: "application",
         entityId: applicationId,
-        summary: `rated ${application.candidate.name} ${rating}/5`,
+        summary: `rated ${CANDIDATE_REF} ${rating}/5`,
+        metadata: { candidateId: application.candidateId },
       },
       tx,
     );

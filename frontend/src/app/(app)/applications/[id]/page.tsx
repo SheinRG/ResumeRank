@@ -10,6 +10,7 @@ import { ScorePanel } from "@/components/applications/score-panel";
 import { ScorecardsPanel } from "@/components/applications/scorecards-panel";
 import { StageSelect } from "@/components/applications/stage-select";
 import type { ScoreBlocker } from "@/components/applications/score-button";
+import { DecisionRecord } from "@/components/compliance/decision-record";
 import { formatDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import type { Permission } from "@resumerank/core/auth/roles";
@@ -34,6 +35,21 @@ export async function generateMetadata({
 }
 
 function resolveBlocker(application: ApplicationDetail): ScoreBlocker | undefined {
+  const candidatePage = `/candidates/${application.candidate.id}`;
+  if (application.candidate.aiOptOutAt) {
+    return {
+      message: "This candidate opted out of AI scoring. Review their application without it.",
+      href: candidatePage,
+      linkLabel: "Open candidate",
+    };
+  }
+  if (application.aiNoticeRequired && !application.candidate.aiNoticeAt) {
+    return {
+      message: "Your workspace requires the AI notice first. Record that this candidate was given it.",
+      href: candidatePage,
+      linkLabel: "Record notice",
+    };
+  }
   if (application.candidate.resumeLength < MIN_RESUME_LENGTH) {
     return {
       message: `Add at least ${MIN_RESUME_LENGTH} characters of resume text before scoring.`,
@@ -118,6 +134,8 @@ export default async function ApplicationPage({
           ) : null}
         </>
       ) : null}
+
+      <DecisionRecord decisions={application.decisions} />
 
       <ScorecardsPanel
         applicationId={application.id}

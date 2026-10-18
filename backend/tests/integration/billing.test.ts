@@ -64,6 +64,9 @@ class FakeStripe implements BillingGateway {
   async reportUsage(input: UsageInput): Promise<void> {
     this.usage.push(input);
   }
+  async cancelSubscription(id: string): Promise<void> {
+    this.subscriptions.delete(id);
+  }
 }
 
 /** Signs a payload the way Stripe does and runs it through the real verification. */
@@ -283,9 +286,13 @@ describe("checkout and the Stripe webhook", () => {
       where: { companyId: paid.companyId },
       data: { meteredThrough: new Date(finishedAt.getTime() - 1000) },
     });
-    await db.scoringRun.update({
-      where: { id: paid.scoringRunId },
-      data: { finishedAt, promptTokens: 1200, completionTokens: 300 },
+    // Finished runs are immutable; only maintenance may restage one as fixture data.
+    await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.scoring_maintenance', 'on', true)`;
+      await tx.scoringRun.update({
+        where: { id: paid.scoringRunId },
+        data: { finishedAt, promptTokens: 1200, completionTokens: 300 },
+      });
     });
 
     expect((await reportAiUsage({ gateway: stripe })).reported).toBeGreaterThanOrEqual(1);

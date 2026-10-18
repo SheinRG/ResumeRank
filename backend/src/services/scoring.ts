@@ -1,5 +1,6 @@
 import { tenantDb, tenantTransaction, type TenantTx } from "../tenant-db";
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import { assertAiBudget } from "../ai-budget";
 import { checkAiQuota } from "../rate-limit";
 import {
@@ -10,6 +11,13 @@ import {
   type ScoringJob,
   type ScoringSettings,
 } from "../scoring/engine";
+import {
+  SCORING_CANDIDATE_SELECT,
+  SCORING_POLICY_SELECT,
+  scoringRefusal,
+  scoringResume,
+  type ScoringPolicy,
+} from "../scoring/policy";
 import { MIN_RESUME_LENGTH } from "../validators/candidate";
 import type { ScoringRunStatus } from "../validators/enums";
 import { assertCan, type TenantContext } from "./context";
@@ -44,6 +52,8 @@ export interface JobScoringRequestResult {
   alreadyQueued: number;
   /** Unscored applicants whose resume is too short to score. */
   skipped: number;
+  /** Unscored applicants who opted out of AI scoring, or haven't had the notice the company requires. */
+  excluded: number;
   /** Left for a later request because of MAX_BULK_SCORING. */
   remaining: number;
 }
@@ -93,7 +103,8 @@ const SCORING_INPUT_SELECT = {
   id: true,
   deletedAt: true,
   latestScoringRunId: true,
-  candidate: { select: { name: true, resumeText: true } },
+  candidateId: true,
+  candidate: { select: SCORING_CANDIDATE_SELECT },
   job: {
     select: {
       id: true,
@@ -118,6 +129,12 @@ function assertScorable(resumeText: string, requirementCount: number): void {
       "This job has no requirements yet. Add requirements to define the scoring rubric.",
     );
   }
+}
+
+async function scoringPolicy(tx: TenantTx, companyId: string): Promise<ScoringPolicy> {
+  const policy = await tx.company.findUnique({ where: { id: companyId }, select: SCORING_POLICY_SELECT });
+  if (!policy) throw new NotFoundError("This workspace no longer exists.");
+  return policy;
 }
 
 async function quotaOrThrow(ctx: TenantContext, calls: number): Promise<void> {
@@ -149,6 +166,9 @@ export async function requestScoring(
     });
     if (!application || application.deletedAt) throw new NotFoundError(APPLICATION_NOT_FOUND);
     assertScorable(application.candidate.resumeText, application.job.requirements.length);
+    const policy = await scoringPolicy(tx, ctx.companyId);
+    const refusal = scoringRefusal(application.candidate, policy);
+    if (refusal) throw new DomainError(refusal);
 
     const active = await tx.scoringRun.findFirst({
       where: { applicationId, status: { in: ACTIVE_STATUSES } },
@@ -158,7 +178,7 @@ export async function requestScoring(
 
     const inputHash = scoringInputHash(
       scoringJobOf(application.job),
-      application.candidate.resumeText,
+      scoringResume(application.candidate, policy),
       settings,
     );
     const previous = await tx.scoringRun.findFirst({
@@ -185,7 +205,8 @@ export async function requestScoring(
             action: "application.score_reused",
             entityType: "application",
             entityId: applicationId,
-            summary: `restored ${application.candidate.name}'s earlier score of ${run.aiScore} (same inputs)`,
+            summary: `restored the earlier score of ${run.aiScore} for ${CANDIDATE_REF} (same inputs)`,
+            metadata: { candidateId: application.candidateId },
           },
           tx,
         );
@@ -206,7 +227,8 @@ export async function requestScoring(
         action: "application.score_requested",
         entityType: "application",
         entityId: applicationId,
-        summary: `requested an AI score for ${application.candidate.name}`,
+        summary: `requested an AI score for ${CANDIDATE_REF}`,
+        metadata: { candidateId: application.candidateId },
       },
       tx,
     );
@@ -272,19 +294,22 @@ export async function requestJobScoring(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
-        candidate: { select: { resumeText: true } },
+        candidate: { select: SCORING_CANDIDATE_SELECT },
         scoringRuns: { where: { status: { in: ACTIVE_STATUSES } }, select: { id: true } },
       },
     });
 
+    const policy = await scoringPolicy(tx, ctx.companyId);
     const alreadyQueued = candidates.filter((a) => a.scoringRuns.length > 0).length;
     const idle = candidates.filter((a) => a.scoringRuns.length === 0);
-    const scorable = idle.filter((a) => a.candidate.resumeText.trim().length >= MIN_RESUME_LENGTH);
+    const permitted = idle.filter((a) => scoringRefusal(a.candidate, policy) === null);
+    const scorable = permitted.filter((a) => a.candidate.resumeText.trim().length >= MIN_RESUME_LENGTH);
     const batch = scorable.slice(0, MAX_BULK_SCORING);
     const result: JobScoringRequestResult = {
       queued: batch.length,
       alreadyQueued,
-      skipped: idle.length - scorable.length,
+      skipped: permitted.length - scorable.length,
+      excluded: idle.length - permitted.length,
       remaining: scorable.length - batch.length,
     };
     if (batch.length === 0) return result;
@@ -294,7 +319,7 @@ export async function requestJobScoring(
     const scoringJob = scoringJobOf(job);
     await tx.scoringRun.createMany({
       data: batch.map((a) =>
-        newRunData(ctx, a.id, scoringInputHash(scoringJob, a.candidate.resumeText, settings), settings),
+        newRunData(ctx, a.id, scoringInputHash(scoringJob, scoringResume(a.candidate, policy), settings), settings),
       ),
     });
     await logActivity(

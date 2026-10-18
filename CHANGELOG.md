@@ -6,6 +6,24 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Compliance
+
+- AI compliance (EU AI Act, NYC Local Law 144): finished scoring runs and
+  their evaluations can't be changed by anyone, and each run keeps exactly
+  what the model was given. Every stage change records the AI output its
+  decider saw. Workspaces can hide personal details from the model and require
+  the AI notice before scoring; candidates can opt out, and are then never
+  scored. A public notice page per company and a model card at `/ai`.
+- Voluntary self-identification through a link sent to the candidate, and an
+  impact ratio report (selection and scoring rates by sex and race/ethnicity)
+  for bias audits, in aggregate only.
+- Data lifecycle (GDPR): the audit log no longer stores candidates' names, so
+  erasing a candidate erases them everywhere; per-candidate data export;
+  automatic deletion of inactive candidates after a period the owner sets;
+  owners can export their whole workspace and delete it, which cancels the
+  subscription and removes SSO settings and files too.
+- A DPA template in `docs/legal/dpa.md`.
+
 ### Security
 
 - Trust center: a public `/security` page describes the security controls,

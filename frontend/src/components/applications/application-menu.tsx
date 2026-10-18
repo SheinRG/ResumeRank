@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, Trash2 } from "lucide-react";
+import { Link2, MoreHorizontal, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -10,12 +10,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   restoreApplicationAction,
   softDeleteApplicationAction,
 } from "@/server/actions/applications";
+import { getSelfIdLinkAction } from "@/server/actions/compliance";
 
 export function ApplicationMenu({ applicationId }: { applicationId: string }) {
   const router = useRouter();
@@ -47,6 +49,22 @@ export function ApplicationMenu({ applicationId }: { applicationId: string }) {
     });
   }
 
+  function handleCopySelfIdLink() {
+    startTransition(async () => {
+      const result = await getSelfIdLinkAction(applicationId);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(result.data.url);
+        toast.success("Self-identification link copied. Send it to the candidate; answering is optional.");
+      } catch {
+        toast.message("Copy this link and send it to the candidate:", { description: result.data.url });
+      }
+    });
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -61,6 +79,11 @@ export function ApplicationMenu({ applicationId }: { applicationId: string }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={handleCopySelfIdLink}>
+          <Link2 aria-hidden="true" />
+          Copy self-identification link
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleRemove}>
           <Trash2 aria-hidden="true" />
           Remove from pipeline

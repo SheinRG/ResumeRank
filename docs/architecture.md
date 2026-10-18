@@ -1022,6 +1022,209 @@ with a retry. The job page's *Score all unscored* button shows batch progress
 and refreshes the ranking as scores land; table rows show *Queued* /
 *Scoring* in place of a score. The application page lists the score history.
 
+## AI compliance
+
+Hiring AI is high-risk under the EU AI Act (Annex III §4) and covered by New
+York City's Local Law 144. These pieces make the scoring auditable and give
+candidates and companies the controls those rules expect.
+
+**Scoring records are immutable.** `scoring_record_guard` (migration
+`20261024090000_ai_compliance`) refuses `UPDATE` and `DELETE` on a finished
+`ScoringRun` and on every `Evaluation`, for every role, the owner included.
+It allows only these:
+
+- work on a run that is still `QUEUED` or `RUNNING`;
+- deletes one trigger level down, which is a cascade from an erased
+  candidate, a removed application or a deleted company;
+- the foreign keys clearing a deleted user (`actorId`) or a deleted
+  requirement (`requirementId`), checked by comparing the whole row minus
+  that column;
+- maintenance that sets `app.scoring_maintenance`.
+
+Each run stores `input` (`ScoringInput`: the job's title, description and
+requirements, and the resume text exactly as sent) and `redacted`. Any score
+can then be explained, and re-run, however the job or resume has changed
+since.
+
+**Scoring policy** (`scoring/policy.ts`) is read in both places a run is
+decided: when it's requested (`services/scoring.ts`, which also hashes the
+input) and when the worker scores it (`scoring/queue.ts`).
+
+- A candidate with `aiOptOutAt` is refused everywhere. Single requests throw.
+  Bulk requests count them as `excluded`. A run queued before the opt-out
+  fails with the same message, without calling the model.
+- With `Company.aiNoticeRequired`, a candidate without `aiNoticeAt` is
+  refused the same way.
+
+Both flags are set, with their dates, from the candidate page
+(`setCandidateAiFlags`). Saving again keeps the original date. Each company
+has a public notice at `/ai-notice/<slug>`: its own wording (`aiNoticeText`)
+above the standard explanation.
+
+**Redaction.** With `Company.aiRedactPii`, `redactResume`
+(`scoring/redact.ts`) masks the resume before the model sees it:
+
+- the candidate's name, in full in any case, and each part only as
+  capitalised in the name (so the name "Will" doesn't take the word "will");
+- email addresses and profile links;
+- phone numbers: 9–15 digits on one line, so year ranges survive;
+- stated ages, and "born in …";
+- the value of labelled lines such as date of birth, gender, sex,
+  nationality, marital status, religion, race, ethnicity, pronouns and photo.
+  The label must end in a colon or a spaced dash.
+
+It is rule-based on purpose: predictable, testable and explainable to an
+auditor. Dates and employers stay, because experience requirements depend on
+them. The model's quotes are verified against the redacted text. The input
+hash covers that text, so turning redaction on never reuses an unredacted
+result.
+
+**Decision record.** `updateStage` puts the AI context into the stage
+entry's metadata (`decisionContext`, `services/decisions.ts`):
+
+- the run, score, model, prompt version and scoring time the decider had on
+  screen;
+- `unscored` when there was no score yet;
+- `hidden` when the decider's role doesn't see scores.
+
+The entry is sealed into the audit hash chain with the decision.
+`listStageDecisions` reads it back for the application page. For roles
+without `scoring.view`, a shown score reads as hidden. It doesn't check job
+access itself, so call it only for an application the caller may read.
+
+**Self-identification and impact ratios.** `services/fairness.ts` signs a
+link per application, `<applicationId>.<HMAC>` under an `AUTH_SECRET` subkey,
+with nothing stored. It opens `/self-id/<token>`: a public form with the
+EEO-1 sex and race/ethnicity categories and "prefer not to say", which is
+stored as null.
+
+- The token is the only credential, so the application is resolved on the
+  owner connection and the answer is written in a tenant transaction for its
+  company. Submissions are rate-limited per IP.
+- Answering again replaces the earlier answers. The audit entry records that
+  an answer was given, never what it was.
+- `SelfIdResponse` is read only by `getImpactReport`, which is admin-only.
+
+`getImpactReport` feeds `impactReport` (`fairness/impact.ts`). For each
+category it computes:
+
+- the selection rate: the share currently shortlisted or further along;
+- the scoring rate: the share scoring above the median AI score of everyone
+  scored, which is how LL144 defines it for scoring tools;
+- each rate's impact ratio against the highest category.
+
+Categories under 2% of respondents are shown, but left out of the ratios and
+never used as the reference. People who didn't answer are counted as
+unknown. Settings → Compliance shows the report per job, flags ratios under
+0.80, and downloads it as CSV.
+
+**Model card.** `/ai` reads its facts from `modelCardFacts()`
+(`backend/src/model-card.ts`):
+
+- the configured model and fallback;
+- the prompt version and decoding settings;
+- the evaluation metrics, from the committed `evals/scoring/baseline.json`.
+
+The page can't state numbers the scoring gate didn't measure. A DPA template
+covering the sub-processors is in `docs/legal/dpa.md`.
+
+## Data lifecycle (GDPR)
+
+**Candidate names never enter the audit log.** The log is sealed into a hash
+chain and can't be edited, so a name written into it could never be erased.
+
+- Summaries say `{candidate}` (`CANDIDATE_REF`, `audit/candidate-ref.ts`) and
+  carry the candidate's id, either as the entity id or in
+  `metadata.candidateId`.
+- `withCandidateNames` (`services/activity.ts`) puts current names back for
+  the activity feed and the dashboard. An erased candidate reads as "a
+  deleted candidate".
+- Resume file names are left out of summaries too, since they are often the
+  candidate's name.
+- The CSV/JSON audit export and SIEM streams carry the stored summary with
+  the reference, so their hashes still verify.
+
+Entries written before this change keep the names they were sealed with.
+Audit retention is what removes them.
+
+**Data-subject access export.** `exportCandidateData`
+(`services/data-rights.ts`) is admin-only and served at
+`GET /candidates/<id>/data-export` behind step-up. It returns everything held
+about one candidate as JSON:
+
+- profile and resume text, and file metadata;
+- applications, with their decision record, ratings and self-identification;
+- every scoring run, with its input and evaluations;
+- the activity about them.
+
+Teammates' names are left out as third-party data. The export is audited.
+
+**Retention.** Owners choose `Company.candidateRetentionDays`: 180, 365, 730
+or 1095, or null to keep candidates until someone deletes them.
+`purgeExpiredCandidates` (`retention/candidates.ts`,
+`GET /api/cron/retention`, daily) deletes up to 200 candidates per company per
+run whose own row and every application haven't changed since the cutoff.
+
+- The rows cascade, scoring records included: their guard lets a cascade
+  through.
+- Uploaded originals are deleted after commit.
+- The audit entry records the count and the period, never who.
+
+**Offboarding.** `services/offboarding.ts` is owner-only, with step-up on
+both functions.
+
+`exportWorkspace` streams the whole workspace as JSON Lines, one
+`{"type", "data"}` record per line, paging each table by id. It covers:
+
+- the workspace, members and departments;
+- jobs with their requirements;
+- candidates and resume file metadata;
+- applications with their ratings and self-identification;
+- scoring runs with their evaluations;
+- the audit log, API keys and webhook endpoints.
+
+API key hashes and webhook signing secrets are left out. The export is
+audited before the first byte.
+
+`deleteWorkspace` needs the workspace name typed exactly, then works in this
+order:
+
+1. It cancels the Stripe subscription through
+   `BillingGateway.cancelSubscription`. A Stripe error stops everything, so
+   nobody keeps paying for a deleted workspace.
+2. It removes the SSO connections and directory from Jackson
+   (`sso/forget.ts`). No foreign key ties those tables to the company.
+3. On the owner connection (the tenant role can't delete a company), it
+   revokes every session open in the workspace and deletes the company row.
+   Every tenant table cascades.
+4. It deletes the resume originals.
+
+Members keep their accounts. Someone whose only workspace it was lands in
+onboarding. The company's audit log goes with it, so the deletion is
+recorded as a `company.deleted` service log line.
+
+**Data residency (not built).** A company pinned to a region needs its rows
+in that region's database, and sign-in has to find the right region before
+it knows the company. The design is a cell per region:
+
+- its own deployment and Neon project;
+- `Company.region`, set when the company is created;
+- a small global directory (email domain and company slug → region) that the
+  login and invite pages check in order to redirect.
+
+Tenant isolation already never crosses companies, so the code changes are
+the directory, a region check in the guards, and routing. This waits until a
+second region exists to test against.
+
+**Column encryption (deferred).** Encrypting `Candidate.resumeText` in the
+application would take away full-text candidate search: the generated
+`tsvector` column needs the plain text. The database and blob providers
+already encrypt at rest. The secrets that would be dangerous in a database
+dump are already sealed with AES-256-GCM: SSO connections, TOTP secrets,
+queued emails, and webhook and SIEM secrets. Revisit this if a customer
+requires keys it holds itself (BYOK). The path would be envelope encryption
+per company, with search moved to a separately protected index.
+
 ## Resume files
 
 Recruiters can upload a candidate's PDF or Word (.docx) resume from the
@@ -1071,8 +1274,8 @@ because a crafted PDF rendered inline from our origin could run in the app's
 context, and each one is recorded in the audit log. Deleting a candidate
 removes their files: the rows cascade in the transaction and the blobs are
 deleted once it commits (a failed blob delete is logged for follow-up).
-Tenants have no `DELETE` on the table. Tenant offboarding (Phase 3) must also
-delete the company's blob prefix. `20261022090000_resume_files` adds the table
+Tenants have no `DELETE` on the table. Deleting a workspace (Data lifecycle,
+above) deletes its originals from the store too. `20261022090000_resume_files` adds the table
 with RLS (expand-only).
 
 ## Rate limiting

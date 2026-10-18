@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import { aiBudgetExhaustedMessage, chargeAiTokens, getAiBudget } from "../ai-budget";
 import { tenantDb, tenantTransaction } from "../tenant-db";
 import { errorFields, log, withLogContext } from "../observability/log";
@@ -15,6 +16,13 @@ import {
   type ScoringJob,
 } from "./engine";
 import { computeScore } from "./math";
+import {
+  SCORING_CANDIDATE_SELECT,
+  SCORING_POLICY_SELECT,
+  scoringInput,
+  scoringRefusal,
+  scoringResume,
+} from "./policy";
 import { applicationEventData } from "../webhooks/events";
 import { queueWebhookEvent } from "../webhooks/outbox";
 
@@ -166,21 +174,25 @@ async function retryOrFail(run: ClaimedRun, error: unknown): Promise<void> {
  */
 export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestEvaluation): Promise<void> {
   const scoped = tenantDb(run);
-  const application = await scoped.application.findUnique({
-    where: { id: run.applicationId },
-    select: {
-      deletedAt: true,
-      candidate: { select: { name: true, resumeText: true } },
-      job: {
-        select: {
-          title: true,
-          description: true,
-          requirements: { orderBy: { order: "asc" }, select: { id: true, label: true, weight: true } },
+  const [application, policy] = await Promise.all([
+    scoped.application.findUnique({
+      where: { id: run.applicationId },
+      select: {
+        deletedAt: true,
+        candidateId: true,
+        candidate: { select: SCORING_CANDIDATE_SELECT },
+        job: {
+          select: {
+            title: true,
+            description: true,
+            requirements: { orderBy: { order: "asc" }, select: { id: true, label: true, weight: true } },
+          },
         },
       },
-    },
-  });
-  if (!application || application.deletedAt) {
+    }),
+    db.company.findUnique({ where: { id: run.companyId }, select: SCORING_POLICY_SELECT }),
+  ]);
+  if (!application || application.deletedAt || !policy) {
     await failRun(run, "This application was removed before it could be scored.");
     return;
   }
@@ -193,6 +205,13 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
     await failRun(run, "This job has no requirements yet. Add requirements to define the scoring rubric.");
     return;
   }
+  // Checked again here: a candidate can opt out while their run waits in the queue.
+  const refusal = scoringRefusal(candidate, policy);
+  if (refusal) {
+    await failRun(run, refusal);
+    return;
+  }
+  const resume = scoringResume(candidate, policy);
 
   // Re-checked per run: a 200-applicant batch must stop when the budget does.
   const { remaining } = await getAiBudget(run.companyId);
@@ -203,7 +222,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
 
   let outcome: EvaluationOutcome;
   try {
-    outcome = await evaluate(job, candidate.resumeText);
+    outcome = await evaluate(job, resume);
   } catch (error) {
     await retryOrFail(run, error);
     return;
@@ -230,7 +249,9 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         finishedAt,
         error: null,
         model: outcome.model,
-        inputHash: scoringInputHash(job, candidate.resumeText, { ...settings, model: outcome.model }),
+        inputHash: scoringInputHash(job, resume, { ...settings, model: outcome.model }),
+        input: { ...scoringInput(job, resume) },
+        redacted: policy.aiRedactPii,
         aiScore,
         aiSummary: outcome.result.summary,
         promptTokens: outcome.promptTokens,
@@ -276,7 +297,8 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         action: "application.score",
         entityType: "application",
         entityId: run.applicationId,
-        summary: `scored ${candidate.name} at ${aiScore}`,
+        summary: `scored ${CANDIDATE_REF} at ${aiScore}`,
+        metadata: { candidateId: application.candidateId },
       },
       tx,
     );

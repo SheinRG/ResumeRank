@@ -14,6 +14,7 @@ import {
 import {
   activityActorInclude,
   toActivityActor,
+  withCandidateNames,
   type ActivityActor,
 } from "./activity";
 
@@ -172,10 +173,10 @@ export async function getDashboardData(ctx: TenantContext): Promise<DashboardDat
         })
       : [],
   ]);
-  const recentActivity: ActivityFeedItem[] = recentActivityRows.map((row) => ({
-    ...row,
-    actor: toActivityActor(row.actor, row.action),
-  }));
+  const recentActivity: ActivityFeedItem[] = await withCandidateNames(
+    ctx,
+    recentActivityRows.map((row) => ({ ...row, actor: toActivityActor(row.actor, row.action) })),
+  );
 
   const countByStage = new Map(
     stageGroups.map((g): [Stage, number] => [g.stage, g._count._all]),

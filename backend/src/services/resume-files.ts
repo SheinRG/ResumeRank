@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { logActivity } from "../activity";
+import { CANDIDATE_REF } from "../audit/candidate-ref";
 import type { ResumeFile } from "../generated/prisma/client";
 import type { ResumeExtraction, ResumeFileKind, ResumeFileStatus } from "../generated/prisma/enums";
 import { sniffResumeKind } from "../ingestion/sniff";
@@ -130,7 +131,8 @@ export async function uploadResumeFile(
           action: "candidate.resume_upload",
           entityType: "candidate",
           entityId: candidate.id,
-          summary: `uploaded resume file "${fileName}" for "${candidate.name}"`,
+          // The file name is left out too: it's often the candidate's name.
+          summary: `uploaded a ${kind} resume file for ${CANDIDATE_REF}`,
           metadata: { resumeFileId: id, kind, sizeBytes: bytes.length, sha256 },
         },
         tx,
@@ -177,7 +179,7 @@ export async function getResumeFileDownload(
     action: "candidate.resume_download",
     entityType: "candidate",
     entityId: file.candidateId,
-    summary: `downloaded resume file "${file.fileName}"`,
+    summary: `downloaded a resume file of ${CANDIDATE_REF}`,
     metadata: { resumeFileId: file.id },
   });
   return { fileName: file.fileName, contentType: RESUME_FILE_TYPES[file.kind].mime, bytes };
