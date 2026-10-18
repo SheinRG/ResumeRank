@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { formatDate } from "@/lib/format";
 import { saveSsoConnectionSchema } from "@resumerank/core/validators/sso";
 import { removeSsoConnectionAction, saveSsoConnectionAction } from "@/server/actions/sso";
@@ -30,10 +31,11 @@ function ConnectionSummary({
   onRemoved: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function remove() {
     startTransition(async () => {
-      const result = await removeSsoConnectionAction();
+      const result = await withStepUp(() => removeSsoConnectionAction());
       if (!result.ok) {
         toast.error(result.error);
         return;

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { setPasswordPolicyAction } from "@/server/actions/password-policy";
 import type { PasswordPolicy } from "@/server/queries/password-policy";
 import { passwordPolicySchema } from "@resumerank/core/validators/password-policy";
@@ -26,6 +27,7 @@ export function PasswordPolicyCard({ policy, canChange }: { policy: PasswordPoli
   const [saved, setSaved] = useState(policy);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   const dirty = minLength !== saved.minLength || breachCheck !== saved.breachCheck;
 
@@ -37,7 +39,7 @@ export function PasswordPolicyCard({ policy, canChange }: { policy: PasswordPoli
     }
     setError(null);
     startTransition(async () => {
-      const result = await setPasswordPolicyAction(parsed.data);
+      const result = await withStepUp(() => setPasswordPolicyAction(parsed.data));
       if (!result.ok) {
         setError(result.fieldErrors?.minLength?.[0] ?? null);
         toast.error(result.error);

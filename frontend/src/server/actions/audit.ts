@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requireRecentAuth, tenantContext } from "@/lib/auth/guards";
 import {
   removeAuditStream,
   saveAuditStream,
@@ -34,6 +34,7 @@ export async function setAuditRetentionAction(
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const result = await setAuditRetention(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -48,6 +49,7 @@ export async function saveAuditStreamAction(input: unknown): Promise<ActionResul
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const saved = await saveAuditStream(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -70,6 +72,7 @@ export async function setAuditStreamEnabledAction(input: unknown): Promise<Actio
 export async function removeAuditStreamAction(): Promise<ActionResult<{ kind: AuditStreamKind }>> {
   return runAction("removeAuditStream", async () => {
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const removed = await removeAuditStream(tenantContext(admin));
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);

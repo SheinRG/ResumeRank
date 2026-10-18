@@ -10,7 +10,9 @@ export type AuthAction =
   | "auth.sign_in_refused"
   | "auth.sign_out"
   | "auth.mfa_passed"
-  | "auth.mfa_failed";
+  | "auth.mfa_failed"
+  | "auth.reauthenticated"
+  | "auth.reauth_failed";
 
 export const AUTH_ACTION_PREFIX = "auth.";
 

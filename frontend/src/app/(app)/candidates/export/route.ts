@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { candidateListParamsSchema } from "@resumerank/core/validators/search";
-import { GateError } from "@/lib/auth/guards";
+import { GateError, requireRecentAuth } from "@/lib/auth/guards";
 import { exportCandidatesCsv } from "@/server/queries/candidates";
 
 export async function GET(request: Request): Promise<Response> {
@@ -14,6 +14,8 @@ export async function GET(request: Request): Promise<Response> {
 
   let stream: ReadableStream<Uint8Array>;
   try {
+    // Bulk personal data: the link is only followed after a step-up, and checked again here.
+    await requireRecentAuth();
     ({ stream } = await exportCandidatesCsv(params));
   } catch (error) {
     if (error instanceof GateError) {

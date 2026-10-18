@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auditExportParamsSchema } from "@resumerank/core/validators/audit";
-import { GateError } from "@/lib/auth/guards";
+import { GateError, requireRecentAuth } from "@/lib/auth/guards";
 import { exportAuditLog } from "@/server/queries/audit";
 
 const CONTENT_TYPES = { csv: "text/csv; charset=utf-8", jsonl: "application/x-ndjson; charset=utf-8" } as const;
@@ -19,6 +19,8 @@ export async function GET(request: Request): Promise<Response> {
 
   let stream: ReadableStream<Uint8Array>;
   try {
+    // Bulk personal data: the link is only followed after a step-up, and checked again here.
+    await requireRecentAuth();
     ({ stream } = await exportAuditLog(parsed.data));
   } catch (error) {
     if (error instanceof GateError) {

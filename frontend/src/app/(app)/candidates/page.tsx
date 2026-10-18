@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { CandidateToolbar } from "@/components/candidates/candidate-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
+import { StepUpDownload } from "@/components/step-up/step-up-download";
 import { formatCount, formatDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@resumerank/core/validators/search";
@@ -61,12 +62,9 @@ export default async function CandidatesPage({
           canExport || canManage ? (
             <>
               {canExport ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={buildExportHref(params)} prefetch={false}>
-                    <Download aria-hidden="true" />
-                    Export CSV
-                  </Link>
-                </Button>
+                <StepUpDownload href={buildExportHref(params)} size="sm" icon={<Download aria-hidden="true" />}>
+                  Export CSV
+                </StepUpDownload>
               ) : null}
               {canManage ? (
                 <Button asChild size="sm">

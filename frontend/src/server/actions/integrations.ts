@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAdmin, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requireRecentAuth, tenantContext } from "@/lib/auth/guards";
 import { expireTenantReads } from "@/server/cache-tags";
 import { runAction } from "@/server/run-action";
 import { scheduleWebhookDrain } from "@/server/webhook-drain";
@@ -38,6 +38,7 @@ export async function createApiKeyAction(input: unknown): Promise<ActionResult<C
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const created = await createApiKey(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);
@@ -64,6 +65,7 @@ export async function createWebhookAction(input: unknown): Promise<ActionResult<
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const created = await createWebhook(tenantContext(admin), parsed.data);
     revalidatePath(SETTINGS_PATH);
     expireTenantReads(admin.companyId);

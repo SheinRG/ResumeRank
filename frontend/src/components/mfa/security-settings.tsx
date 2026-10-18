@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { formatDate, formatRelative } from "@/lib/format";
 import {
   regenerateRecoveryCodesAction,
@@ -74,6 +75,7 @@ function RemoveButton({ label, ...props }: { label: string } & ComponentProps<ty
 
 function TwoFactorCard({ status }: { status: MfaStatus }) {
   const [freshCodes, setFreshCodes] = useState<string[] | null>(null);
+  const withStepUp = useStepUp();
   const enabled = status.enabledAt !== null;
   const onlyOne = factorCount(status) === 1;
 
@@ -82,7 +84,7 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
   }
 
   async function removeTotp(): Promise<boolean> {
-    const result = await removeTotpAction();
+    const result = await withStepUp(() => removeTotpAction());
     if (!result.ok) {
       toast.error(result.error);
       return false;
@@ -94,7 +96,7 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
   }
 
   async function removePasskey(passkeyId: string, name: string): Promise<boolean> {
-    const result = await removePasskeyAction({ passkeyId });
+    const result = await withStepUp(() => removePasskeyAction({ passkeyId }));
     if (!result.ok) {
       toast.error(result.error);
       return false;
@@ -106,7 +108,7 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
   }
 
   async function regenerate(): Promise<boolean> {
-    const result = await regenerateRecoveryCodesAction();
+    const result = await withStepUp(() => regenerateRecoveryCodesAction());
     if (!result.ok) {
       toast.error(result.error);
       return false;
@@ -256,11 +258,12 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
 function PolicyCard({ policy, canChange }: { policy: MfaPolicy; canChange: boolean }) {
   const [required, setRequired] = useState(policy.required);
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function toggle(next: boolean) {
     setRequired(next);
     startTransition(async () => {
-      const result = await setMfaRequiredAction({ required: next });
+      const result = await withStepUp(() => setMfaRequiredAction({ required: next }));
       if (!result.ok) {
         setRequired(!next);
         toast.error(result.error);

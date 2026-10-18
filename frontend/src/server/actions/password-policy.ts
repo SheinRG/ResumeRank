@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAdmin, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requireRecentAuth, tenantContext } from "@/lib/auth/guards";
 import type { PasswordPolicy } from "@resumerank/core/auth/password-policy";
 import { setPasswordPolicy } from "@resumerank/core/services/password-policy";
 import { actionError, actionOk, type ActionResult } from "@resumerank/core/types/action";
@@ -17,6 +17,7 @@ export async function setPasswordPolicyAction(input: unknown): Promise<ActionRes
       return actionError("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const policy = await setPasswordPolicy(tenantContext(admin), parsed.data);
     revalidatePath("/settings/security");
     expireTenantReads(admin.companyId);

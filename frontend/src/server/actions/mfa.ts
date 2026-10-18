@@ -6,6 +6,7 @@ import {
   requireAdmin,
   requireMfaChallenge,
   requireMfaEnrollment,
+  requireRecentAuth,
   requireUser,
   tenantContext,
   type CurrentUser,
@@ -93,6 +94,7 @@ export async function confirmTotpEnrollmentAction(input: unknown): Promise<Actio
 export async function removeTotpAction(): Promise<ActionResult<{ enabledAt: Date | null }>> {
   return runAction("removeTotp", async () => {
     const user = await requireUser();
+    await requireRecentAuth();
     const state = await removeTotp(mfaActor(user));
     afterFactorChange(user);
     return actionOk(state);
@@ -131,6 +133,7 @@ export async function removePasskeyAction(
     const parsed = passkeyIdSchema.safeParse(input);
     if (!parsed.success) return actionError("That passkey no longer exists.");
     const user = await requireUser();
+    await requireRecentAuth();
     const removed = await removePasskey(mfaActor(user), parsed.data);
     afterFactorChange(user);
     return actionOk(removed);
@@ -140,6 +143,7 @@ export async function removePasskeyAction(
 export async function regenerateRecoveryCodesAction(): Promise<ActionResult<{ recoveryCodes: string[] }>> {
   return runAction("regenerateRecoveryCodes", async () => {
     const user = await requireUser();
+    await requireRecentAuth();
     const result = await regenerateRecoveryCodes(mfaActor(user));
     afterFactorChange(user);
     return actionOk(result);
@@ -193,6 +197,7 @@ export async function setMfaRequiredAction(input: unknown): Promise<ActionResult
     const parsed = setMfaRequiredSchema.safeParse(input);
     if (!parsed.success) return actionError("Choose whether to require two-factor authentication.");
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const policy = await setMfaRequired(tenantContext(admin), parsed.data);
     revalidatePath(SECURITY_PATH);
     expireTenantReads(admin.companyId);
@@ -205,6 +210,7 @@ export async function resetMemberMfaAction(input: unknown): Promise<ActionResult
     const parsed = resetMemberMfaSchema.safeParse(input);
     if (!parsed.success) return actionError("That user no longer exists.");
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const member = await resetMemberMfa(tenantContext(admin), parsed.data);
     revalidatePath("/settings/team");
     revalidatePath(SECURITY_PATH);

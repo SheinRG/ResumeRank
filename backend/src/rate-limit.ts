@@ -166,6 +166,9 @@ export const SCIM_LIMIT: RateLimit = { max: 600, windowMs: 60 * 1000 };
  */
 export const MFA_ATTEMPT_LIMIT: RateLimit = { max: 10, windowMs: 15 * 60 * 1000 };
 
+/** Re-entering the password inside a live session; as tight as sign-in, since it's the same guess. */
+export const REAUTH_PASSWORD_LIMIT: RateLimit = { max: 5, windowMs: 15 * 60 * 1000 };
+
 /**
  * New workspaces per account. Agencies and consultants open a few; nobody
  * needs dozens a day, and each one is a tenant to clean up after.

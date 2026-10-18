@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import type { ZodType } from "zod";
 
 import type { ActionResult } from "@resumerank/core/types/action";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 
 export type FieldErrors = Record<string, string[] | undefined>;
 
@@ -12,7 +13,8 @@ export type FieldErrors = Record<string, string[] | undefined>;
  * the raw input with the same Zod schema the server uses, surface per-field
  * errors, run the action inside a transition, and route the typed result to
  * `onSuccess` / `onError`. Keeps every form's `handleSubmit` down to building
- * its input object and calling `submit`.
+ * its input object and calling `submit`. A sensitive action that needs a
+ * recent sign-in goes through the step-up dialog and is retried.
  */
 export function useActionForm<TInput, TData>({
   schema,
@@ -28,6 +30,7 @@ export function useActionForm<TInput, TData>({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function submit(rawInput: unknown) {
     setFormError(null);
@@ -39,7 +42,7 @@ export function useActionForm<TInput, TData>({
     setFieldErrors({});
 
     startTransition(async () => {
-      const result = await action(parsed.data);
+      const result = await withStepUp(() => action(parsed.data));
       if (!result.ok) {
         setFieldErrors(result.fieldErrors ?? {});
         setFormError(result.error);

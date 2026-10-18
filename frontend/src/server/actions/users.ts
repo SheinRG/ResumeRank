@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { refreshSession, signOut } from "@/lib/auth";
-import { requireAdmin, requirePasswordChange, requireUser, tenantContext } from "@/lib/auth/guards";
+import { requireAdmin, requirePasswordChange, requireRecentAuth, requireUser, tenantContext } from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
   changePasswordSchema,
@@ -56,6 +56,7 @@ export async function updateUserRoleAction(
       );
     }
     const admin = await requireAdmin();
+    await requireRecentAuth();
     const user = await updateMemberRole(tenantContext(admin), parsed.data);
 
     revalidatePath("/settings/team");

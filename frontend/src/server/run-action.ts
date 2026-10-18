@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { GateError } from "@/lib/auth/guards";
+import { GateError, ReauthRequiredError } from "@/lib/auth/guards";
 import { DomainError } from "@resumerank/core/services/errors";
 import { errorFields, log, withLogContext } from "@resumerank/core/observability/log";
 import { actionError, type ActionResult } from "@resumerank/core/types/action";
@@ -27,6 +27,10 @@ export async function runAction<T>(
       log.info("action", { outcome: result.ok ? "ok" : "invalid", durationMs: elapsed() });
       return result;
     } catch (error) {
+      if (error instanceof ReauthRequiredError) {
+        log.info("action", { outcome: "reauth_required", durationMs: elapsed() });
+        return actionError(error.message, undefined, "reauth_required");
+      }
       if (error instanceof GateError) {
         log.info("action", { outcome: "denied", durationMs: elapsed() });
         return actionError(error.message);

@@ -8,6 +8,10 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ### Security
 
+- Step-up re-authentication: creating API keys, changing security settings,
+  roles or SSO, and exporting candidates or the audit log ask you to confirm
+  it's you (password, authenticator code or passkey) unless you signed in or
+  confirmed in the last 10 minutes.
 - Password policy: owners set a minimum length and can refuse passwords
   found in known breaches (checked by k-anonymity, so the password never
   leaves the server). Existing passwords that fall short are changed at

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useStepUp } from "@/components/step-up/step-up-provider";
 import { addIpRangeAction, removeIpRangeAction } from "@/server/actions/ip-allowlist";
 import type { IpAllowlistPanel, IpRange } from "@/server/queries/ip-allowlist";
 import { ipAllowed } from "@resumerank/core/auth/ip-allowlist";
@@ -26,10 +27,11 @@ function RangeRow({
   onRemoved: (id: string) => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const withStepUp = useStepUp();
 
   function remove() {
     startTransition(async () => {
-      const result = await removeIpRangeAction({ rangeId: range.id });
+      const result = await withStepUp(() => removeIpRangeAction({ rangeId: range.id }));
       if (!result.ok) {
         toast.error(result.error);
         return;
