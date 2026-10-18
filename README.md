@@ -213,5 +213,8 @@ in this checkout yet.
   limiting, and security headers.
 - [`docs/case-study.md`](docs/case-study.md) — problem, approach, trade-offs,
   and what we'd do differently.
+- [`SECURITY.md`](SECURITY.md) — how to report a vulnerability; the
+  [`docs/security`](docs/security) folder has the SOC 2 readiness map, the
+  incident-response runbook and the penetration test brief.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — local setup and PR conventions.
 - [`CHANGELOG.md`](CHANGELOG.md) — release history.

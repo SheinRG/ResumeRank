@@ -31,9 +31,9 @@ type NavItem = {
 // centred links and the right-hand actions. The "home" item (Get started) is
 // where the lime pill rests when nothing is hovered.
 const ITEMS: NavItem[] = [
-  { label: "How it works", href: "#how-it-works", group: "center" },
-  { label: "Why ResumeRank", href: "#why", group: "center" },
-  { label: "FAQ", href: "#faq", group: "center" },
+  { label: "How it works", href: "/#how-it-works", group: "center" },
+  { label: "Why ResumeRank", href: "/#why", group: "center" },
+  { label: "FAQ", href: "/#faq", group: "center" },
   { label: "Sign in", href: "/login", group: "right" },
   { label: "Get started free", href: "/register", group: "right", home: true },
 ];
@@ -113,7 +113,7 @@ export function SiteNav() {
         <nav aria-label="Primary" className="hidden items-center gap-1.5 md:flex">
           {ITEMS.map((item, i) =>
             item.group === "center" ? (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 ref={(el) => {
@@ -124,7 +124,7 @@ export function SiteNav() {
                 className={linkClass(item, i)}
               >
                 {item.label}
-              </a>
+              </Link>
             ) : null,
           )}
         </nav>
@@ -168,12 +168,12 @@ export function SiteNav() {
               <nav aria-label="Primary" className="flex flex-col gap-1 px-4">
                 {MOBILE_LINKS.map((link) => (
                   <SheetClose asChild key={link.href}>
-                    <a
+                    <Link
                       href={link.href}
                       className="rounded-lg px-3 py-2.5 text-sm font-medium text-brand-muted hover:bg-white/5 hover:text-brand-cream"
                     >
                       {link.label}
-                    </a>
+                    </Link>
                   </SheetClose>
                 ))}
               </nav>

@@ -9,7 +9,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Do I need to upload resume files?",
     answer:
-      "Not yet — you paste resume text when you add a candidate. File upload and parsing (PDF/DOCX) is deferred so the core screening flow stays friction-free; pasted text is the scoring input either way.",
+      "Either works. Paste resume text when you add a candidate, or upload a PDF or Word file and ResumeRank reads the text out of it in the background, with OCR for scanned pages. The original file is kept for your records.",
   },
   {
     question: "What AI model scores candidates?",
@@ -29,7 +29,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Who can see or change what?",
     answer:
-      "Roles are enforced server-side on every request: owners and admins manage the team, members can create and edit records, and viewers can look but never write.",
+      "Roles are enforced server-side on every request: owners and admins manage the team, members create and edit records, hiring managers and interviewers see only the jobs they're assigned to, and viewers can look but never write. See the security page for the full list of controls.",
   },
   {
     question: "What does it cost?",
