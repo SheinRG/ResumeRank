@@ -163,7 +163,7 @@ Hiring AI is **high-risk under the EU AI Act** (Annex III §4) and covered by **
 - [ ] Per-tenant subdomain / custom domain; white-labeling (branded emails, careers page). Only a logo URL exists today (`schema.prisma:91`).
 - [ ] i18n + timezones: `"en-US"` hardcoded in `frontend/src/lib/format.ts:1,7`; no timezone on User/Company.
 - [ ] Audit-log cold storage / partitioning for long-retention tenants.
-- [ ] Reduce email surface (backend ships both `resend` and `nodemailer`).
+- [x] Reduce email surface (backend ships both `resend` and `nodemailer`). → One transport: everything goes out over SMTP through nodemailer, and the `resend` SDK (with its Svix and React email dependencies) is gone. A bare `RESEND_API_KEY` still works, as shorthand for Resend's SMTP relay with its idempotency header, so existing deployments need no change; explicit `SMTP_*` settings win. Resend's webhook signature is verified with `node:crypto` and the events are parsed with Zod; an event whose id doesn't match a stored message falls back to the recipient.
 
 ---
 

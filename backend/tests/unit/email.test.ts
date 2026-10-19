@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { decideRetry, emailRetryDelayMs, MAX_EMAIL_ATTEMPTS } from "../../src/email/policy";
 import { openEmail, outboxKey, sealEmail } from "../../src/email/sealed";
-import { classifyResendError, classifySmtpError } from "../../src/email/transport";
+import { classifySmtpError, providerMessageId, RESEND_SMTP_HOST, smtpSettings } from "../../src/email/transport";
 import { verifyResendWebhook } from "../../src/email/webhooks";
 
 const content = {
@@ -77,16 +77,6 @@ describe("email retry policy", () => {
 });
 
 describe("delivery failure classification", () => {
-  it("retries Resend throttling, outages and network failures only", () => {
-    const resend = (name: string, statusCode: number | null) =>
-      classifyResendError({ name, statusCode, message: "x" }).retryable;
-    expect(resend("rate_limit_exceeded", 429)).toBe(true);
-    expect(resend("internal_server_error", 500)).toBe(true);
-    expect(resend("application_error", null)).toBe(true);
-    expect(resend("validation_error", 422)).toBe(false);
-    expect(resend("invalid_api_key", 403)).toBe(false);
-  });
-
   it("reads SMTP reply codes, and treats bad credentials as permanent", () => {
     const smtp = (fields: object) => classifySmtpError(Object.assign(new Error("smtp"), fields)).retryable;
     expect(smtp({ responseCode: 421 })).toBe(true);
@@ -96,9 +86,43 @@ describe("delivery failure classification", () => {
   });
 });
 
+describe("SMTP routing", () => {
+  const unset = { SMTP_HOST: undefined, SMTP_PORT: 587, SMTP_USER: undefined, SMTP_PASSWORD: undefined, RESEND_API_KEY: undefined };
+
+  it("prefers explicit SMTP settings, then Resend's relay, then nothing", () => {
+    const smtp = { SMTP_HOST: "smtp.example.test", SMTP_PORT: 2525, SMTP_USER: "u", SMTP_PASSWORD: "p" };
+    expect(smtpSettings({ ...unset, ...smtp, RESEND_API_KEY: "re_key" })).toEqual({
+      host: "smtp.example.test",
+      port: 2525,
+      user: "u",
+      password: "p",
+    });
+    expect(smtpSettings({ ...unset, RESEND_API_KEY: "re_key" })).toEqual({
+      host: RESEND_SMTP_HOST,
+      port: 465,
+      user: "resend",
+      password: "re_key",
+    });
+    expect(smtpSettings({ ...unset, SMTP_HOST: "smtp.example.test" })).toBeNull();
+    expect(smtpSettings(unset)).toBeNull();
+  });
+
+  it("keeps the relay's email id when its reply carries one", () => {
+    expect(providerMessageId("250 OK 4ef9a417-02e9-4d39-ad75-9611e0fcc33c", "<x@host>")).toBe(
+      "4ef9a417-02e9-4d39-ad75-9611e0fcc33c",
+    );
+    expect(providerMessageId("250 2.0.0 OK queued", "<x@host>")).toBe("<x@host>");
+    expect(providerMessageId("250 OK", undefined)).toBeNull();
+  });
+});
+
 describe("Resend webhook verification", () => {
   const secretBytes = randomBytes(24);
-  const payload = JSON.stringify({ type: "email.delivered", created_at: "2026-10-07T12:00:00Z", data: {} });
+  const payload = JSON.stringify({
+    type: "email.delivered",
+    created_at: "2026-10-07T12:00:00Z",
+    data: { email_id: "e", to: ["a@example.test"] },
+  });
 
   function sign(id: string, timestamp: string, body: string): string {
     const digest = createHmac("sha256", secretBytes).update(`${id}.${timestamp}.${body}`).digest("base64");
@@ -108,7 +132,6 @@ describe("Resend webhook verification", () => {
   beforeAll(() => {
     vi.stubEnv("DATABASE_URL", "postgresql://unused");
     vi.stubEnv("AUTH_SECRET", "a-long-enough-auth-secret");
-    vi.stubEnv("RESEND_API_KEY", "re_unit_test");
     vi.stubEnv("RESEND_WEBHOOK_SECRET", `whsec_${secretBytes.toString("base64")}`);
   });
 
@@ -136,5 +159,26 @@ describe("Resend webhook verification", () => {
       verifyResendWebhook(payload, { id: "msg_1", timestamp: stale, signature: sign("msg_1", stale, payload) }),
     ).toBeNull();
     expect(verifyResendWebhook(payload, { id: null, timestamp: now, signature: "v1,x" })).toBeNull();
+  });
+
+  it("accepts any one of several signatures, as during a secret rotation", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = `v1,${randomBytes(32).toString("base64")} ${sign("msg_1", timestamp, payload)}`;
+    expect(verifyResendWebhook(payload, { id: "msg_1", timestamp, signature })?.type).toBe("email.delivered");
+  });
+
+  it("passes unknown event types through as ignorable and rejects malformed known ones", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const verify = (body: string) =>
+      verifyResendWebhook(body, { id: "msg_2", timestamp, signature: sign("msg_2", timestamp, body) });
+    const opened = JSON.stringify({ type: "email.opened", created_at: "2026-10-07T12:00:00Z", data: {} });
+    const bounceWithoutDetail = JSON.stringify({
+      type: "email.bounced",
+      created_at: "2026-10-07T12:00:00Z",
+      data: { email_id: "e", to: ["a@example.test"] },
+    });
+    expect(verify(opened)?.type).toBe("other");
+    expect(verify(bounceWithoutDetail)).toBeNull();
+    expect(verify("not json")).toBeNull();
   });
 });

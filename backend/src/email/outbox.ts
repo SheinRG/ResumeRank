@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { WebhookEventPayload } from "resend";
-
 import { db } from "../db";
 import { env } from "../env";
 import type { Prisma } from "../generated/prisma/client";
@@ -10,6 +8,7 @@ import { errorFields, log, withLogContext } from "../observability/log";
 import { EMAIL_RETENTION_MS, STALE_SEND_MS, MAX_EMAIL_ATTEMPTS, decideRetry } from "./policy";
 import { openEmail, outboxKey, sealEmail } from "./sealed";
 import { DeliveryError, deliverEmail, type Deliver, type OutgoingEmail } from "./transport";
+import type { EmailEvent } from "./webhooks";
 
 export interface QueuedEmail extends OutgoingEmail {
   kind: EmailKind;
@@ -75,7 +74,7 @@ export async function claimNextEmail(now = new Date()): Promise<ClaimedEmail | n
 
 /**
  * A worker killed mid-send leaves its row SENDING. It goes back to the queue
- * (Resend's idempotency key makes a re-send of an accepted message a no-op),
+ * (Resend's idempotency header makes a re-send of an accepted message a no-op),
  * or fails once out of attempts.
  */
 export async function recoverStaleEmails(now = new Date()): Promise<number> {
@@ -233,40 +232,59 @@ async function suppress(addresses: string[], reason: "bounce" | "complaint"): Pr
   });
 }
 
+type MessageEvent = Exclude<EmailEvent, { type: "other" }>;
+
+/**
+ * Finds the message an event is about by the provider's id. A relay that
+ * didn't return that id when it accepted the message leaves nothing to match,
+ * so the latest message sent to the same recipient before the event stands in;
+ * suppression never depends on this, only the per-message status does.
+ */
+async function updateEventMessage(
+  event: MessageEvent,
+  data: Prisma.EmailMessageUpdateManyMutationInput,
+): Promise<void> {
+  const byId = await db.emailMessage.updateMany({ where: { providerMessageId: event.data.email_id }, data });
+  if (byId.count > 0) return;
+  const latest = await db.emailMessage.findFirst({
+    where: {
+      OR: event.data.to.map((to) => ({ to: { equals: to, mode: "insensitive" as const } })),
+      sentAt: { not: null, lte: new Date(event.created_at) },
+    },
+    orderBy: { sentAt: "desc" },
+    select: { id: true },
+  });
+  if (latest) await db.emailMessage.update({ where: { id: latest.id }, data });
+}
+
 /**
  * Applies a verified provider event. Only hard bounces and complaints
  * suppress the address — mailing either again hurts the sending domain's
  * reputation — while a transient bounce just records what happened.
  */
-export async function applyEmailEvent(event: WebhookEventPayload): Promise<void> {
+export async function applyEmailEvent(event: EmailEvent): Promise<void> {
   switch (event.type) {
     case "email.delivered": {
-      await db.emailMessage.updateMany({
-        where: { providerMessageId: event.data.email_id },
-        data: { deliveredAt: new Date(event.created_at) },
-      });
+      await updateEventMessage(event, { deliveredAt: new Date(event.created_at) });
       return;
     }
     case "email.bounced": {
       const { type, subType, message } = event.data.bounce;
       if (type === "Permanent") await suppress(event.data.to, "bounce");
-      await db.emailMessage.updateMany({
-        where: { providerMessageId: event.data.email_id },
-        data: { status: "BOUNCED", error: `Bounced (${type}/${subType}): ${message}`.slice(0, 500) },
+      await updateEventMessage(event, {
+        status: "BOUNCED",
+        error: `Bounced (${type}/${subType}): ${message}`.slice(0, 500),
       });
       log.warn("email.bounced", { bounceType: type, bounceSubType: subType });
       return;
     }
     case "email.complained": {
       await suppress(event.data.to, "complaint");
-      await db.emailMessage.updateMany({
-        where: { providerMessageId: event.data.email_id },
-        data: { status: "COMPLAINED", error: "The recipient reported this message as spam." },
-      });
+      await updateEventMessage(event, { status: "COMPLAINED", error: "The recipient reported this message as spam." });
       log.warn("email.complained", {});
       return;
     }
-    default:
+    case "other":
       return;
   }
 }

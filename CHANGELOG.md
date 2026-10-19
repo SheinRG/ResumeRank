@@ -6,6 +6,13 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Email goes out over SMTP only. `RESEND_API_KEY` alone still works (it
+  now means Resend's SMTP relay), and explicit `SMTP_HOST`/`SMTP_USER`/
+  `SMTP_PASSWORD` settings take precedence. The Resend SDK is no longer a
+  dependency.
+
 ### Compliance
 
 - AI compliance (EU AI Act, NYC Local Law 144): finished scoring runs and
