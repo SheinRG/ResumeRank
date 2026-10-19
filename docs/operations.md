@@ -191,3 +191,61 @@ retention setting:
    confirm it works.
 3. Time the whole drill against the RTO and note any gaps.
 4. Delete the drill branch.
+
+## Load testing
+
+`load/resumerank.js` is a k6 script for the paths that carry production
+traffic. It runs three scenarios at once:
+
+| Scenario | Load | Threshold (p95) |
+| --- | --- | --- |
+| `api_reads`: ranked applicant lists, job detail, candidate search, job lists over the public API | 6 requests/s | 800 ms |
+| `scoring`: score requests for already-scored applications | 1 request/s | 1000 ms |
+| `dashboard`: the signed-in dashboard page | 3 virtual users | 2000 ms |
+
+Every scenario must also stay under a 1% error rate.
+
+- **Few model calls.** Score requests are only sent for applications that are
+  already scored. While the model and prompt are the ones that produced
+  those scores, the requests take the "reused" path and never call the
+  model. After a model or prompt change, a run spends at most one model
+  call per application.
+- **Within the rate limit.** The API scenario stays under one key's limit of
+  600 requests a minute.
+- **A lost session fails.** A dashboard response other than 200 counts as a
+  failure, so a session that ends mid-run shows up instead of looking fast.
+
+**Nightly.** `.github/workflows/load.yml` runs it against staging at 02:30
+UTC. `load/compare.mjs` then compares each path's p95 with the committed
+`load/baseline.json`. A path fails when it is more than 25% (and 50 ms)
+slower, when its error rate passes 1%, or when it has no data. The job is
+inert until these exist in the `staging` environment:
+
+- the `LOAD_BASE_URL` variable;
+- the `LOAD_API_KEY`, `LOAD_EMAIL` and `LOAD_PASSWORD` secrets.
+
+Point those at a dedicated staging workspace:
+
+- open jobs with scored applicants;
+- an admin account with no second factor;
+- a key with the `jobs:read`, `candidates:read`, `applications:read` and
+  `scoring:write` scopes.
+
+**Baseline.** The first run has nothing to compare with, so it passes and
+prints its numbers. Download its `load-summary` artifact and commit it:
+
+```
+node load/compare.mjs path/to/summary.json --write-baseline
+```
+
+Refresh the baseline only for a change meant to move the numbers, and say
+why in the pull request.
+
+**Locally**, against a production build on a throwaway database:
+
+```
+docker run --rm -v "$PWD/load:/load" -e BASE_URL=http://host.docker.internal:3105   -e API_KEY=rr_… -e EMAIL=… -e PASSWORD=… -e DURATION=30s   -e SUMMARY_PATH=/load/summary.json grafana/k6 run /load/resumerank.js
+```
+
+Laptop numbers aren't comparable with staging, so never commit them as the
+baseline.

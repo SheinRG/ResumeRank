@@ -1,0 +1,56 @@
+name: Load test
+
+# A nightly k6 run against staging, compared with the committed baseline
+# (load/baseline.json) so a slow query or a heavier page shows up the day it
+# lands, not when a large customer finds it. Inert until the secrets exist;
+# see docs/operations.md (Load testing).
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: load-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      BASE_URL: ${{ vars.LOAD_BASE_URL }}
+      API_KEY: ${{ secrets.LOAD_API_KEY }}
+      EMAIL: ${{ secrets.LOAD_EMAIL }}
+      PASSWORD: ${{ secrets.LOAD_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check configuration
+        id: config
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$API_KEY" ] || [ -z "$EMAIL" ] || [ -z "$PASSWORD" ]; then
+            echo "::notice::LOAD_BASE_URL, LOAD_API_KEY, LOAD_EMAIL or LOAD_PASSWORD not set; skipping the load test."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: grafana/setup-k6-action@v1
+        if: steps.config.outputs.ready == 'true'
+      - name: Run k6
+        if: steps.config.outputs.ready == 'true'
+        run: k6 run --quiet load/resumerank.js
+      - uses: actions/setup-node@v7
+        if: steps.config.outputs.ready == 'true'
+        with:
+          node-version: 22
+      - name: Compare with the baseline
+        if: steps.config.outputs.ready == 'true'
+        run: node load/compare.mjs
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.config.outputs.ready == 'true'
+        with:
+          name: load-summary
+          path: load/summary.json
+          if-no-files-found: ignore

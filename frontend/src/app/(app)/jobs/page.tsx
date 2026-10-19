@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CountText, DateText } from "@/components/format/format-provider";
 import Link from "next/link";
 import { Briefcase, Plus } from "lucide-react";
 
@@ -18,7 +19,6 @@ import {
 import { JobsToolbar } from "@/components/jobs/jobs-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { EMPLOYMENT_TYPE_LABELS } from "@/components/jobs/labels";
-import { formatCount, formatDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import { jobListParamsSchema } from "@resumerank/core/validators/search";
 import { listJobs } from "@/server/queries/jobs";
@@ -68,7 +68,7 @@ export default async function JobsPage({
             <JobsToolbar q={params.q} status={params.status} sort={params.sort} />
             {result.total > 0 ? (
               <p className="shrink-0 text-sm text-muted-foreground">
-                {formatCount(result, "job")}
+                <CountText count={result} noun="job" />
               </p>
             ) : null}
           </div>
@@ -153,7 +153,7 @@ export default async function JobsPage({
                         </TableCell>
                       ) : null}
                       <TableCell className="text-right text-muted-foreground">
-                        {formatDate(job.createdAt)}
+                        <DateText value={job.createdAt} />
                       </TableCell>
                     </TableRow>
                   ))}

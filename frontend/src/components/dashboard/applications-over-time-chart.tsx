@@ -14,22 +14,27 @@ import {
 } from "recharts";
 
 import { EmptyState } from "@/components/shared/empty-state";
+import { useFormatPrefs } from "@/components/format/format-provider";
 import { cn } from "@/lib/utils";
 import type { WeekPoint } from "@/server/queries/dashboard";
 
-const tickFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-});
+// Weeks are bucketed in UTC (ISO weeks), so their labels stay in UTC: in a
+// local zone west of it, Monday's bucket would read as Sunday.
+function useWeekLabel(): (value: Date | string) => string {
+  const { locale } = useFormatPrefs();
+  const formatter = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", timeZone: "UTC" });
+  return (value) => formatter.format(new Date(value));
+}
 
 function TimeTooltip({ active, payload }: TooltipContentProps) {
+  const weekLabel = useWeekLabel();
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload as WeekPoint | undefined;
   if (!point) return null;
   return (
     <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
       <p className="font-medium">
-        Week of {tickFormatter.format(new Date(point.weekStart))}
+        Week of {weekLabel(point.weekStart)}
       </p>
       <p className="text-muted-foreground">
         {point.count} application{point.count === 1 ? "" : "s"}
@@ -39,6 +44,7 @@ function TimeTooltip({ active, payload }: TooltipContentProps) {
 }
 
 export function ApplicationsOverTimeChart({ data }: { data: WeekPoint[] }) {
+  const weekLabel = useWeekLabel();
   const total = data.reduce((sum, point) => sum + point.count, 0);
 
   if (total === 0) {
@@ -94,7 +100,7 @@ export function ApplicationsOverTimeChart({ data }: { data: WeekPoint[] }) {
           <CartesianGrid vertical={false} stroke="var(--border)" />
           <XAxis
             dataKey="weekStart"
-            tickFormatter={(value: Date) => tickFormatter.format(new Date(value))}
+            tickFormatter={(value: Date) => weekLabel(value)}
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}

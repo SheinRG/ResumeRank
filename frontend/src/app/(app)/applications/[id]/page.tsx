@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DateText } from "@/components/format/format-provider";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -11,7 +12,6 @@ import { ScorecardsPanel } from "@/components/applications/scorecards-panel";
 import { StageSelect } from "@/components/applications/stage-select";
 import type { ScoreBlocker } from "@/components/applications/score-button";
 import { DecisionRecord } from "@/components/compliance/decision-record";
-import { formatDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import type { Permission } from "@resumerank/core/auth/roles";
 import { MIN_RESUME_LENGTH } from "@resumerank/core/validators/candidate";
@@ -104,7 +104,7 @@ export default async function ApplicationPage({
             >
               {application.job.title}
             </Link>{" "}
-            · added {formatDate(application.createdAt)}
+            · added <DateText value={application.createdAt} />
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">

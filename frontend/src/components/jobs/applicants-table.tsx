@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { STAGE_LABELS, ScorePill, StageBadge } from "@/components/shared/status-badges";
-import { formatDate } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { STAGES } from "@resumerank/core/validators/enums";
 import type { Stage } from "@resumerank/core/validators/enums";
 import { updateStageAction } from "@/server/actions/applications";
@@ -36,6 +36,7 @@ export function ApplicantsTable({
   canChangeStage: boolean;
   showScores: boolean;
 }) {
+  const format = useFormat();
   // Optimistic stage per application id, layered over the server-provided
   // items so URL-driven refetches (filters, pagination) always win.
   const [stageOverrides, setStageOverrides] = useState<Record<string, Stage>>({});
@@ -127,7 +128,7 @@ export function ApplicantsTable({
               )}
             </TableCell>
             <TableCell className="text-right text-muted-foreground">
-              {formatDate(row.createdAt)}
+              {format.date(row.createdAt)}
             </TableCell>
           </TableRow>
         ))}

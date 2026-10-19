@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStepUp } from "@/components/step-up/step-up-provider";
-import { formatDate, formatNumber, formatRelative } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import {
   removeAuditStreamAction,
   saveAuditStreamAction,
@@ -168,6 +168,7 @@ function StreamState({ stream }: { stream: AuditStreamSummary }) {
 }
 
 function StreamStatus({ stream }: { stream: AuditStreamSummary }) {
+  const format = useFormat();
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -178,14 +179,14 @@ function StreamStatus({ stream }: { stream: AuditStreamSummary }) {
       <dl className="grid gap-2 font-mono text-xs sm:grid-cols-2">
         <div className="flex gap-2">
           <dt className="text-muted-foreground">Last delivery</dt>
-          <dd className="text-foreground" title={stream.lastDeliveredAt ? formatDate(stream.lastDeliveredAt) : undefined}>
-            {stream.lastDeliveredAt ? formatRelative(stream.lastDeliveredAt) : "None yet"}
+          <dd className="text-foreground" title={stream.lastDeliveredAt ? format.date(stream.lastDeliveredAt) : undefined}>
+            {stream.lastDeliveredAt ? format.relative(stream.lastDeliveredAt) : "None yet"}
           </dd>
         </div>
         <div className="flex gap-2">
           <dt className="text-muted-foreground">Waiting</dt>
           <dd className="text-foreground">
-            {formatNumber(stream.pending)} {stream.pending === 1 ? "entry" : "entries"}
+            {format.number(stream.pending)} {stream.pending === 1 ? "entry" : "entries"}
           </dd>
         </div>
       </dl>
@@ -194,7 +195,7 @@ function StreamStatus({ stream }: { stream: AuditStreamSummary }) {
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
           <span>
             {stream.lastError} Next retry{" "}
-            <time dateTime={new Date(stream.nextAttemptAt).toISOString()}>{formatDate(stream.nextAttemptAt)}</time>;
+            <time dateTime={new Date(stream.nextAttemptAt).toISOString()}>{format.date(stream.nextAttemptAt)}</time>;
             nothing is skipped meanwhile.
           </span>
         </p>

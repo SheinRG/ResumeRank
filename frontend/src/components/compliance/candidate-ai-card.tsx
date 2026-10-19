@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { formatDate } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { setCandidateAiFlagsAction } from "@/server/actions/compliance";
 import { candidateAiFlagsSchema } from "@resumerank/core/validators/compliance";
 
@@ -18,6 +18,7 @@ interface CandidateAiCardProps {
 }
 
 export function CandidateAiCard({ candidateId, aiNoticeAt, aiOptOutAt, canManage }: CandidateAiCardProps) {
+  const format = useFormat();
   const [flags, setFlags] = useState({ aiNoticeAt, aiOptOutAt });
   const [isPending, startTransition] = useTransition();
 
@@ -53,7 +54,7 @@ export function CandidateAiCard({ candidateId, aiNoticeAt, aiOptOutAt, canManage
           <div className="flex flex-col gap-1">
             <Label htmlFor="candidate-ai-notice">Given the AI notice</Label>
             <p className="text-sm text-muted-foreground">
-              {flags.aiNoticeAt ? `Recorded ${formatDate(flags.aiNoticeAt)}.` : "Not recorded."}
+              {flags.aiNoticeAt ? `Recorded ${format.date(flags.aiNoticeAt)}.` : "Not recorded."}
             </p>
           </div>
           <Switch
@@ -68,7 +69,7 @@ export function CandidateAiCard({ candidateId, aiNoticeAt, aiOptOutAt, canManage
             <Label htmlFor="candidate-ai-opt-out">Opted out of AI scoring</Label>
             <p className="text-sm text-muted-foreground">
               {flags.aiOptOutAt
-                ? `Since ${formatDate(flags.aiOptOutAt)}. Queued scores are cancelled.`
+                ? `Since ${format.date(flags.aiOptOutAt)}. Queued scores are cancelled.`
                 : "Earlier scores stay on record; new ones are refused once this is on."}
             </p>
           </div>

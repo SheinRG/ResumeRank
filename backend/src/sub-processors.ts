@@ -24,6 +24,17 @@ type SubProcessorConfig = Partial<
   >
 >;
 
+/** Mirrors smtpSettings in email/transport.ts: explicit SMTP wins, then a bare Resend key. */
+function emailProvider(config: SubProcessorConfig): string | null {
+  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, RESEND_API_KEY } = config;
+  if (SMTP_HOST && SMTP_USER && SMTP_PASSWORD) {
+    if (SMTP_HOST === "smtp.resend.com") return "Resend";
+    if (SMTP_HOST.endsWith(".gmail.com")) return "Google (Gmail)";
+    return null;
+  }
+  return RESEND_API_KEY ? "Resend" : null;
+}
+
 function databaseHost(url: string | undefined): string | null {
   if (!url) return null;
   try {
@@ -74,17 +85,10 @@ export function subProcessors(config: SubProcessorConfig): SubProcessor[] {
       when: "When an application is scored",
     });
   }
-  // Mirrors the delivery order in email/transport.ts: Resend wins when both are set.
-  if (config.RESEND_API_KEY) {
+  const email = emailProvider(config);
+  if (email) {
     list.push({
-      name: "Resend",
-      purpose: "Transactional email",
-      data: "Recipient address and message content",
-      when: "When an email is sent",
-    });
-  } else if (config.SMTP_HOST?.endsWith(".gmail.com") && config.SMTP_USER && config.SMTP_PASSWORD) {
-    list.push({
-      name: "Google (Gmail)",
+      name: email,
       purpose: "Transactional email",
       data: "Recipient address and message content",
       when: "When an email is sent",

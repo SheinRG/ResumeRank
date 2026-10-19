@@ -29,7 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatRelative } from "@/lib/format";
+import { type Formatters } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { createApiKeyAction, revokeApiKeyAction } from "@/server/actions/integrations";
 import type { ApiKeyView } from "@/server/queries/integrations";
 import { API_SCOPES, createApiKeySchema, type ApiScope } from "@resumerank/core/validators/api";
@@ -61,10 +62,10 @@ function expiresInDays(lifetime: Lifetime): 30 | 90 | 365 | null {
   return lifetime === "30" ? 30 : lifetime === "90" ? 90 : 365;
 }
 
-function keyStatus(key: ApiKeyView): { label: string; live: boolean } {
+function keyStatus(key: ApiKeyView, format: Formatters): { label: string; live: boolean } {
   if (key.revokedAt) return { label: "Revoked", live: false };
   if (key.expiresAt && new Date(key.expiresAt) <= new Date()) return { label: "Expired", live: false };
-  return { label: key.expiresAt ? `Expires ${formatDate(key.expiresAt)}` : "No expiry", live: true };
+  return { label: key.expiresAt ? `Expires ${format.date(key.expiresAt)}` : "No expiry", live: true };
 }
 
 function CreateKeyForm({ onCreated }: { onCreated: (key: ApiKeyView, token: string) => void }) {
@@ -143,6 +144,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: ApiKeyView, token: stri
 }
 
 export function ApiKeysPanel({ initialKeys }: { initialKeys: ApiKeyView[] }) {
+  const format = useFormat();
   const [keys, setKeys] = useState(initialKeys);
   const [newToken, setNewToken] = useState<string | null>(null);
 
@@ -206,7 +208,7 @@ export function ApiKeysPanel({ initialKeys }: { initialKeys: ApiKeyView[] }) {
             </TableHeader>
             <TableBody>
               {keys.map((key) => {
-                const status = keyStatus(key);
+                const status = keyStatus(key, format);
                 return (
                   <TableRow key={key.id} className={status.live ? undefined : "text-muted-foreground"}>
                     <TableCell>
@@ -227,7 +229,7 @@ export function ApiKeysPanel({ initialKeys }: { initialKeys: ApiKeyView[] }) {
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {key.lastUsedAt ? formatRelative(key.lastUsedAt) : "Never"}
+                      {key.lastUsedAt ? format.relative(key.lastUsedAt) : "Never"}
                     </TableCell>
                     <TableCell className="text-sm">{status.label}</TableCell>
                     <TableCell className="text-right">

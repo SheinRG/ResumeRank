@@ -32,7 +32,9 @@ describe("subProcessors", () => {
   it("lists the email provider that actually delivers", () => {
     const smtp = { SMTP_HOST: "smtp.gmail.com", SMTP_USER: "me@gmail.com", SMTP_PASSWORD: "app-password" };
     expect(names(smtp)).toEqual(["Google (Gmail)"]);
-    expect(names({ ...smtp, RESEND_API_KEY: "re_x" })).toEqual(["Resend"]);
+    expect(names({ ...smtp, RESEND_API_KEY: "re_x" })).toEqual(["Google (Gmail)"]);
+    expect(names({ RESEND_API_KEY: "re_x" })).toEqual(["Resend"]);
+    expect(names({ SMTP_HOST: "smtp.resend.com", SMTP_USER: "resend", SMTP_PASSWORD: "re_x" })).toEqual(["Resend"]);
     expect(names({ ...smtp, SMTP_PASSWORD: undefined })).toEqual([]);
     expect(names({ SMTP_HOST: "mail.internal.example.com", SMTP_USER: "u", SMTP_PASSWORD: "p" })).toEqual([]);
   });

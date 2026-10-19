@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { formatDate, formatNumber } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { cn } from "@/lib/utils";
 import { openBillingPortalAction, startCheckoutAction } from "@/server/actions/billing";
 import type { BillingOverview, PlanOption } from "@/server/queries/billing";
@@ -83,6 +83,7 @@ function ManageBillingButton({ disabled }: { disabled?: boolean }) {
 }
 
 function PastDueNotice({ overview, isOwner }: { overview: BillingOverview; isOwner: boolean }) {
+  const format = useFormat();
   if (overview.status !== "PAST_DUE") return null;
   return (
     <div
@@ -94,7 +95,7 @@ function PastDueNotice({ overview, isOwner }: { overview: BillingOverview; isOwn
         <span>
           A payment failed and Stripe is retrying it.
           {overview.graceEndsAt
-            ? ` Update the payment method before ${formatDate(overview.graceEndsAt)} or the workspace moves to Free.`
+            ? ` Update the payment method before ${format.date(overview.graceEndsAt)} or the workspace moves to Free.`
             : null}
         </span>
       </p>
@@ -104,6 +105,7 @@ function PastDueNotice({ overview, isOwner }: { overview: BillingOverview; isOwn
 }
 
 function CurrentPlan({ overview, isOwner }: { overview: BillingOverview; isOwner: boolean }) {
+  const format = useFormat();
   const current = overview.plans.find((option) => option.plan === overview.plan);
   const lapsed = overview.subscribedPlan !== overview.plan && !overview.comped;
 
@@ -136,7 +138,7 @@ function CurrentPlan({ overview, isOwner }: { overview: BillingOverview; isOwner
           <p className="text-sm text-muted-foreground">
             {overview.cancelAtPeriodEnd ? "Ends" : "Renews"} on{" "}
             <time dateTime={new Date(overview.currentPeriodEnd).toISOString()}>
-              {formatDate(overview.currentPeriodEnd)}
+              {format.date(overview.currentPeriodEnd)}
             </time>
             .
           </p>
@@ -153,16 +155,17 @@ function CurrentPlan({ overview, isOwner }: { overview: BillingOverview; isOwner
 }
 
 function UsageMeter({ label, used, limit, detail }: { label: string; used: number; limit: number | null; detail?: string }) {
+  const format = useFormat();
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-medium text-foreground">{label}</span>
         <span className="font-mono text-xs text-muted-foreground">
-          {formatNumber(used)} / {limit === null ? "unlimited" : formatNumber(limit)}
+          {format.number(used)} / {limit === null ? "unlimited" : format.number(limit)}
         </span>
       </div>
       {limit === null ? null : (
-        <Progress value={percent(used, limit)} aria-label={`${label}: ${formatNumber(used)} of ${formatNumber(limit)}`} />
+        <Progress value={percent(used, limit)} aria-label={`${label}: ${format.number(used)} of ${format.number(limit)}`} />
       )}
       {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
     </div>
@@ -170,6 +173,7 @@ function UsageMeter({ label, used, limit, detail }: { label: string; used: numbe
 }
 
 function Usage({ overview }: { overview: BillingOverview }) {
+  const format = useFormat();
   const { seats, ai, scoringTokens } = overview;
   return (
     <Card>
@@ -182,13 +186,13 @@ function Usage({ overview }: { overview: BillingOverview }) {
           label="Seats"
           used={seats.used + seats.pendingInvites}
           limit={seats.limit}
-          detail={`${formatNumber(seats.used)} member${seats.used === 1 ? "" : "s"}, ${formatNumber(seats.pendingInvites)} pending invite${seats.pendingInvites === 1 ? "" : "s"}`}
+          detail={`${format.number(seats.used)} member${seats.used === 1 ? "" : "s"}, ${format.number(seats.pendingInvites)} pending invite${seats.pendingInvites === 1 ? "" : "s"}`}
         />
         <UsageMeter
           label="AI tokens, last 30 days"
           used={ai.used}
           limit={ai.budget}
-          detail={`Scoring has used ${formatNumber(scoringTokens.tokens)} tokens since ${formatDate(scoringTokens.since)}. At the limit, scoring pauses until older usage ages out.`}
+          detail={`Scoring has used ${format.number(scoringTokens.tokens)} tokens since ${format.date(scoringTokens.since)}. At the limit, scoring pauses until older usage ages out.`}
         />
       </CardContent>
     </Card>
@@ -204,6 +208,7 @@ function PlanCard({
   current: boolean;
   action: React.ReactNode;
 }) {
+  const format = useFormat();
   return (
     <div
       className={cn(
@@ -227,7 +232,7 @@ function PlanCard({
         </li>
         <li className="flex gap-2">
           <Check className="mt-0.5 size-4 shrink-0 text-accent-foreground" aria-hidden="true" />
-          {formatNumber(option.aiTokens)} AI tokens per 30 days
+          {format.number(option.aiTokens)} AI tokens per 30 days
         </li>
         {option.entitlements.map((flag) => (
           <li key={flag} className="flex gap-2">

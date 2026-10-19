@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import type { WebhookEventPayload } from "resend";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { db } from "../../src/db";
 import { queuePasswordResetEmail } from "../../src/email/messages";
 import { applyEmailEvent, drainEmailOutbox, enqueueEmail } from "../../src/email/outbox";
 import { DeliveryError, type Deliver, type OutgoingEmail } from "../../src/email/transport";
+import { emailEventSchema, type EmailEvent } from "../../src/email/webhooks";
 import { inviteMember } from "../../src/services/team";
 import { createTenant, destroyTenant, type TenantFixture } from "./fixtures";
 
@@ -23,7 +23,7 @@ function recorder(result: Partial<Awaited<ReturnType<Deliver>>> = {}) {
   const sent: OutgoingEmail[] = [];
   const deliver: Deliver = async (email) => {
     sent.push(email);
-    return { provider: "resend", messageId: `re_${randomUUID()}`, ...result };
+    return { provider: "smtp", messageId: randomUUID(), ...result };
   };
   return { sent, deliver, to: (to: string) => sent.filter((email) => email.to === to) };
 }
@@ -69,9 +69,9 @@ describe("email outbox", () => {
     expect(deliveredTo(to)).toHaveLength(1);
     expect(delivered?.actionUrl).toContain("raw-reset-token");
     const sent = await messageFor(to);
-    expect(sent).toMatchObject({ status: "SENT", payload: null, attempts: 1, provider: "resend", error: null });
+    expect(sent).toMatchObject({ status: "SENT", payload: null, attempts: 1, provider: "smtp", error: null });
     expect(sent.sentAt).not.toBeNull();
-    expect(sent.providerMessageId).toMatch(/^re_/);
+    expect(sent.providerMessageId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it("never double-sends when drains overlap", async () => {
@@ -184,7 +184,7 @@ describe("email outbox", () => {
 
 describe("delivery events", () => {
   async function sentMessage(to: string): Promise<string> {
-    const providerMessageId = `re_${randomUUID()}`;
+    const providerMessageId = randomUUID();
     await enqueueEmail({ kind: "INVITE", to, expiresAt: tomorrow(), subject: "s", html: "h", actionUrl: "u" });
     await db.emailMessage.updateMany({
       where: { to },
@@ -193,17 +193,24 @@ describe("delivery events", () => {
     return providerMessageId;
   }
 
-  function event(type: string, to: string, emailId: string, extra: object = {}): WebhookEventPayload {
+  function event(type: string, to: string, emailId: string, extra: object = {}, createdAt = new Date()): EmailEvent {
     const base = { created_at: "2026-10-07T12:00:00.000Z", email_id: emailId, from: "f", to: [to], subject: "s" };
-    // Shaped like the verified body Resend posts; the cast stands in for verifyResendWebhook's parse.
-    return { type, created_at: "2026-10-07T12:00:01.000Z", data: { ...base, ...extra } } as WebhookEventPayload;
+    return emailEventSchema.parse({ type, created_at: createdAt.toISOString(), data: { ...base, ...extra } });
   }
 
   it("records deliveries", async () => {
     const to = address("delivered");
     const id = await sentMessage(to);
-    await applyEmailEvent(event("email.delivered", to, id));
-    expect((await messageFor(to)).deliveredAt?.toISOString()).toBe("2026-10-07T12:00:01.000Z");
+    const at = new Date(Date.now() + 1000);
+    await applyEmailEvent(event("email.delivered", to, id, {}, at));
+    expect((await messageFor(to)).deliveredAt?.toISOString()).toBe(at.toISOString());
+  });
+
+  it("falls back to the latest message to the recipient when the relay kept no id", async () => {
+    const to = address("no-relay-id");
+    await sentMessage(to);
+    await applyEmailEvent(event("email.complained", to.toUpperCase(), "an-id-we-never-stored"));
+    expect(await messageFor(to)).toMatchObject({ status: "COMPLAINED" });
   });
 
   it("suppresses hard bounces but not transient ones", async () => {

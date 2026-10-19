@@ -34,6 +34,7 @@ const envSchema = z.object({
   GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
   /** Tried when GROQ_MODEL is unavailable (outage, rate limit, retired model) or its circuit is open. */
   GROQ_FALLBACK_MODEL: z.string().optional(),
+  /** Shorthand for Resend's SMTP relay (smtp.resend.com:465, user "resend"); ignored when SMTP_HOST/USER/PASSWORD are all set. */
   RESEND_API_KEY: z.string().optional(),
   /** Signing secret (whsec_…) of the Resend webhook pointed at /api/webhooks/resend; bounce and complaint handling is off without it. */
   RESEND_WEBHOOK_SECRET: z.string().optional(),

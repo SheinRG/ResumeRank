@@ -1361,13 +1361,15 @@ unreadable, and users can request a fresh link.
    `FOR UPDATE SKIP LOCKED`, so overlapping drains never double-send.
 2. A message whose link has expired is marked `EXPIRED`. One to a
    suppressed address is marked `SUPPRESSED`.
-3. `deliverEmail` (`email/transport.ts`) picks Resend, then SMTP, then
-   a log line, as before. Resend calls carry the idempotency key
-   `email-outbox/<id>`, so re-sending after a lost response is a no-op
-   at Resend.
-4. Failures are classified. For Resend, 429, 5xx, quota and network errors
-   are retried. For SMTP, 4xx replies and connection errors are retried,
-   while 5xx replies and bad credentials are not. Retries back off
+3. `deliverEmail` (`email/transport.ts`) sends over SMTP (nodemailer, the
+   only email dependency) to `SMTP_HOST`, or to Resend's relay when only
+   `RESEND_API_KEY` is set, and otherwise writes a log line. Mail to
+   Resend carries `Resend-Idempotency-Key: email-outbox/<id>`, so
+   re-sending after a lost reply is a no-op there; other servers ignore
+   the header and delivery is at-least-once. The id kept for webhooks is a
+   UUID from the server's 250 reply when it has one, else the Message-ID.
+4. Failures are classified: 4xx replies and connection errors are
+   retried, while 5xx replies and bad credentials are not. Retries back off
    exponentially (30s doubling, capped at 30 min, +/-20% jitter) for up to
    6 attempts, and never past the link's own expiry. Otherwise the message
    is `FAILED` with the provider's reason.
@@ -1380,12 +1382,17 @@ after the response of every action that queues mail. `GET /api/cron/email`
 `server/cron-auth.ts`) picks up retries; schedule it every minute.
 
 **Bounces and complaints.** `POST /api/webhooks/resend` is enabled by
-`RESEND_WEBHOOK_SECRET` together with `RESEND_API_KEY`. It verifies the
-Svix signature over the raw body, rejecting stale timestamps, before
-anything is parsed. A permanent bounce or a complaint adds the address to
+`RESEND_WEBHOOK_SECRET`. It verifies the Svix signature
+(`email/webhooks.ts`, HMAC-SHA256 with `node:crypto`, any of several
+`v1` signatures during a rotation) over the raw body, rejecting
+timestamps more than 5 minutes off, before anything is parsed; the body
+is then parsed with a Zod schema of the three events we act on. The event
+names the message by Resend's id; when no row carries it (a relay reply
+without the id), the latest message sent to that recipient stands in,
+which only affects the per-message status. A permanent bounce or a complaint adds the address to
 `EmailSuppression` and marks the message `BOUNCED` / `COMPLAINED`. A
 transient bounce is recorded but doesn't suppress, and a delivery sets
-`deliveredAt`. SMTP has no webhook equivalent. To un-suppress an address,
+`deliveredAt`. Other SMTP providers' bounce feeds are not wired up. To un-suppress an address,
 delete its `EmailSuppression` row.
 
 With no provider configured, the action link is written to the server log
@@ -1465,6 +1472,42 @@ all 100%, score MAE 4.9, injection recall 100% with no false positives,
 under-credits adjacent experience (an AWS Associate certification against
 a Professional requirement, Oracle RAC against PostgreSQL operations).
 That is the first thing a prompt change should target.
+
+## Dates, numbers and time zones
+
+Every date and number is formatted for the person reading it.
+
+- **Who decides.** `User.locale` / `User.timeZone` hold a person's own choice
+  (null follows the workspace). `Company.locale` / `Company.timeZone` hold the
+  workspace default (`en-US`, `UTC`).
+- **Resolving it.** `resolveFormatPrefs` (`backend/src/locale.ts`) picks the
+  person's choice, then the workspace's, then the defaults. A stored value
+  the runtime no longer knows is skipped rather than allowed to throw.
+- **Where it lives.** The guards put the result on `CurrentUser.format`.
+- **Choosing.** Settings → Profile sets the personal choice, with a "use this
+  device's time zone" shortcut. Admins set the workspace default under
+  Settings → Company.
+- **Scope.** Only formatting follows the locale; the interface text is
+  English.
+
+`createFormatters(prefs)` (`frontend/src/lib/format.ts`) builds the
+`Intl` formatters for one locale and zone, cached per pair. The signed-in
+layout provides the prefs through `FormatProvider`
+(`components/format/format-provider.tsx`):
+
+- **Server and client components** render `<DateText>`, `<NumberText>` and
+  `<CountText>`. They work from either side because they read the context
+  during SSR.
+- **Client code that needs a string** (a toast, an attribute, a helper)
+  calls `useFormat()`.
+- **A server component building a string** uses
+  `createFormatters(user.format)`.
+
+Dates render in the viewer's zone, so an evening event in Mumbai doesn't read
+as the next day on a UTC server. `<DateText>` also puts the full date and
+time in its tooltip and the instant in `dateTime`. The dashboard's weekly
+chart is the one exception: its buckets are ISO weeks in UTC, so its labels
+use the locale but stay in UTC.
 
 ## Observability
 

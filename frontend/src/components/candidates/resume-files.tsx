@@ -10,7 +10,8 @@ import { RESUME_FILE_ACCEPT, resumeFileUploadSchema } from "@resumerank/core/val
 import { EmptyState } from "@/components/shared/empty-state";
 import { ResumeFileStatusBadge } from "@/components/shared/status-badges";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatFileSize, formatNumber } from "@/lib/format";
+import { formatFileSize, type Formatters } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { uploadResumeFileAction } from "@/server/actions/resume-files";
 import type { ResumeFileItem } from "@/server/queries/resume-files";
 
@@ -33,10 +34,10 @@ function statusKey(files: ReadonlyArray<Pick<ResumeFileItem, "id" | "status">>):
   return files.map((file) => `${file.id}:${file.status}`).join(",");
 }
 
-function detail(file: ResumeFileItem): string {
+function detail(file: ResumeFileItem, format: Formatters): string {
   if (file.status === "PARSED" && file.extractedChars !== null) {
     const how = file.extraction === "OCR" ? "read from the scanned pages" : "read";
-    return `${formatNumber(file.extractedChars)} characters ${how}`;
+    return `${format.number(file.extractedChars)} characters ${how}`;
   }
   if (file.status === "FAILED") return file.error ?? "We couldn't read this file.";
   return "The text will replace the resume below once it's read.";
@@ -56,6 +57,7 @@ export function ResumeFiles({
   files: ResumeFileItem[];
   canUpload: boolean;
 }) {
+  const format = useFormat();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, startUpload] = useTransition();
@@ -163,7 +165,7 @@ export function ResumeFiles({
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="truncate font-medium text-foreground">{file.fileName}</span>
                   <span className="font-mono text-xs text-muted-foreground">
-                    {file.kind} · {formatFileSize(file.sizeBytes)} · {formatDate(file.createdAt)}
+                    {file.kind} · {formatFileSize(file.sizeBytes)} · {format.date(file.createdAt)}
                     {file.uploadedBy?.name ? ` · ${file.uploadedBy.name}` : ""}
                   </span>
                   <span
@@ -171,7 +173,7 @@ export function ResumeFiles({
                       file.status === "FAILED" ? "text-sm text-destructive" : "text-sm text-muted-foreground"
                     }
                   >
-                    {detail(file)}
+                    {detail(file, format)}
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

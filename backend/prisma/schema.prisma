@@ -163,6 +163,10 @@ model User {
   /// Membership.role instead.
   role            Role      @default(MEMBER)
   notifyByEmail   Boolean   @default(true)
+  /// BCP 47 locale for dates and numbers; null follows the open workspace's.
+  locale          String?
+  /// IANA time zone; null follows the open workspace's.
+  timeZone        String?
   // Stamped into each session token; bumping it revokes every existing
   // session (password change/reset, removal, "sign out everywhere"). Each
   // sign-in's LoginSession row is revoked alongside, so the sessions list
@@ -238,6 +242,9 @@ model Company {
   industry               String?
   size                   String?
   location               String?
+  /// Defaults for members who haven't chosen their own (locale.ts).
+  locale                 String   @default("en-US")
+  timeZone               String   @default("UTC")
   /// Overrides the default AI token budget (AI_TOKEN_BUDGET) per rolling 30 days.
   aiTokenBudget          Int?
   /// Members must sign in through the company's SSO connection. Owners keep

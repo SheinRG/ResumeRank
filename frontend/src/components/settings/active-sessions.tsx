@@ -14,7 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { formatDate, formatRelative } from "@/lib/format";
+import { type Formatters } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { revokeOtherSessionsAction, revokeSessionAction } from "@/server/actions/sessions";
 import type { LoginSessionSummary } from "@/server/queries/sessions";
 
@@ -24,18 +25,19 @@ const METHOD_LABELS: Record<LoginSessionSummary["method"], string> = {
   SSO: "SSO",
 };
 
-function sessionDetail(session: LoginSessionSummary): string {
+function sessionDetail(session: LoginSessionSummary, format: Formatters): string {
   return [
     session.workspace,
     session.ipAddress,
-    `signed in ${formatDate(session.createdAt)}`,
-    session.current ? "active now" : `active ${formatRelative(session.lastSeenAt)}`,
+    `signed in ${format.date(session.createdAt)}`,
+    session.current ? "active now" : `active ${format.relative(session.lastSeenAt)}`,
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
 function SessionRow({ session }: { session: LoginSessionSummary }) {
+  const format = useFormat();
   const Icon = /(?:iOS|Android)$/.test(session.device) ? Smartphone : Monitor;
 
   async function revoke(): Promise<boolean> {
@@ -64,7 +66,7 @@ function SessionRow({ session }: { session: LoginSessionSummary }) {
               </Badge>
             ) : null}
           </div>
-          <span className="font-mono text-xs text-muted-foreground">{sessionDetail(session)}</span>
+          <span className="font-mono text-xs text-muted-foreground">{sessionDetail(session, format)}</span>
         </div>
       </div>
       {session.current ? null : (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { NumberText } from "@/components/format/format-provider";
 import {
   Card,
   CardContent,
@@ -10,10 +11,11 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { db } from "@resumerank/core/db";
 import { CompanyForm } from "@/components/settings/company-form";
+import { FormatSettings } from "@/components/settings/format-settings";
+import { listTimeZones } from "@resumerank/core/locale";
 import { TransferOwnership } from "@/components/settings/transfer-ownership";
 import { WorkspaceOffboarding } from "@/components/compliance/workspace-offboarding";
 import { canAdmin, requireMember } from "@/lib/auth/guards";
-import { formatNumber } from "@/lib/format";
 import { getAiUsage, getCompany } from "@/server/queries/company";
 import { listTeam } from "@/server/queries/users";
 
@@ -49,6 +51,13 @@ export default async function SettingsCompanyPage() {
         </CardContent>
       </Card>
 
+      <FormatSettings
+        scope="workspace"
+        canEdit={canEdit}
+        workspace={{ locale: company.locale, timeZone: company.timeZone }}
+        timeZones={listTimeZones()}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>AI usage</CardTitle>
@@ -60,8 +69,8 @@ export default async function SettingsCompanyPage() {
         <CardContent className="flex flex-col gap-2">
           <Progress value={usedPercent} aria-label="AI budget used" />
           <p className="font-mono text-xs text-muted-foreground">
-            {formatNumber(aiUsage.used)} of {formatNumber(aiUsage.budget)} tokens used ·{" "}
-            {formatNumber(aiUsage.remaining)} left
+            <NumberText value={aiUsage.used} /> of <NumberText value={aiUsage.budget} /> tokens used ·{" "}
+            <NumberText value={aiUsage.remaining} /> left
           </p>
         </CardContent>
       </Card>

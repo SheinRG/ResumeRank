@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import { createTransport, type Transporter } from "nodemailer";
 
 import { env } from "../env";
@@ -12,7 +11,7 @@ export interface OutgoingEmail {
 }
 
 export interface DeliveryReceipt {
-  provider: "resend" | "smtp" | "log";
+  provider: "smtp" | "log";
   /** The provider's id, which its delivery webhooks refer back to. */
   messageId: string | null;
 }
@@ -29,29 +28,6 @@ export class DeliveryError extends Error {
 }
 
 export type Deliver = (email: OutgoingEmail, idempotencyKey: string) => Promise<DeliveryReceipt>;
-
-const RETRYABLE_RESEND_ERRORS: ReadonlySet<string> = new Set([
-  "rate_limit_exceeded",
-  "daily_quota_exceeded",
-  "monthly_quota_exceeded",
-  "concurrent_idempotent_requests",
-  "application_error",
-  "internal_server_error",
-]);
-
-/** A null status is a network failure the SDK reported instead of throwing. */
-export function classifyResendError(error: {
-  name: string;
-  statusCode: number | null;
-  message: string;
-}): DeliveryError {
-  const retryable =
-    error.statusCode === null ||
-    error.statusCode === 429 ||
-    error.statusCode >= 500 ||
-    RETRYABLE_RESEND_ERRORS.has(error.name);
-  return new DeliveryError(`Resend ${error.name}: ${error.message}`, retryable);
-}
 
 const PERMANENT_SMTP_CODES: ReadonlySet<string> = new Set(["EAUTH", "EENVELOPE", "EMESSAGE"]);
 
@@ -72,67 +48,98 @@ export function classifySmtpError(error: unknown): DeliveryError {
   return new DeliveryError(`SMTP ${responseCode ?? code ?? "error"}: ${message}`, retryable);
 }
 
+export const RESEND_SMTP_HOST = "smtp.resend.com";
+
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+}
+
+type SmtpEnv = Pick<
+  ReturnType<typeof env>,
+  "SMTP_HOST" | "SMTP_PORT" | "SMTP_USER" | "SMTP_PASSWORD" | "RESEND_API_KEY"
+>;
+
+/**
+ * Explicit SMTP settings win. A bare RESEND_API_KEY (how deployments were
+ * configured when Resend had its own SDK route) becomes Resend's SMTP relay,
+ * whose username is literally "resend" and whose password is the API key, so
+ * those deployments keep sending without an env change.
+ */
+export function smtpSettings(config: SmtpEnv): SmtpSettings | null {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, RESEND_API_KEY } = config;
+  if (SMTP_HOST && SMTP_USER && SMTP_PASSWORD) {
+    return { host: SMTP_HOST, port: SMTP_PORT, user: SMTP_USER, password: SMTP_PASSWORD };
+  }
+  if (RESEND_API_KEY) return { host: RESEND_SMTP_HOST, port: 465, user: "resend", password: RESEND_API_KEY };
+  return null;
+}
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * Resend's webhooks name a message by its email id, so a UUID in the
+ * server's 250 reply is kept when there is one. Otherwise the RFC
+ * Message-ID, which is at least unique per message; webhook events then fall
+ * back to the recipient (`applyEmailEvent`).
+ */
+export function providerMessageId(response: string, messageId: string | undefined): string | null {
+  return response.match(UUID)?.[0] ?? messageId ?? null;
+}
+
 // Connections are pooled across sends; the transport config comes from the
 // frozen env, so one instance serves the process.
 let transporter: Transporter | null = null;
 
-function smtpTransport(): Transporter {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD } = env();
+function smtpTransport(settings: SmtpSettings): Transporter {
   transporter ??= createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
+    host: settings.host,
+    port: settings.port,
     // 465 is implicit TLS; everything else negotiates STARTTLS, which we
     // require rather than allow — these credentials must never cross in clear.
-    secure: SMTP_PORT === 465,
-    requireTLS: SMTP_PORT !== 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+    secure: settings.port === 465,
+    requireTLS: settings.port !== 465,
+    auth: { user: settings.user, pass: settings.password },
   });
   return transporter;
 }
 
-async function sendViaResend(email: OutgoingEmail, apiKey: string, idempotencyKey: string): Promise<DeliveryReceipt> {
-  let response: Awaited<ReturnType<Resend["emails"]["send"]>>;
+async function sendViaSmtp(
+  email: OutgoingEmail,
+  settings: SmtpSettings,
+  idempotencyKey: string,
+): Promise<DeliveryReceipt> {
   try {
-    // The key makes a retry after a lost response (a worker killed between
-    // the API call and recording it) a no-op at Resend instead of a duplicate.
-    response = await new Resend(apiKey).emails.send(
-      { from: env().EMAIL_FROM, to: email.to, subject: email.subject, html: email.html },
-      { idempotencyKey },
-    );
-  } catch (cause) {
-    throw new DeliveryError(`Resend request failed: ${cause instanceof Error ? cause.message : String(cause)}`, true);
-  }
-  if (response.error) throw classifyResendError(response.error);
-  return { provider: "resend", messageId: response.data.id };
-}
-
-async function sendViaSmtp(email: OutgoingEmail): Promise<DeliveryReceipt> {
-  try {
-    const info = await smtpTransport().sendMail({
+    const info = await smtpTransport(settings).sendMail({
       from: env().EMAIL_FROM,
       to: email.to,
       subject: email.subject,
       html: email.html,
+      // Resend dedupes on this header, so re-sending after a lost reply (a
+      // worker killed between the send and recording it) is a no-op there.
+      // Other servers ignore it, and delivery stays at-least-once.
+      headers: settings.host === RESEND_SMTP_HOST ? { "Resend-Idempotency-Key": idempotencyKey } : {},
     });
-    return { provider: "smtp", messageId: typeof info.messageId === "string" ? info.messageId : null };
+    const messageId = typeof info.messageId === "string" ? info.messageId : undefined;
+    const response = typeof info.response === "string" ? info.response : "";
+    return { provider: "smtp", messageId: providerMessageId(response, messageId) };
   } catch (cause) {
     throw classifySmtpError(cause);
   }
 }
 
 /**
- * Delivery is chosen by what's configured, so no code changes between a laptop
- * and production. Resend leads because a verified domain is the only way to
- * reach arbitrary recipients with good deliverability; SMTP is the escape hatch
- * for anyone without a domain (a Gmail app password reaches real inboxes); and
- * with neither, the action link goes to the server log so local development
- * never blocks on an email provider.
+ * One transport, SMTP, chosen by what's configured so no code changes between
+ * a laptop and production. SMTP reaches every provider (Resend's relay, SES,
+ * Postmark, a Gmail app password, a self-hosted MTA) through one dependency.
+ * With nothing configured, the action link goes to the server log so local
+ * development never blocks on an email provider.
  */
 export const deliverEmail: Deliver = async (email, idempotencyKey) => {
-  const { RESEND_API_KEY, SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = env();
-
-  if (RESEND_API_KEY) return sendViaResend(email, RESEND_API_KEY, idempotencyKey);
-  if (SMTP_HOST && SMTP_USER && SMTP_PASSWORD) return sendViaSmtp(email);
+  const settings = smtpSettings(env());
+  if (settings) return sendViaSmtp(email, settings, idempotencyKey);
 
   log.info("email.logged", { to: email.to, subject: email.subject, link: email.actionUrl });
   return { provider: "log", messageId: null };

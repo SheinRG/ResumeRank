@@ -51,3 +51,4 @@ resumerank/
 
 # scoring eval output (the committed baseline lives next to the golden set)
 backend/evals/scoring/reports/
+load/summary.json
