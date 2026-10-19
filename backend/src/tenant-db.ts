@@ -21,6 +21,7 @@ const TENANT_MODELS: ReadonlySet<string> = new Set([
   "BillingAccount",
   "IpAllowlistEntry",
   "SelfIdResponse",
+  "SupportSession",
 ]);
 
 const WHERE_OPERATIONS: ReadonlySet<string> = new Set([
@@ -194,16 +195,20 @@ const TENANT_ROLE = "resumerank_tenant";
  * see. Both settings are transaction-local, so the pooled connection goes
  * back as the owner on commit or rollback.
  *
+ * A read-only context (a support session) gets a read-only transaction, so
+ * Postgres refuses any write in it, whichever adapter or service it came
+ * through.
+ *
  * Single reads stay on `tenantDb`: wrapping each in a transaction would cost
  * extra round trips, and RLS stops non-leakproof search operators (ILIKE,
  * full-text match) using their GIN indexes.
  */
 export function tenantTransaction<T>(
-  { companyId }: { companyId: string },
+  { companyId, readOnly = false }: { companyId: string; readOnly?: boolean },
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   return scopedClient(companyId).$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('role', ${TENANT_ROLE}, true), set_config('app.company_id', ${companyId}, true)`;
+    await tx.$executeRaw`SELECT set_config('role', ${TENANT_ROLE}, true), set_config('app.company_id', ${companyId}, true), set_config('transaction_read_only', ${readOnly ? "on" : "off"}, true)`;
     return fn(tx);
   });
 }

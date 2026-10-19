@@ -249,3 +249,22 @@ docker run --rm -v "$PWD/load:/load" -e BASE_URL=http://host.docker.internal:310
 
 Laptop numbers aren't comparable with staging, so never commit them as the
 baseline.
+
+## Staff access
+
+The staff console is at `/staff`. Grant access to an existing account, with
+`DATABASE_URL` pointing at the database you mean:
+
+```
+npm run staff -- grant ada@resumerank.app support   # or admin
+npm run staff -- list
+npm run staff -- revoke ada@resumerank.app
+```
+
+The account needs its own second factor (an authenticator app or a passkey)
+and must sign in with it, not with SSO, before the console opens. `support`
+can search, view workspaces, start support sessions where the customer has
+granted access, let email through and sign members out. `admin` can also
+suspend workspaces and override features and AI budgets. Each grant and
+revocation is in the staff audit log under `cli:<your OS user>`. Revoke
+access the day someone leaves; revoking ends any support session they're in.

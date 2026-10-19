@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { landingWorkspace, resolveWorkspace, signInMayOpen, type WorkspaceAccess } from "../../src/auth/workspace-policy";
+import {
+  landingWorkspace,
+  mayOpen,
+  resolveWorkspace,
+  signInMayOpen,
+  type WorkspaceAccess,
+} from "../../src/auth/workspace-policy";
 
-const agency: WorkspaceAccess = { companyId: "agency", role: "OWNER", ssoEnforced: false };
-const client: WorkspaceAccess = { companyId: "client", role: "MEMBER", ssoEnforced: false };
-const enterprise: WorkspaceAccess = { companyId: "enterprise", role: "MEMBER", ssoEnforced: true };
+const agency: WorkspaceAccess = { companyId: "agency", role: "OWNER", ssoEnforced: false, suspended: false };
+const client: WorkspaceAccess = { companyId: "client", role: "MEMBER", ssoEnforced: false, suspended: false };
+const enterprise: WorkspaceAccess = { companyId: "enterprise", role: "MEMBER", ssoEnforced: true, suspended: false };
+const suspended: WorkspaceAccess = { companyId: "suspended", role: "OWNER", ssoEnforced: false, suspended: true };
 
 describe("signInMayOpen", () => {
   it("lets any sign-in open a workspace without SSO enforcement", () => {
@@ -20,6 +27,19 @@ describe("signInMayOpen", () => {
 
   it("exempts owners, who keep their password as the way back in", () => {
     expect(signInMayOpen({ ...enterprise, role: "OWNER" }, null)).toBe(true);
+  });
+});
+
+describe("mayOpen", () => {
+  it("refuses a suspended workspace to every sign-in, owners and its own IdP included", () => {
+    expect(mayOpen(suspended, null)).toBe(false);
+    expect(mayOpen(suspended, "suspended")).toBe(false);
+    expect(mayOpen(client, null)).toBe(true);
+  });
+
+  it("still applies the SSO rule to workspaces that aren't suspended", () => {
+    expect(mayOpen(enterprise, null)).toBe(false);
+    expect(mayOpen(enterprise, "enterprise")).toBe(true);
   });
 });
 
@@ -41,6 +61,11 @@ describe("landingWorkspace", () => {
     expect(landingWorkspace([enterprise], { preferred: null, ssoCompanyId: null })).toBeNull();
     expect(landingWorkspace([], { preferred: null, ssoCompanyId: null })).toBeNull();
   });
+
+  it("never lands in a suspended workspace, even the one last switched to", () => {
+    expect(landingWorkspace([suspended, client], { preferred: "suspended", ssoCompanyId: null })).toBe(client);
+    expect(landingWorkspace([suspended], { preferred: "suspended", ssoCompanyId: null })).toBeNull();
+  });
 });
 
 describe("resolveWorkspace", () => {
@@ -61,5 +86,12 @@ describe("resolveWorkspace", () => {
       client,
     );
     expect(resolveWorkspace([], { opened: "left", preferred: null, ssoCompanyId: null })).toBeNull();
+  });
+
+  it("moves a sign-in out of a workspace once it's suspended", () => {
+    expect(resolveWorkspace([agency, suspended], { opened: "suspended", preferred: null, ssoCompanyId: null })).toBe(
+      agency,
+    );
+    expect(resolveWorkspace([suspended], { opened: "suspended", preferred: null, ssoCompanyId: null })).toBeNull();
   });
 });

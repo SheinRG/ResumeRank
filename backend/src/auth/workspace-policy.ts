@@ -12,6 +12,8 @@ export interface WorkspaceAccess {
   companyId: string;
   role: Role;
   ssoEnforced: boolean;
+  /** Suspended by ResumeRank staff: no sign-in may open it until they lift it. */
+  suspended: boolean;
 }
 
 /**
@@ -23,6 +25,11 @@ export function signInMayOpen(workspace: WorkspaceAccess, ssoCompanyId: string |
   return !requiresSso(workspace) || ssoCompanyId === workspace.companyId;
 }
 
+/** Whether this sign-in may open the workspace at all: it isn't suspended, and its SSO rule is met. */
+export function mayOpen(workspace: WorkspaceAccess, ssoCompanyId: string | null): boolean {
+  return !workspace.suspended && signInMayOpen(workspace, ssoCompanyId);
+}
+
 /**
  * Where a new sign-in lands: the company whose IdP it came through, else the
  * workspace the user last had open, else their oldest one, considering only
@@ -32,7 +39,7 @@ export function landingWorkspace<T extends WorkspaceAccess>(
   memberships: readonly T[],
   { preferred, ssoCompanyId }: { preferred: string | null; ssoCompanyId: string | null },
 ): T | null {
-  const openable = memberships.filter((membership) => signInMayOpen(membership, ssoCompanyId));
+  const openable = memberships.filter((membership) => mayOpen(membership, ssoCompanyId));
   return (
     openable.find((membership) => membership.companyId === ssoCompanyId) ??
     openable.find((membership) => membership.companyId === preferred) ??
@@ -43,16 +50,17 @@ export function landingWorkspace<T extends WorkspaceAccess>(
 
 /**
  * The workspace a request runs in: the one this sign-in has open, while the
- * user still belongs to it, else wherever a fresh sign-in would land. The
- * open one is kept even if it now requires SSO, so the guards can end the
- * session as they would for any company that turns enforcement on.
+ * user still belongs to it and it isn't suspended, else wherever a fresh
+ * sign-in would land. The open one is kept even if it now requires SSO, so
+ * the guards can end the session as they would for any company that turns
+ * enforcement on.
  */
 export function resolveWorkspace<T extends WorkspaceAccess>(
   memberships: readonly T[],
   { opened, preferred, ssoCompanyId }: { opened: string | null; preferred: string | null; ssoCompanyId: string | null },
 ): T | null {
   return (
-    memberships.find((membership) => membership.companyId === opened) ??
+    memberships.find((membership) => membership.companyId === opened && !membership.suspended) ??
     landingWorkspace(memberships, { preferred, ssoCompanyId })
   );
 }

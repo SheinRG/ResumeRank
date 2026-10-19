@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { AppShellSkeleton } from "@/components/layout/app-shell-skeleton";
 import { PaymentBanner } from "@/components/layout/payment-banner";
 import { StepUpProvider } from "@/components/step-up/step-up-provider";
+import { SupportSessionBanner } from "@/components/layout/support-session-banner";
 import { VerifyBanner } from "@/components/layout/verify-banner";
 
 async function loadCurrentUser(): Promise<CurrentUser> {
@@ -30,8 +31,9 @@ async function SignedInShell({ children }: { children: ReactNode }) {
     <FormatProvider prefs={user.format}>
       <StepUpProvider>
         <AppShell user={user}>
-          {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
-          {canAdmin(user.role) ? (
+          {user.supportSession ? <SupportSessionBanner user={user} session={user.supportSession} /> : null}
+          {!user.emailVerified && !user.supportSession ? <VerifyBanner email={user.email} /> : null}
+          {canAdmin(user.role) && !user.supportSession ? (
             // Its own boundary, so a slow billing read never holds up the page.
             <Suspense fallback={null}>
               <PaymentBanner />

@@ -203,6 +203,7 @@ model User {
   webAuthnCredentials WebAuthnCredential[]
   webAuthnChallenges  WebAuthnChallenge[]
   mfaRecoveryCodes    MfaRecoveryCode[]
+  staffMember         StaffMember?
 
   @@unique([companyId, directoryUserId])
   @@index([companyId])
@@ -233,9 +234,9 @@ model Membership {
 }
 
 model Company {
-  id                     String   @id @default(cuid())
+  id                     String    @id @default(cuid())
   name                   String
-  slug                   String   @unique
+  slug                   String    @unique
   logoUrl                String?
   website                String?
   description            String?
@@ -243,40 +244,47 @@ model Company {
   size                   String?
   location               String?
   /// Defaults for members who haven't chosen their own (locale.ts).
-  locale                 String   @default("en-US")
-  timeZone               String   @default("UTC")
-  /// Overrides the default AI token budget (AI_TOKEN_BUDGET) per rolling 30 days.
+  locale                 String    @default("en-US")
+  timeZone               String    @default("UTC")
+  /// Overrides the plan's AI token budget per rolling 30 days. Set by
+  /// ResumeRank staff only (company_staff_columns).
   aiTokenBudget          Int?
   /// Members must sign in through the company's SSO connection. Owners keep
   /// their password as the way back in if the identity provider breaks.
-  ssoEnforced            Boolean  @default(false)
+  ssoEnforced            Boolean   @default(false)
   /// Members must have a second factor before they can use the workspace.
   /// Single sign-on sessions are exempt: the identity provider owns MFA there.
-  mfaRequired            Boolean  @default(false)
+  mfaRequired            Boolean   @default(false)
   /// Sessions end this long after signing in, however active they are.
-  sessionLifetimeMinutes Int      @default(43200)
+  sessionLifetimeMinutes Int       @default(43200)
   /// Sessions end after this long without a request.
-  sessionIdleMinutes     Int      @default(10080)
+  sessionIdleMinutes     Int       @default(10080)
   /// Shortest password a member may set. Accounts span workspaces, so the
   /// strictest policy among a person's workspaces applies (auth/password-policy.ts).
-  passwordMinLength      Int      @default(8)
+  passwordMinLength      Int       @default(8)
   /// Refuse passwords found in known breaches (Have I Been Pwned, k-anonymity).
-  passwordBreachCheck    Boolean  @default(false)
+  passwordBreachCheck    Boolean   @default(false)
   /// Audit entries older than this are deleted; null keeps them forever.
   auditRetentionDays     Int?
   /// Names, contact details and protected attributes are masked in resume
   /// text before it reaches the model (scoring/redact.ts).
-  aiRedactPii            Boolean  @default(false)
+  aiRedactPii            Boolean   @default(false)
   /// Scoring refuses candidates who haven't been given the AI notice.
-  aiNoticeRequired       Boolean  @default(false)
+  aiNoticeRequired       Boolean   @default(false)
   /// Candidates with no activity for this long are deleted with everything
   /// about them (retention/candidates.ts); null keeps them until deleted by hand.
   candidateRetentionDays Int?
   /// The company's own notice wording; null shows the default
   /// (frontend/src/app/(marketing)/ai-notice).
   aiNoticeText           String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  /// Set by ResumeRank staff only (company_suspension_guard): nobody can open
+  /// the workspace, its API keys and directory are refused, its data is kept.
+  suspendedAt            DateTime?
+  /// Until when owners let ResumeRank support view the workspace as one of
+  /// its members (SupportSession); null or past means no access.
+  supportAccessUntil     DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   users            User[]
   memberships      Membership[]
@@ -297,6 +305,7 @@ model Company {
   billingAccount   BillingAccount?
   ipAllowlist      IpAllowlistEntry[]
   selfIdResponses  SelfIdResponse[]
+  supportSessions  SupportSession[]
 }
 
 /// An email domain a company claims. A DNS TXT record proves control; only a
@@ -1088,4 +1097,65 @@ model SelfIdResponse {
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
+}
+
+/// SUPPORT looks after tenants (search, view, support sessions, sign-in
+/// help); ADMIN may also suspend them and change what they're entitled to.
+enum StaffRole {
+  SUPPORT
+  ADMIN
+}
+
+/// A ResumeRank employee who may use the staff console (/staff). Granted
+/// only with `npm run staff`, never from the app.
+model StaffMember {
+  userId    String    @id
+  role      StaffRole
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// What staff did and looked at. Append-only for every role (staff_audit_guard).
+/// No foreign keys: an entry outlives the account, company and person it names.
+model StaffAuditEntry {
+  id           String   @id @default(cuid())
+  /// Null for the command-line tools.
+  staffUserId  String?
+  staffEmail   String
+  action       String
+  companyId    String?
+  targetUserId String?
+  summary      String
+  metadata     Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([companyId, createdAt(sort: Desc)])
+}
+
+/// A staff member viewing a workspace as one of its members, read-only and
+/// time-boxed, while the company grants support access. It rides on the
+/// staff member's own sign-in; the guards swap in the member it views as.
+model SupportSession {
+  id           String    @id @default(cuid())
+  companyId    String
+  /// Names are kept as they were: the workspace reads its history without
+  /// access to staff accounts, and it outlives the people in it.
+  staffUserId  String
+  staffName    String
+  targetUserId String
+  targetName   String
+  /// The staff member's LoginSession.
+  loginId      String
+  reason       String
+  startedAt    DateTime  @default(now())
+  expiresAt    DateTime
+  endedAt      DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([loginId])
+  @@index([companyId, startedAt(sort: Desc)])
 }

@@ -18,6 +18,18 @@ export const metadata: Metadata = { title: "Account · Settings" };
 
 export default async function SettingsAccountPage() {
   const user = await requireUser();
+  if (user.supportSession) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Account</CardTitle>
+          <CardDescription>
+            {user.name}&apos;s password, notifications and account aren&apos;t shown in a support session.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
   const [record, passwordPolicy] = await Promise.all([
     db.user.findUnique({
       where: { id: user.id },

@@ -433,6 +433,9 @@ source of truth; `20261016090000_memberships` adds it and backfills it from
   workspace the user belongs to requires SSO; otherwise it lands in one that
   doesn't, and the others show as needing SSO in the switcher. The IdP's MFA
   exemption also holds only inside its own company.
+- **Suspended workspaces** (by ResumeRank staff, see Staff backoffice) can't
+  be opened by any sign-in, owners included; the switcher shows them as
+  suspended, and someone with nothing else lands on `/workspace-suspended`.
 - **Account-wide things stay with the account.** Sign-in events
   (`logAuthEvent`) go to the trail of every workspace the user belongs to.
   Removing someone from a workspace (`removeMember`, SCIM deprovisioning)
@@ -524,6 +527,102 @@ its admins see it in the feed under the "ResumeRank" actor. Point it at
 another database with `DATABASE_URL=...`. Rollout percentages are code
 changes, reviewed like any other. Removing a flag from the registry leaves
 its rows inert, and `20261018090000_feature_flags` is expand-only.
+
+## Staff backoffice
+
+ResumeRank's own people look after tenants from the staff console at
+`/staff` (`frontend/src/app/(staff)`). It isn't a tenant surface, so it
+doesn't follow the tenant rules: staff aren't members of the workspaces they
+help, so there is no `TenantContext`. Staff code (`backend/src/staff/*`)
+reads across tenants on the owner connection on purpose, and makes up for it
+by recording everything.
+
+**Who is staff.** A `StaffMember` row, `SUPPORT` or `ADMIN`, granted and
+revoked only with `npm run staff` by someone holding the database
+credentials. No request path writes it. The guard (`requireStaff`,
+`frontend/src/lib/auth/guards.ts`) also needs the sign-in to have proved the
+account's **own** second factor (`secondFactorProven`, the session's MFA epoch
+against `User.mfaEnabledAt`). A single sign-on session doesn't qualify even
+though it passes the ordinary MFA gate: a customer's identity provider
+vouches for its own members, and an IdP able to mint a staff session would be
+a way into every tenant. Anyone who isn't staff gets a 404, so the console
+doesn't advertise itself. Changes need a recent sign-in (staff's step-up).
+
+**The audit trail.** Every search, workspace view and change writes a
+`StaffAuditEntry` (`logStaffAction`): who, from which address, what, which
+workspace, and the reason, which every change requires. The table has no
+foreign keys, so entries outlive the people and companies they name, and the
+`staff_audit_guard` trigger refuses updates, deletes and truncation for every
+role. The tenant role has no grant on it. Changes that affect a workspace
+also go into that workspace's own activity log under the ResumeRank actor, in
+the same transaction, so its admins see them.
+
+**What staff can see.** A workspace page (`companyOverview`) shows profile,
+plan and billing state, AI usage against budget, counts, verified domains,
+members with role, second factor, last sign-in and email suppression,
+pending invites, the latest email to those people (status and error, never
+contents), features with what decided each, support sessions and recent
+staff activity. It leaves out candidates, resumes, scores and the audit log.
+Seeing those needs a support session the workspace agreed to.
+
+**What staff can change.**
+
+| | Who | Effect |
+|---|---|---|
+| Suspend / lift | Admin | `Company.suspendedAt`; see below |
+| Feature override | Admin | the same `setFlagOverride` as `npm run flags`, now also in the staff log |
+| AI budget | Admin | `Company.aiTokenBudget`, or back to the plan's |
+| Let email through | Support | deletes the `EmailSuppression` for a member's or invitee's address |
+| Sign out everywhere | Support | bumps `sessionVersion` and revokes every `LoginSession`, logged in each of the person's workspaces |
+| Support session | Support | below |
+
+Each one is limited to the workspace being looked at: a member's or invitee's
+address, a member's account. `suspendedAt` and `aiTokenBudget` are staff-only
+in the database too. The tenant role may update the rest of its company row,
+so the `company_staff_columns` trigger refuses it those two columns. That is
+safer than a column grant list every new column would have to join.
+
+**Suspension.** `mayOpen` (`auth/workspace-policy.ts`) is false for a
+suspended workspace whatever the role, owners included. A sign-in that has it
+open moves to another workspace at its next request, and someone with no
+other workspace lands on `/workspace-suspended`. Switching to it and
+accepting an invite into it are refused. API keys get a 403
+`workspace_suspended` (`handleApi`), and SCIM requests get a 403 once the
+token checks out. Nothing is deleted, and work already queued (scoring,
+webhooks, email) finishes. Lifting it restores everything. Staff can still
+look at a suspended workspace, which is often why it was suspended.
+
+**Support sessions.** Instead of impersonation by token swap, a support
+session (`SupportSession`, `staff/support-sessions.ts`) rides on the staff
+member's own sign-in. The guards, once that sign-in has passed every check of
+its own, swap in the member it views as (`supportSessionUser`). Four things
+bound it:
+
+1. **Consent.** It can only start while an owner has granted support access
+   (`Company.supportAccessUntil`, Settings → Security, 1 to 30 days, step-up).
+   It can't outlast the grant, and withdrawing the grant ends any session in
+   progress. The guards re-check the grant, the expiry and the staff row on
+   every request, so revoking staff access ends a session at once.
+2. **Time.** 15, 30 or 60 minutes.
+3. **Read-only, three times over.** `tenantContext()` marks the context
+   `readOnly`, and `tenantTransaction` then sets `transaction_read_only`, so
+   Postgres refuses any write, whichever service or adapter it came through.
+   Before that, `runAction` refuses every action except the console's own
+   (`staff…` and `endSupportSession`) with a clear message. Separately,
+   anything that acts on the account (`requireUserSession`,
+   `requireRecentAuth`, the MFA and password guards) refuses a support session.
+   So sessions, factors, password and bulk exports are out of reach, and the
+   account and security pages say so instead of showing them. The workspace's
+   IP allowlist and SSO rule, which are about its members, don't apply: the
+   grant is the workspace's decision to let support in.
+4. **Visibility.** A banner stays on screen with the end time and an "End
+   session" button. The start, with the reason, and the end land in the
+   workspace's activity log. Owners and admins see every session in Settings →
+   Security, with staff and target names kept as they were. Every log line in
+   the session carries `supportSessionId`.
+
+Staff can't view as themselves, or as anyone outside the workspace. A
+member who leaves the workspace ends the session.
 
 ## Public API and webhooks
 

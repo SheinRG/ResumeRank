@@ -3,6 +3,7 @@ import { BILLING_STATE_SELECT, billingPlan } from "../billing/account";
 import type { Plan } from "../billing/plans";
 import { logActivity } from "../activity";
 import { NotFoundError } from "../services/errors";
+import { logStaffAction, type StaffAuditor } from "../staff/actor";
 import type { FlagOverrideInput } from "../validators/feature-flag";
 import { FEATURE_FLAGS, flagDefinition, type FeatureFlag } from "./registry";
 import { decideAll, decideFlag, type FlagDecision } from "./resolve";
@@ -11,7 +12,8 @@ import { decideAll, decideFlag, type FlagDecision } from "./resolve";
  * Staff tooling, not a tenant service: the person running it isn't a member
  * of the company, so there is no tenant context and it connects as the table
  * owner, like seeds and migrations. Every change still lands in the
- * company's own audit log, where its admins can see it.
+ * company's own audit log, where its admins can see it, and in the staff
+ * audit log under whoever made it.
  */
 
 interface CompanyRef {
@@ -35,10 +37,10 @@ export interface FlagOverrideChange {
   decision: FlagDecision;
 }
 
-function summaryOf(flag: FeatureFlag, enabled: boolean | null): string {
+function summaryOf(flag: FeatureFlag, enabled: boolean | null, workspace = "this workspace"): string {
   const { label } = flagDefinition(flag);
-  if (enabled === null) return `returned ${label} to its default for this workspace`;
-  return `${enabled ? "turned on" : "turned off"} ${label} for this workspace`;
+  if (enabled === null) return `returned ${label} to its default for ${workspace}`;
+  return `${enabled ? "turned on" : "turned off"} ${label} for ${workspace}`;
 }
 
 async function planOf(companyId: string): Promise<Plan | null> {
@@ -46,7 +48,7 @@ async function planOf(companyId: string): Promise<Plan | null> {
   return billingPlan(account);
 }
 
-export async function setFlagOverride(input: FlagOverrideInput): Promise<FlagOverrideChange> {
+export async function setFlagOverride(input: FlagOverrideInput, by: StaffAuditor): Promise<FlagOverrideChange> {
   const company = await findCompany(input.companySlug);
   const plan = await planOf(company.id);
   const where = { companyId_flag: { companyId: company.id, flag: input.flag } };
@@ -81,6 +83,16 @@ export async function setFlagOverride(input: FlagOverrideInput): Promise<FlagOve
         entityType: "company",
         entityId: company.id,
         summary: summaryOf(input.flag, input.enabled),
+        metadata: { flag: input.flag, enabled: input.enabled, previous, reason: input.reason ?? null },
+      },
+      tx,
+    );
+    await logStaffAction(
+      by,
+      {
+        action: "staff.feature_override",
+        summary: summaryOf(input.flag, input.enabled, company.name),
+        companyId: company.id,
         metadata: { flag: input.flag, enabled: input.enabled, previous, reason: input.reason ?? null },
       },
       tx,

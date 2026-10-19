@@ -9,6 +9,8 @@ export interface ApiPrincipal {
   scopes: readonly ApiScope[];
   /** The workspace's IP allowlist; requests from elsewhere are refused, whoever created the key. */
   ipRanges: readonly string[];
+  /** Suspended by ResumeRank staff: every request is refused until it's lifted. */
+  suspended: boolean;
 }
 
 /** Writing `lastUsedAt` on every call would turn each read into a write. */
@@ -38,7 +40,10 @@ export async function authenticateApiKey(token: string, now = new Date()): Promi
       revokedAt: true,
       lastUsedAt: true,
       membership: {
-        select: { role: true, company: { select: { ipAllowlist: { select: { cidr: true } } } } },
+        select: {
+          role: true,
+          company: { select: { suspendedAt: true, ipAllowlist: { select: { cidr: true } } } },
+        },
       },
     },
   });
@@ -53,5 +58,6 @@ export async function authenticateApiKey(token: string, now = new Date()): Promi
     keyId: key.id,
     scopes: key.scopes.filter(isApiScope),
     ipRanges: key.membership.company.ipAllowlist.map((range) => range.cidr),
+    suspended: key.membership.company.suspendedAt !== null,
   };
 }

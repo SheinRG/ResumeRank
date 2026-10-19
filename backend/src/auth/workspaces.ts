@@ -7,7 +7,7 @@ import { COMPANY_CREATE_LIMIT, rateLimit, retryMessage } from "../rate-limit";
 import { ConflictError, DomainError, ForbiddenError, NotFoundError } from "../services/errors";
 import type { TenantTx } from "../tenant-db";
 import { claimInvite } from "./tokens";
-import { landingWorkspace, signInMayOpen, type WorkspaceAccess } from "./workspace-policy";
+import { landingWorkspace, mayOpen, signInMayOpen, type WorkspaceAccess } from "./workspace-policy";
 
 /**
  * One account can belong to several companies, with a role in each
@@ -29,7 +29,7 @@ export interface WorkspaceActor {
 const ACCESS_SELECT = {
   role: true,
   companyId: true,
-  company: { select: { ssoEnforced: true } },
+  company: { select: { ssoEnforced: true, suspendedAt: true } },
 } satisfies Prisma.MembershipSelect;
 
 async function memberships(
@@ -41,17 +41,23 @@ async function memberships(
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: ACCESS_SELECT,
   });
-  return rows.map((row) => ({ companyId: row.companyId, role: row.role, ssoEnforced: row.company.ssoEnforced }));
+  return rows.map((row) => ({
+    companyId: row.companyId,
+    role: row.role,
+    ssoEnforced: row.company.ssoEnforced,
+    suspended: row.company.suspendedAt !== null,
+  }));
 }
 
 /**
  * For a password or Google sign-in: refused only when the user belongs to
  * workspaces and every one of them requires single sign-on. Someone with no
- * workspace yet signs in to onboarding.
+ * workspace yet signs in to onboarding, and someone whose workspaces are all
+ * suspended signs in to be told so.
  */
 export async function passwordSignInRefused(userId: string): Promise<boolean> {
-  const all = await memberships(userId);
-  return all.length > 0 && landingWorkspace(all, { preferred: null, ssoCompanyId: null }) === null;
+  const live = (await memberships(userId)).filter((workspace) => !workspace.suspended);
+  return live.length > 0 && landingWorkspace(live, { preferred: null, ssoCompanyId: null }) === null;
 }
 
 /** Where a sign-in that's being recorded should open, given who vouched for it. */
@@ -118,12 +124,20 @@ export async function switchWorkspace(actor: WorkspaceActor, companyId: string):
       }),
       tx.membership.findUnique({
         where: { userId_companyId: { userId: actor.userId, companyId } },
-        select: { role: true, company: { select: { name: true, ssoEnforced: true } } },
+        select: { role: true, company: { select: { name: true, ssoEnforced: true, suspendedAt: true } } },
       }),
     ]);
     if (!login) throw new NotFoundError("Your session has ended. Log in again to continue.");
     if (!membership) throw new NotFoundError("You're not a member of that workspace.");
-    const access = { companyId, role: membership.role, ssoEnforced: membership.company.ssoEnforced };
+    if (membership.company.suspendedAt) {
+      throw new ForbiddenError(`${membership.company.name} is suspended. Contact ResumeRank support.`);
+    }
+    const access = {
+      companyId,
+      role: membership.role,
+      ssoEnforced: membership.company.ssoEnforced,
+      suspended: false,
+    };
     if (!signInMayOpen(access, login.ssoCompanyId)) {
       throw new ForbiddenError(
         `${membership.company.name} requires single sign-on. Log in with SSO to open it.`,
@@ -214,7 +228,10 @@ export async function acceptInvite(
   return db.$transaction(async (tx) => {
     if (!(await claimInvite(tx, invite.id))) throw new DomainError(INVALID_INVITE);
     const [company, existing, login] = await Promise.all([
-      tx.company.findUniqueOrThrow({ where: { id: invite.companyId }, select: { name: true, ssoEnforced: true } }),
+      tx.company.findUniqueOrThrow({
+        where: { id: invite.companyId },
+        select: { name: true, ssoEnforced: true, suspendedAt: true },
+      }),
       tx.membership.findUnique({
         where: { userId_companyId: { userId: actor.userId, companyId: invite.companyId } },
         select: { id: true },
@@ -225,8 +242,13 @@ export async function acceptInvite(
 
     await assertSeatAvailable(tx, invite.companyId, { countPendingInvites: false });
     await tx.membership.create({ data: { userId: actor.userId, companyId: invite.companyId, role: invite.role } });
-    const access = { companyId: invite.companyId, role: invite.role, ssoEnforced: company.ssoEnforced };
-    const opened = signInMayOpen(access, login?.ssoCompanyId ?? null);
+    const access = {
+      companyId: invite.companyId,
+      role: invite.role,
+      ssoEnforced: company.ssoEnforced,
+      suspended: company.suspendedAt !== null,
+    };
+    const opened = mayOpen(access, login?.ssoCompanyId ?? null);
     if (opened) await openWorkspace(tx, actor, invite.companyId);
     await logActivity(
       {

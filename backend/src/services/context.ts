@@ -12,6 +12,11 @@ export interface TenantContext {
   companyId: string;
   actorId: string;
   role: Role;
+  /**
+   * ResumeRank support viewing as the actor (a support session): every
+   * tenant transaction is read-only, so nothing can be changed on their behalf.
+   */
+  readOnly?: boolean;
 }
 
 /** Re-checked here so a worker or API adapter can't skip the role gate the session guards apply. */

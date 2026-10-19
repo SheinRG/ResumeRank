@@ -21,6 +21,7 @@ import { switchWorkspaceAction } from "@/server/actions/workspaces";
 import { ROLE_LABELS } from "@/lib/roles";
 
 const BLOCKED_LABELS: Record<NonNullable<WorkspaceOption["blockedBy"]>, string> = {
+  suspended: "Suspended",
   sso: "Requires single sign-on",
   network: "Not available on this network",
 };

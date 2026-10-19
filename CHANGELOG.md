@@ -12,6 +12,19 @@ All notable changes to ResumeRank are documented here. The format follows
   time zone, and each person can choose their own. Dates now show in the
   reader's time zone instead of the server's.
 - A nightly k6 load test against staging, compared with a committed baseline.
+- Staff console (`/staff`) for ResumeRank staff, granted with `npm run staff`
+  and opened only on a sign-in that proved the staff member's own second
+  factor: search workspaces by name, slug, id, domain or member email; see a
+  workspace's plan, AI usage, members, recent email and failures; suspend it;
+  override its features or AI budget; let email reach a member again; sign a
+  member out everywhere. Every search, view and change goes into an
+  append-only staff audit log, and changes also into the workspace's own log.
+- Support access: owners can let ResumeRank support view the workspace as
+  one of its members for up to 30 days (Settings → Security). Each support
+  session lasts at most an hour, is read-only down to the database, shows a
+  banner throughout, and is listed with its reason for the workspace.
+- Workspace suspension: a suspended workspace can't be opened by anyone and
+  its API keys and directory sync are refused; nothing in it is deleted.
 
 ### Changed
 
