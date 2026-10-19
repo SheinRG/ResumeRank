@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CountText, DateText } from "@/components/format/format-provider";
 import Link from "next/link";
 import { z } from "zod";
 import { Download, History, Lock } from "lucide-react";
@@ -20,7 +21,7 @@ import {
 import { ActivityFilter } from "@/components/activity/activity-filter";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { can, canAdmin, requireMember } from "@/lib/auth/guards";
-import { formatCount, formatDate, formatRelative, initials } from "@/lib/format";
+import { initials } from "@/lib/format";
 import { cursorParamSchema } from "@resumerank/core/validators/search";
 import { listActivity, type ActivityEntityType } from "@/server/queries/activity";
 
@@ -103,7 +104,7 @@ export default async function ActivityPage({
             <ActivityFilter value={parsed.entity} />
             {result.total > 0 ? (
               <p className="text-sm text-muted-foreground">
-                {formatCount(result, "event")}
+                <CountText count={result} noun="event" />
               </p>
             ) : null}
           </div>
@@ -163,11 +164,8 @@ export default async function ActivityPage({
                             item.entityType}
                         </Badge>
                       </TableCell>
-                      <TableCell
-                        className="text-right text-muted-foreground"
-                        title={formatDate(item.createdAt)}
-                      >
-                        {formatRelative(item.createdAt)}
+                      <TableCell className="text-right text-muted-foreground">
+                        <DateText value={item.createdAt} kind="relative" />
                       </TableCell>
                     </TableRow>
                   ))}

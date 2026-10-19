@@ -1,12 +1,12 @@
 import { ShieldAlert, Sparkles } from "lucide-react";
 
+import { DateText } from "@/components/format/format-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   ScoreButton,
   type ScoreBlocker,
   type TrackedRun,
 } from "@/components/applications/score-button";
-import { formatDate, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
   ApplicationScoring,
@@ -143,8 +143,8 @@ function ScoreHistory({ history }: { history: ScoringHistoryItem[] }) {
               {run.aiScore ?? "—"}
             </span>
             {run.finishedAt ? (
-              <span className="text-muted-foreground" title={formatDate(run.finishedAt)}>
-                {formatRelative(run.finishedAt)}
+              <span className="text-muted-foreground">
+                <DateText value={run.finishedAt} kind="relative" />
               </span>
             ) : null}
             <span className="font-mono text-muted-foreground">{run.model}</span>
@@ -239,8 +239,8 @@ export function ScorePanel({
             <TallyChip count={tally.strong} label="Strong" tone="strong" />
             <TallyChip count={tally.partial} label="Partial" tone="partial" />
             <TallyChip count={tally.missing} label="Missing" tone="missing" />
-            <span className="text-xs text-muted-foreground" title={formatDate(scoredAt)}>
-              Scored {formatRelative(scoredAt)}
+            <span className="text-xs text-muted-foreground">
+              Scored <DateText value={scoredAt} kind="relative" />
             </span>
           </div>
           {aiSummary ? (

@@ -1,8 +1,8 @@
 import { TriangleAlert } from "lucide-react";
 
+import { DateText } from "@/components/format/format-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDate } from "@/lib/format";
 import type { ImpactReportView } from "@/server/queries/compliance";
 import type { JobOption } from "@/server/queries/jobs";
 
@@ -104,7 +104,7 @@ export function ImpactReport({ report, jobs, jobId }: { report: ImpactReportView
         <p className="text-sm text-muted-foreground">
           {report.jobTitle ? `${report.jobTitle}: ` : "All jobs: "}
           {report.applicants} applicant{report.applicants === 1 ? "" : "s"}, {responded} answered both questions.
-          Generated {formatDate(report.generatedAt)}.
+          Generated <DateText value={report.generatedAt} />.
         </p>
         {report.applicants === 0 ? (
           <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">

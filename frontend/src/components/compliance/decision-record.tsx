@@ -1,9 +1,9 @@
 import { ArrowRight, History } from "lucide-react";
 
+import { DateText } from "@/components/format/format-provider";
 import { EmptyState } from "@/components/shared/empty-state";
 import { STAGE_LABELS } from "@/components/shared/status-badges";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/format";
 import type { DecisionAi, StageDecision } from "@resumerank/core/services/decisions";
 
 function AiContext({ ai }: { ai: DecisionAi }) {
@@ -16,7 +16,12 @@ function AiContext({ ai }: { ai: DecisionAi }) {
           <span className="font-mono text-xs">
             {" "}
             · {ai.model} · prompt {ai.promptVersion}
-            {ai.scoredAt ? ` · scored ${formatDate(new Date(ai.scoredAt))}` : ""}
+            {ai.scoredAt ? (
+              <>
+                {" "}
+                · scored <DateText value={ai.scoredAt} />
+              </>
+            ) : null}
           </span>
         </span>
       );
@@ -62,7 +67,7 @@ export function DecisionRecord({ decisions }: { decisions: StageDecision[] }) {
                     <span className="text-muted-foreground">to</span>
                   )}
                   <span className="font-medium text-foreground">{STAGE_LABELS[decision.to]}</span>
-                  <span className="ml-auto font-mono text-xs text-muted-foreground">{formatDate(decision.at)}</span>
+                  <span className="ml-auto font-mono text-xs text-muted-foreground"><DateText value={decision.at} /></span>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   <AiContext ai={decision.ai} />

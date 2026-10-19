@@ -13,6 +13,7 @@ import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/co
 import { touchLoginSession } from "@resumerank/core/auth/sessions";
 import { resolveWorkspace, signInMayOpen } from "@resumerank/core/auth/workspace-policy";
 import { annotateLogContext } from "@resumerank/core/observability/log";
+import { resolveFormatPrefs, type FormatPrefs } from "@resumerank/core/locale";
 import { clientIp } from "@resumerank/core/request-ip";
 import type { Role } from "@resumerank/core/validators/enums";
 import type { TenantContext } from "@resumerank/core/services/context";
@@ -106,6 +107,10 @@ export interface CurrentUser {
   companyLogoUrl: string | null;
   /** Every workspace the user belongs to, oldest first. */
   workspaces: WorkspaceOption[];
+  /** How this person sees dates and numbers: their own choice, else the open workspace's. */
+  format: FormatPrefs;
+  /** What they chose themselves; null where they follow the workspace. */
+  ownFormat: { locale: string | null; timeZone: string | null };
 }
 
 /** A signed-in user who has completed onboarding and belongs to a company. */
@@ -220,6 +225,8 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
       emailVerified: true,
       image: true,
       companyId: true,
+      locale: true,
+      timeZone: true,
       memberships: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
@@ -229,6 +236,8 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
             select: {
               name: true,
               logoUrl: true,
+              locale: true,
+              timeZone: true,
               ssoEnforced: true,
               mfaRequired: true,
               sessionLifetimeMinutes: true,
@@ -253,7 +262,16 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     },
   });
   if (!user) throw new GateError("Your account no longer exists.");
-  const { sessionVersion, mfaEnabledAt, loginSessions, memberships, companyId: preferred, ...rest } = user;
+  const {
+    sessionVersion,
+    mfaEnabledAt,
+    loginSessions,
+    memberships,
+    companyId: preferred,
+    locale,
+    timeZone,
+    ...rest
+  } = user;
   if (sessionVersion !== session.sessionVersion) {
     throw new GateError(SESSION_ENDED);
   }
@@ -299,6 +317,8 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
         role: workspace.role,
         blockedBy: !signInMayOpen(workspace, ssoCompanyId) ? "sso" : !networkAllows(workspace, ip) ? "network" : null,
       })),
+      format: resolveFormatPrefs({ locale, timeZone }, active),
+      ownFormat: { locale, timeZone },
     },
     loginId,
     mfa,

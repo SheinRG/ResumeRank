@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useStepUp } from "@/components/step-up/step-up-provider";
-import { formatDate } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { saveSsoConnectionSchema } from "@resumerank/core/validators/sso";
 import { removeSsoConnectionAction, saveSsoConnectionAction } from "@/server/actions/sso";
 import type { SsoConnectionSummary, SsoSettings } from "@/server/queries/sso";
@@ -30,6 +30,7 @@ function ConnectionSummary({
   enforced: boolean;
   onRemoved: () => void;
 }) {
+  const format = useFormat();
   const [isPending, startTransition] = useTransition();
   const withStepUp = useStepUp();
 
@@ -69,7 +70,7 @@ function ConnectionSummary({
       <p className="break-all font-mono text-xs text-muted-foreground">{connection.identifier}</p>
       {connection.certificateExpiresAt ? (
         <p className="text-xs text-muted-foreground">
-          Signing certificate expires {formatDate(new Date(connection.certificateExpiresAt))}. Upload
+          Signing certificate expires {format.date(new Date(connection.certificateExpiresAt))}. Upload
           fresh metadata before then.
         </p>
       ) : null}

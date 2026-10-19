@@ -7,12 +7,13 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { InviteMemberForm } from "@/components/settings/invite-member-form";
-import { formatDate } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { revokeInviteAction } from "@/server/actions/company";
 import type { PendingInvite } from "@/server/queries/users";
 import { ROLE_LABELS } from "@/lib/roles";
 
 function TeamInvites({ initialInvites }: { initialInvites: PendingInvite[] }) {
+  const format = useFormat();
   const [invites, setInvites] = useState(initialInvites);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -55,7 +56,7 @@ function TeamInvites({ initialInvites }: { initialInvites: PendingInvite[] }) {
                 <span className="text-sm font-medium text-foreground">{invite.email}</span>
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Badge variant="outline">{ROLE_LABELS[invite.role]}</Badge>
-                  expires {formatDate(invite.expiresAt)} · invited by {invite.invitedByName}
+                  expires {format.date(invite.expiresAt)} · invited by {invite.invitedByName}
                 </span>
               </div>
               <Button

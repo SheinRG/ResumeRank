@@ -2,6 +2,7 @@ import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { canAdmin, GateError, gateRedirectPath, requireUser, type CurrentUser } from "@/lib/auth/guards";
+import { FormatProvider } from "@/components/format/format-provider";
 import { AppShell } from "@/components/layout/app-shell";
 import { AppShellSkeleton } from "@/components/layout/app-shell-skeleton";
 import { PaymentBanner } from "@/components/layout/payment-banner";
@@ -26,20 +27,22 @@ async function SignedInShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <StepUpProvider>
-      <AppShell user={user}>
-        {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
-        {canAdmin(user.role) ? (
-          // Its own boundary, so a slow billing read never holds up the page.
-          <Suspense fallback={null}>
-            <PaymentBanner />
-          </Suspense>
-        ) : null}
-        <main className="flex-1">
-          <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
-        </main>
-      </AppShell>
-    </StepUpProvider>
+    <FormatProvider prefs={user.format}>
+      <StepUpProvider>
+        <AppShell user={user}>
+          {!user.emailVerified ? <VerifyBanner email={user.email} /> : null}
+          {canAdmin(user.role) ? (
+            // Its own boundary, so a slow billing read never holds up the page.
+            <Suspense fallback={null}>
+              <PaymentBanner />
+            </Suspense>
+          ) : null}
+          <main className="flex-1">
+            <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
+          </main>
+        </AppShell>
+      </StepUpProvider>
+    </FormatProvider>
   );
 }
 

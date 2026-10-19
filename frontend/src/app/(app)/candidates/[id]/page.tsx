@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DateText } from "@/components/format/format-provider";
 import { FileJson, FileText, Mail, Pencil } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,7 +24,6 @@ import { ResumeFiles } from "@/components/candidates/resume-files";
 import { ResumeText } from "@/components/candidates/resume-text";
 import { CandidateAiCard } from "@/components/compliance/candidate-ai-card";
 import { StepUpDownload } from "@/components/step-up/step-up-download";
-import { formatDate } from "@/lib/format";
 import { can, canAdmin, requireUser } from "@/lib/auth/guards";
 import { getCandidate } from "@/server/queries/candidates";
 import { getResumeFilesPanel } from "@/server/queries/resume-files";
@@ -94,7 +94,9 @@ export default async function CandidatePage({
           {candidate.email}
         </span>
         <CandidateSourceBadge source={candidate.source} />
-        <span>Added {formatDate(candidate.createdAt)}</span>
+        <span>
+          Added <DateText value={candidate.createdAt} />
+        </span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -156,7 +158,7 @@ export default async function CandidatePage({
                           {application.job.title}
                         </Link>
                         <span className="text-xs text-muted-foreground">
-                          {formatDate(application.createdAt)}
+                          <DateText value={application.createdAt} />
                         </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">

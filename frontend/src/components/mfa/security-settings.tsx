@@ -20,7 +20,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useStepUp } from "@/components/step-up/step-up-provider";
-import { formatDate, formatRelative } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import {
   regenerateRecoveryCodesAction,
   removePasskeyAction,
@@ -74,6 +74,7 @@ function RemoveButton({ label, ...props }: { label: string } & ComponentProps<ty
 }
 
 function TwoFactorCard({ status }: { status: MfaStatus }) {
+  const format = useFormat();
   const [freshCodes, setFreshCodes] = useState<string[] | null>(null);
   const withStepUp = useStepUp();
   const enabled = status.enabledAt !== null;
@@ -136,7 +137,7 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
         </div>
         <CardDescription>
           {enabled && status.enabledAt
-            ? `On since ${formatDate(status.enabledAt)}. Signing in with a password or Google also asks for one of the methods below.`
+            ? `On since ${format.date(status.enabledAt)}. Signing in with a password or Google also asks for one of the methods below.`
             : "Add a second step to signing in with a password or Google, so a stolen password alone can't get into your account."}
         </CardDescription>
       </CardHeader>
@@ -158,7 +159,7 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
               <MethodRow
                 icon={Smartphone}
                 title="Authenticator app"
-                detail={`Added ${formatDate(status.totpConfirmedAt)}`}
+                detail={`Added ${format.date(status.totpConfirmedAt)}`}
                 action={
                   <ConfirmDialog
                     trigger={<RemoveButton label="Remove authenticator app" />}
@@ -196,8 +197,8 @@ function TwoFactorCard({ status }: { status: MfaStatus }) {
                   detail={[
                     passkey.backedUp ? "Synced passkey" : "Single device",
                     passkey.lastUsedAt
-                      ? `used ${formatRelative(passkey.lastUsedAt)}`
-                      : `added ${formatDate(passkey.createdAt)}`,
+                      ? `used ${format.relative(passkey.lastUsedAt)}`
+                      : `added ${format.date(passkey.createdAt)}`,
                   ].join(" · ")}
                   action={
                     <ConfirmDialog

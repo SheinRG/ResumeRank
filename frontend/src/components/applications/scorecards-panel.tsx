@@ -1,5 +1,6 @@
 import { ClipboardList } from "lucide-react";
 
+import { DateText } from "@/components/format/format-provider";
 import {
   Card,
   CardContent,
@@ -11,7 +12,6 @@ import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ScorecardForm } from "@/components/applications/scorecard-form";
 import { StarDisplay } from "@/components/applications/star-display";
-import { formatDate } from "@/lib/format";
 import type { ScorecardItem } from "@/server/queries/applications";
 
 export function ScorecardsPanel({
@@ -65,7 +65,7 @@ export function ScorecardsPanel({
                   <div className="flex items-center gap-3">
                     <StarDisplay rating={scorecard.rating} />
                     <span className="text-xs text-muted-foreground">
-                      {formatDate(scorecard.createdAt)}
+                      <DateText value={scorecard.createdAt} />
                     </span>
                   </div>
                 </div>

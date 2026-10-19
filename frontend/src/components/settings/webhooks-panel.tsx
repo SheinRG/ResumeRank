@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { formatRelative } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import {
   createWebhookAction,
   deleteWebhookAction,
@@ -100,6 +100,7 @@ function EndpointCard({
   onChange: (endpoint: WebhookEndpointView) => void;
   onDeleted: (id: string) => void;
 }) {
+  const format = useFormat();
   const [isPending, startTransition] = useTransition();
 
   function setEnabled(enabled: boolean) {
@@ -153,7 +154,7 @@ function EndpointCard({
             {endpoint.lastError
               ? `Last attempt failed: ${endpoint.lastError}`
               : endpoint.lastDeliveredAt
-                ? `Last delivered ${formatRelative(endpoint.lastDeliveredAt)}.`
+                ? `Last delivered ${format.relative(endpoint.lastDeliveredAt)}.`
                 : "Nothing delivered yet."}
           </p>
         </div>
@@ -198,7 +199,7 @@ function EndpointCard({
                 <span className="font-mono text-muted-foreground">
                   {delivery.attempts} attempt{delivery.attempts === 1 ? "" : "s"}
                 </span>
-                <span className="text-muted-foreground">{formatRelative(delivery.createdAt)}</span>
+                <span className="text-muted-foreground">{format.relative(delivery.createdAt)}</span>
                 {delivery.lastError && delivery.status !== "DELIVERED" ? (
                   <span className="w-full break-words text-muted-foreground">{delivery.lastError}</span>
                 ) : null}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CountText } from "@/components/format/format-provider";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, Users } from "lucide-react";
@@ -26,7 +27,7 @@ import {
   EMPLOYMENT_TYPE_LABELS,
   REQUIREMENT_WEIGHT_LABELS,
 } from "@/components/jobs/labels";
-import { formatCount, formatDate } from "@/lib/format";
+import { createFormatters } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import { applicationListParamsSchema } from "@resumerank/core/validators/search";
 import { listApplicationsForJob } from "@/server/queries/applications";
@@ -94,7 +95,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
   const metaLine = [
     job.location,
     EMPLOYMENT_TYPE_LABELS[job.employmentType],
-    `Created ${formatDate(job.createdAt)}`,
+    `Created ${createFormatters(user.format).date(job.createdAt)}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -186,7 +187,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             <div className="flex flex-col gap-1.5">
               <CardTitle>Applicants</CardTitle>
               <CardDescription>
-                {formatCount(applications, "applicant")}
+                <CountText count={applications} noun="applicant" />
                 {showScores ? ", ranked by score." : "."}
               </CardDescription>
             </div>

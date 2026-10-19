@@ -1,8 +1,9 @@
 import { History } from "lucide-react";
 
+import { DateText } from "@/components/format/format-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/shared/empty-state";
-import { formatDate, formatRelative, initials } from "@/lib/format";
+import { initials } from "@/lib/format";
 import type { ActivityFeedItem } from "@/server/queries/dashboard";
 
 export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
@@ -36,11 +37,8 @@ export function ActivityFeed({ items }: { items: ActivityFeedItem[] }) {
               <span className="font-medium">{item.actor.name}</span>{" "}
               {item.summary}
             </p>
-            <p
-              className="text-xs text-muted-foreground"
-              title={formatDate(item.createdAt)}
-            >
-              {formatRelative(item.createdAt)}
+            <p className="text-xs text-muted-foreground">
+              <DateText value={item.createdAt} kind="relative" />
             </p>
           </div>
         </li>

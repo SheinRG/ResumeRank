@@ -1473,6 +1473,42 @@ under-credits adjacent experience (an AWS Associate certification against
 a Professional requirement, Oracle RAC against PostgreSQL operations).
 That is the first thing a prompt change should target.
 
+## Dates, numbers and time zones
+
+Every date and number is formatted for the person reading it.
+
+- **Who decides.** `User.locale` / `User.timeZone` hold a person's own choice
+  (null follows the workspace). `Company.locale` / `Company.timeZone` hold the
+  workspace default (`en-US`, `UTC`).
+- **Resolving it.** `resolveFormatPrefs` (`backend/src/locale.ts`) picks the
+  person's choice, then the workspace's, then the defaults. A stored value
+  the runtime no longer knows is skipped rather than allowed to throw.
+- **Where it lives.** The guards put the result on `CurrentUser.format`.
+- **Choosing.** Settings → Profile sets the personal choice, with a "use this
+  device's time zone" shortcut. Admins set the workspace default under
+  Settings → Company.
+- **Scope.** Only formatting follows the locale; the interface text is
+  English.
+
+`createFormatters(prefs)` (`frontend/src/lib/format.ts`) builds the
+`Intl` formatters for one locale and zone, cached per pair. The signed-in
+layout provides the prefs through `FormatProvider`
+(`components/format/format-provider.tsx`):
+
+- **Server and client components** render `<DateText>`, `<NumberText>` and
+  `<CountText>`. They work from either side because they read the context
+  during SSR.
+- **Client code that needs a string** (a toast, an attribute, a helper)
+  calls `useFormat()`.
+- **A server component building a string** uses
+  `createFormatters(user.format)`.
+
+Dates render in the viewer's zone, so an evening event in Mumbai doesn't read
+as the next day on a UTC server. `<DateText>` also puts the full date and
+time in its tooltip and the instant in `dateTime`. The dashboard's weekly
+chart is the one exception: its buckets are ISO weeks in UTC, so its labels
+use the locale but stay in UTC.
+
 ## Observability
 
 - **Structured logs.** `@resumerank/core/observability/log` writes one JSON

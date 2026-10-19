@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CountText, DateText } from "@/components/format/format-provider";
 import { Download, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 
@@ -18,7 +19,6 @@ import {
 import { CandidateToolbar } from "@/components/candidates/candidate-toolbar";
 import { PaginationControl } from "@/components/shared/pagination-control";
 import { StepUpDownload } from "@/components/step-up/step-up-download";
-import { formatCount, formatDate } from "@/lib/format";
 import { can, requireUser } from "@/lib/auth/guards";
 import { candidateListParamsSchema, type CandidateListParams } from "@resumerank/core/validators/search";
 import { listCandidates } from "@/server/queries/candidates";
@@ -85,7 +85,7 @@ export default async function CandidatesPage({
             <CandidateToolbar q={params.q} source={params.source} sort={params.sort} />
             {result.total > 0 ? (
               <p className="shrink-0 text-sm text-muted-foreground">
-                {formatCount(result, "candidate")}
+                <CountText count={result} noun="candidate" />
               </p>
             ) : null}
           </div>
@@ -151,7 +151,7 @@ export default async function CandidatesPage({
                         {candidate.applicationCount}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {formatDate(candidate.createdAt)}
+                        <DateText value={candidate.createdAt} />
                       </TableCell>
                     </TableRow>
                   ))}

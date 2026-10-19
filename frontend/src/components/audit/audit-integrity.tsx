@@ -12,12 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { formatDate, formatNumber } from "@/lib/format";
+import { useFormat } from "@/components/format/format-provider";
 import { verifyAuditLogAction } from "@/server/actions/audit";
 import type { AuditChainReport } from "@/server/queries/audit";
 import { describeChainBreak } from "@resumerank/core/audit/chain";
 
 function ReportResult({ report }: { report: AuditChainReport }) {
+  const format = useFormat();
   if (report.fault) {
     return (
       <div role="status" className="flex items-start gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4">
@@ -26,7 +27,7 @@ function ReportResult({ report }: { report: AuditChainReport }) {
           <p className="font-medium text-foreground">The audit log has been tampered with.</p>
           <p className="text-foreground">{describeChainBreak(report.fault)}</p>
           <p className="text-muted-foreground">
-            {formatNumber(report.checked)} {report.checked === 1 ? "entry" : "entries"} before it check out. Keep an
+            {format.number(report.checked)} {report.checked === 1 ? "entry" : "entries"} before it check out. Keep an
             export from before the break, and treat the database as compromised.
           </p>
         </div>
@@ -47,13 +48,13 @@ function ReportResult({ report }: { report: AuditChainReport }) {
       <ShieldCheck className="mt-0.5 size-5 shrink-0 text-verdict-strong" aria-hidden="true" />
       <div className="flex flex-col gap-1 text-sm">
         <p className="font-medium text-foreground">
-          All {formatNumber(report.checked)} {report.checked === 1 ? "entry" : "entries"} check out.
+          All {format.number(report.checked)} {report.checked === 1 ? "entry" : "entries"} check out.
         </p>
         <p className="text-muted-foreground">
           <span className="font-mono">
             #{report.firstSeq}–#{report.lastSeq}
           </span>{" "}
-          · checked {formatDate(report.checkedAt)}
+          · checked {format.date(report.checkedAt)}
           {report.firstSeq !== null && report.firstSeq > 1
             ? ". Older entries were removed by the retention policy."
             : "."}
