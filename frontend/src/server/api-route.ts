@@ -91,6 +91,11 @@ export async function handleApi(
       return response;
     };
 
+    if (principal.suspended) {
+      return respond(
+        errorResponse(403, "workspace_suspended", "This workspace is suspended. Contact ResumeRank support."),
+      );
+    }
     // Unlike the app, owners' keys aren't exempt: a leaked key is the likelier breach.
     if (principal.ipRanges.length > 0 && !ipAllowed(clientIp(request.headers), principal.ipRanges)) {
       return respond(

@@ -19,6 +19,7 @@ import { closeSso } from "../../src/sso/jackson";
 import { tenantTransaction } from "../../src/tenant-db";
 
 const PUBLIC_URL = "https://93.184.216.34/resumerank-audit";
+const TEST_STAFF = { userId: null, email: "cli:integration-test" };
 
 interface Workspace {
   companyId: string;
@@ -42,7 +43,7 @@ async function workspace(label: string): Promise<Workspace> {
 }
 
 function turn(ws: Workspace, flag: "sso" | "directory-sync" | "audit-streaming", enabled: boolean | null) {
-  return setFlagOverride({ companySlug: ws.slug, flag, enabled, reason: "integration test" });
+  return setFlagOverride({ companySlug: ws.slug, flag, enabled, reason: "integration test" }, TEST_STAFF);
 }
 
 let a: Workspace;
@@ -113,7 +114,7 @@ describe("feature flag overrides", () => {
 
   it("refuses an unknown company", async () => {
     await expect(
-      setFlagOverride({ companySlug: `missing-${randomUUID()}`, flag: "sso", enabled: true }),
+      setFlagOverride({ companySlug: `missing-${randomUUID()}`, flag: "sso", enabled: true }, TEST_STAFF),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 

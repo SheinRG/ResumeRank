@@ -24,7 +24,17 @@ const DELETED_ACTOR: ActivityActor = { id: null, name: "Deleted user", image: nu
 const SYSTEM_ACTOR: ActivityActor = { id: null, name: "ResumeRank", image: null };
 
 /** Work no member did: the app on its own schedule, ResumeRank staff, or Stripe. */
-const SYSTEM_ACTIONS: ReadonlySet<string> = new Set(["audit.purge", "feature.override", "billing.subscription"]);
+const SYSTEM_ACTIONS: ReadonlySet<string> = new Set([
+  "audit.purge",
+  "feature.override",
+  "billing.subscription",
+  "company.suspend",
+  "company.unsuspend",
+  "company.ai_budget",
+  "support.session_start",
+  "support.session_end",
+  "support.sign_out",
+]);
 
 /** Entries outlive their author's account; render those as an anonymous actor. */
 export function toActivityActor(actor: ActivityActor | null, action: string): ActivityActor {

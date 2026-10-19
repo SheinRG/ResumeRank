@@ -20,3 +20,5 @@ export * from "./password-policy";
 export * from "./step-up";
 export * from "./compliance";
 export * from "./locale";
+export * from "./staff";
+export * from "./support-access";

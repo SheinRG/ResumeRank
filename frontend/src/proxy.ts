@@ -13,6 +13,8 @@ const PROTECTED_PREFIXES = [
   "/mfa",
   "/network-blocked",
   "/password-change",
+  "/workspace-suspended",
+  "/staff",
 ];
 
 const AUTH_PAGES = ["/login", "/register"];

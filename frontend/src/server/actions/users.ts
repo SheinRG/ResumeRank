@@ -4,7 +4,14 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@resumerank/core/db";
 import { refreshSession, signOut } from "@/lib/auth";
-import { requireAdmin, requirePasswordChange, requireRecentAuth, requireUser, tenantContext } from "@/lib/auth/guards";
+import {
+  requireAdmin,
+  requirePasswordChange,
+  requireRecentAuth,
+  requireUser,
+  requireUserSession,
+  tenantContext,
+} from "@/lib/auth/guards";
 import { roleSchema } from "@resumerank/core/validators/enums";
 import {
   changePasswordSchema,
@@ -222,7 +229,7 @@ export async function changePasswordAction(
 
 /** Revokes every session for this account, including the current one. */
 export async function signOutEverywhereAction(): Promise<void> {
-  const currentUser = await requireUser();
+  const { user: currentUser } = await requireUserSession();
   const companyId = currentUser.companyId;
   await db.$transaction(async (tx) => {
     await tx.user.update({

@@ -1,3 +1,4 @@
+import { userInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -52,7 +53,7 @@ async function show(slug: string): Promise<void> {
 async function change(slug: string | undefined, flag: string | undefined, enabled: boolean | null, reason?: string) {
   const parsed = flagOverrideSchema.safeParse({ companySlug: slug, flag, enabled, reason });
   if (!parsed.success) fail(parsed.error.issues.map((issue) => issue.message).join("\n"));
-  const result = await setFlagOverride(parsed.data);
+  const result = await setFlagOverride(parsed.data, { userId: null, email: `cli:${userInfo().username}` });
   const state = result.decision.enabled ? "on" : "off";
   write(
     result.changed

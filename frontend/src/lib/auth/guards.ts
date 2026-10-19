@@ -12,6 +12,8 @@ import { mfaGate, type MfaGate } from "@resumerank/core/auth/mfa/policy";
 import { needsLastSeenUpdate, sessionEnd, sessionPolicyOf } from "@resumerank/core/auth/session-policy";
 import { touchLoginSession } from "@resumerank/core/auth/sessions";
 import { resolveWorkspace, signInMayOpen } from "@resumerank/core/auth/workspace-policy";
+import { staffMay, type StaffActor, type StaffRole } from "@resumerank/core/staff/actor";
+import { activeSupportSession, type ActiveSupportSession } from "@resumerank/core/staff/support-sessions";
 import { annotateLogContext } from "@resumerank/core/observability/log";
 import { resolveFormatPrefs, type FormatPrefs } from "@resumerank/core/locale";
 import { clientIp } from "@resumerank/core/request-ip";
@@ -74,12 +76,50 @@ export class ReauthRequiredError extends GateError {
   }
 }
 
+/** Every workspace the user belongs to has been suspended by ResumeRank. */
+export class WorkspaceSuspendedError extends GateError {
+  constructor() {
+    super("Your workspace has been suspended. Contact ResumeRank support.");
+  }
+}
+
+/**
+ * Something a support session may not do: it is read-only, and it never
+ * touches the account it views as (sign-ins, second factors, password),
+ * nor exports in bulk.
+ */
+export class SupportSessionRestrictedError extends GateError {
+  constructor() {
+    super("That isn't available in a support session, which is read-only.");
+  }
+}
+
+/** The staff console, for someone who isn't staff. Pages answer it with a 404. */
+export class NotStaffError extends GateError {
+  constructor() {
+    super("That page doesn't exist.");
+  }
+}
+
+/**
+ * Staff who haven't proved their own second factor in this sign-in: they
+ * have none, or came through single sign-on, whose IdP vouches only for its
+ * own company's members.
+ */
+export class StaffSecondFactorError extends GateError {
+  constructor() {
+    super("The staff console needs your own second factor. Set one up, then sign in again with your password.");
+  }
+}
+
 /** Where a page sends a session its guard turned away. */
 export function gateRedirectPath(error: GateError): string {
   if (error instanceof MfaChallengeRequiredError) return "/mfa";
   if (error instanceof MfaSetupRequiredError) return "/mfa/setup";
   if (error instanceof PasswordChangeRequiredError) return "/password-change";
   if (error instanceof NetworkBlockedError) return "/network-blocked";
+  if (error instanceof WorkspaceSuspendedError) return "/workspace-suspended";
+  if (error instanceof SupportSessionRestrictedError) return "/dashboard";
   return "/session-ended";
 }
 
@@ -89,8 +129,16 @@ export interface WorkspaceOption {
   name: string;
   logoUrl: string | null;
   role: Role;
-  /** Why this sign-in can't open it: the company requires SSO it didn't come through, or blocks this network. */
-  blockedBy: "sso" | "network" | null;
+  /** Why this sign-in can't open it: ResumeRank suspended it, the company requires SSO it didn't come through, or blocks this network. */
+  blockedBy: "suspended" | "sso" | "network" | null;
+}
+
+/** ResumeRank support viewing the workspace as this user, read-only (staff/support-sessions.ts). */
+export interface SupportSessionView {
+  id: string;
+  staffName: string;
+  reason: string;
+  expiresAt: Date;
 }
 
 export interface CurrentUser {
@@ -111,6 +159,11 @@ export interface CurrentUser {
   format: FormatPrefs;
   /** What they chose themselves; null where they follow the workspace. */
   ownFormat: { locale: string | null; timeZone: string | null };
+  /**
+   * Set when this is a staff member's sign-in viewing as this user: everything
+   * above is the member's, and nothing may be changed.
+   */
+  supportSession: SupportSessionView | null;
 }
 
 /** A signed-in user who has completed onboarding and belongs to a company. */
@@ -171,6 +224,16 @@ async function sessionClaims(): Promise<SessionClaims | null> {
   return { id, sessionVersion, loginId, mfaEpoch };
 }
 
+/** The staff role of the person actually signed in, whoever they're viewing as. */
+export interface StaffIdentity {
+  userId: string;
+  email: string;
+  name: string;
+  role: StaffRole;
+  /** This sign-in proved the account's own second factor; an identity provider's word isn't enough for staff. */
+  secondFactorProven: boolean;
+}
+
 /** A signed-in session before its second-factor gate is applied. */
 export interface SignedInSession {
   user: CurrentUser;
@@ -185,6 +248,8 @@ export interface SignedInSession {
   network: "allowed" | "blocked";
   /** The address the allowlist was judged on, shown to people it blocks. */
   clientIp: string;
+  /** Null unless the person signed in is ResumeRank staff. */
+  staff: StaffIdentity | null;
 }
 
 /**
@@ -201,6 +266,10 @@ export interface SignedInSession {
  * The workspace is the one this sign-in has open (`LoginSession.companyId`)
  * while the user still belongs to it; after they leave it, wherever a new
  * sign-in would land. Role, policies and tenancy all follow from it.
+ *
+ * A staff member in a support session gets the member they view as instead
+ * (`supportSessionUser`), once their own sign-in has passed every check
+ * above, including their own second factor.
  *
  * Memoized per render with React `cache()`: the layout, the page and every
  * query it calls share one session read and one user lookup. Server actions
@@ -227,6 +296,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
       companyId: true,
       locale: true,
       timeZone: true,
+      staffMember: { select: { role: true } },
       memberships: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
@@ -242,6 +312,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
               mfaRequired: true,
               sessionLifetimeMinutes: true,
               sessionIdleMinutes: true,
+              suspendedAt: true,
               ipAllowlist: { select: { cidr: true } },
             },
           },
@@ -270,6 +341,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     companyId: preferred,
     locale,
     timeZone,
+    staffMember,
     ...rest
   } = user;
   if (sessionVersion !== session.sessionVersion) {
@@ -283,6 +355,7 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     ...company,
     role,
     companyId,
+    suspended: company.suspendedAt !== null,
     ipRanges: ipAllowlist.map((range) => range.cidr),
   }));
   const ssoCompanyId = login.ssoCompanyId;
@@ -293,7 +366,9 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
   }
   if (needsLastSeenUpdate(login.lastSeenAt)) await touchLoginSession(loginId);
   // A member everywhere, but in no workspace this sign-in may open.
-  if (!active && workspaces.length > 0) throw new SsoRequiredError();
+  if (!active && workspaces.length > 0) {
+    throw workspaces.every((workspace) => workspace.suspended) ? new WorkspaceSuspendedError() : new SsoRequiredError();
+  }
   if (active && !signInMayOpen(active, ssoCompanyId)) throw new SsoRequiredError();
 
   const mfa = mfaGate({
@@ -303,7 +378,16 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     verifiedEpoch: session.mfaEpoch,
     required: active?.mfaRequired ?? false,
   });
-  return {
+  const staff: StaffIdentity | null = staffMember
+    ? {
+        userId: id,
+        email: rest.email,
+        name: rest.name,
+        role: staffMember.role,
+        secondFactorProven: mfaEnabledAt !== null && session.mfaEpoch === mfaEnabledAt.getTime(),
+      }
+    : null;
+  const signedIn: SignedInSession = {
     user: {
       ...rest,
       role: active?.role ?? "MEMBER",
@@ -315,10 +399,17 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
         name: workspace.name,
         logoUrl: workspace.logoUrl,
         role: workspace.role,
-        blockedBy: !signInMayOpen(workspace, ssoCompanyId) ? "sso" : !networkAllows(workspace, ip) ? "network" : null,
+        blockedBy: workspace.suspended
+          ? "suspended"
+          : !signInMayOpen(workspace, ssoCompanyId)
+            ? "sso"
+            : !networkAllows(workspace, ip)
+              ? "network"
+              : null,
       })),
       format: resolveFormatPrefs({ locale, timeZone }, active),
       ownFormat: { locale, timeZone },
+      supportSession: null,
     },
     loginId,
     mfa,
@@ -326,8 +417,54 @@ export const getSignedInSession = cache(async (): Promise<SignedInSession> => {
     authenticatedAt: authenticatedAt(login),
     network: active && !networkAllows(active, ip) ? "blocked" : "allowed",
     clientIp: ip,
+    staff,
   };
+
+  if (!staff?.secondFactorProven || mfa !== "pass" || login.passwordChangeRequired) return signedIn;
+  const support = await activeSupportSession(loginId, id);
+  const viewed = support ? await supportSessionUser(support) : null;
+  if (!support || !viewed) return signedIn;
+  annotateLogContext({ supportSessionId: support.id, viewingAsUserId: support.targetUserId, companyId: support.companyId });
+  // The workspace's allowlist and SSO rule are for its members: it chose to
+  // let support in by granting access.
+  return { ...signedIn, user: viewed, network: "allowed" };
 });
+
+/**
+ * The member a support session views as, as the guards would resolve them in
+ * that workspace, or null once they've left it (the session then lapses).
+ */
+async function supportSessionUser(support: ActiveSupportSession): Promise<CurrentUser | null> {
+  const membership = await db.membership.findUnique({
+    where: { userId_companyId: { userId: support.targetUserId, companyId: support.companyId } },
+    select: {
+      role: true,
+      company: { select: { name: true, logoUrl: true, locale: true, timeZone: true } },
+      user: {
+        select: { id: true, name: true, email: true, emailVerified: true, image: true, locale: true, timeZone: true },
+      },
+    },
+  });
+  if (!membership) return null;
+  const { role, company, user } = membership;
+  const { locale, timeZone, ...person } = user;
+  return {
+    ...person,
+    role,
+    companyId: support.companyId,
+    companyName: company.name,
+    companyLogoUrl: company.logoUrl,
+    workspaces: [{ companyId: support.companyId, name: company.name, logoUrl: company.logoUrl, role, blockedBy: null }],
+    format: resolveFormatPrefs({ locale, timeZone }, company),
+    ownFormat: { locale, timeZone },
+    supportSession: {
+      id: support.id,
+      staffName: support.staffName,
+      reason: support.reason,
+      expiresAt: support.expiresAt,
+    },
+  };
+}
 
 /** A user plus the sign-in they're using. */
 export interface UserSession {
@@ -340,6 +477,11 @@ function assertSecondFactor(mfa: MfaGate): void {
   if (mfa === "setup") throw new MfaSetupRequiredError();
 }
 
+/** For anything that acts on the account itself, which a support session never may. */
+function assertOwnSession(user: CurrentUser): void {
+  if (user.supportSession) throw new SupportSessionRestrictedError();
+}
+
 /**
  * For switching workspace: second factor proven, but the open workspace may
  * block this network, since moving to one that doesn't is the way out.
@@ -347,6 +489,7 @@ function assertSecondFactor(mfa: MfaGate): void {
 export async function requireWorkspaceSwitch(): Promise<UserSession> {
   const { user, loginId, mfa } = await getSignedInSession();
   assertSecondFactor(mfa);
+  assertOwnSession(user);
   return { user, loginId };
 }
 
@@ -357,21 +500,32 @@ export async function requireWorkspaceSwitch(): Promise<UserSession> {
 export async function requirePasswordChange(): Promise<UserSession> {
   const { user, loginId, mfa } = await getSignedInSession();
   assertSecondFactor(mfa);
+  assertOwnSession(user);
   return { user, loginId };
 }
 
-/** A fully signed-in session (live, any second factor proven, password within policy, on an allowed network), for actions that act on the sign-in itself. */
+/** Live, any second factor proven, password within policy, on an allowed network. */
+const requireLiveSession = cache(async (): Promise<SignedInSession> => {
+  const signedIn = await getSignedInSession();
+  assertSecondFactor(signedIn.mfa);
+  if (signedIn.passwordChange) throw new PasswordChangeRequiredError();
+  if (signedIn.network === "blocked") throw new NetworkBlockedError();
+  return signedIn;
+});
+
+/** A fully signed-in session, for actions that act on the sign-in itself; never a support session. */
 export const requireUserSession = cache(async (): Promise<UserSession> => {
-  const { user, loginId, mfa, passwordChange, network } = await getSignedInSession();
-  assertSecondFactor(mfa);
-  if (passwordChange) throw new PasswordChangeRequiredError();
-  if (network === "blocked") throw new NetworkBlockedError();
+  const { user, loginId } = await requireLiveSession();
+  assertOwnSession(user);
   return { user, loginId };
 });
 
-/** A fully signed-in user: session live and any second factor proven. */
+/**
+ * A fully signed-in user: session live and any second factor proven. In a
+ * support session, the member being viewed as, flagged `supportSession`.
+ */
 export const requireUser = cache(async (): Promise<CurrentUser> => {
-  const { user } = await requireUserSession();
+  const { user } = await requireLiveSession();
   return user;
 });
 
@@ -392,6 +546,7 @@ export async function requireMfaChallenge(): Promise<UserSession> {
 export async function requireMfaEnrollment(): Promise<UserSession> {
   const { user, loginId, mfa } = await getSignedInSession();
   if (mfa === "challenge") throw new MfaChallengeRequiredError();
+  assertOwnSession(user);
   return { user, loginId };
 }
 
@@ -400,7 +555,8 @@ export async function requireMfaEnrollment(): Promise<UserSession> {
  * proved who it is within the step-up window (`auth/step-up.ts`).
  */
 export async function requireRecentAuth(): Promise<void> {
-  const { authenticatedAt: at } = await getSignedInSession();
+  const { authenticatedAt: at, user } = await getSignedInSession();
+  assertOwnSession(user);
   if (!isRecentlyAuthenticated(at)) throw new ReauthRequiredError();
 }
 
@@ -443,5 +599,66 @@ export async function requireAdmin(): Promise<CompanyUser> {
 
 /** The service-layer view of a guarded user: only what tenancy and authorization need. */
 export function tenantContext(user: CompanyUser): TenantContext {
-  return { companyId: user.companyId, actorId: user.id, role: user.role };
+  return {
+    companyId: user.companyId,
+    actorId: user.id,
+    role: user.role,
+    ...(user.supportSession ? { readOnly: true } : {}),
+  };
+}
+
+/** A staff member in the console, plus the sign-in they're using. */
+export interface StaffSession {
+  actor: StaffActor;
+  loginId: string;
+}
+
+/**
+ * For the staff console (/staff). The person signed in must be staff with at
+ * least `role`, on a live sign-in that proved their own second factor. It
+ * acts as them even during a support session, so they can look things up
+ * or end it. Their workspaces' policies don't apply here: the console isn't
+ * one of them.
+ *
+ * `recentAuth` is staff's step-up, for anything that changes a workspace or
+ * opens one: it needs a recent sign-in, which a support session can't renew
+ * (it can't act on the account), so those wait until it ends.
+ */
+export async function requireStaffSession(
+  role: StaffRole = "SUPPORT",
+  { recentAuth = false }: { recentAuth?: boolean } = {},
+): Promise<StaffSession> {
+  const signedIn = await getSignedInSession();
+  const { staff } = signedIn;
+  if (!staff) throw new NotStaffError();
+  assertSecondFactor(signedIn.mfa);
+  if (!staff.secondFactorProven) throw new StaffSecondFactorError();
+  if (signedIn.passwordChange) throw new PasswordChangeRequiredError();
+  if (!staffMay(staff.role, role)) throw new GateError("Only staff admins can do that.");
+  if (recentAuth) {
+    if (signedIn.user.supportSession) throw new GateError("End your support session first.");
+    if (!isRecentlyAuthenticated(signedIn.authenticatedAt)) throw new ReauthRequiredError();
+  }
+  return {
+    actor: { userId: staff.userId, email: staff.email, name: staff.name, role: staff.role, ipAddress: signedIn.clientIp },
+    loginId: signedIn.loginId,
+  };
+}
+
+export async function requireStaff(
+  role: StaffRole = "SUPPORT",
+  options: { recentAuth?: boolean } = {},
+): Promise<StaffActor> {
+  return (await requireStaffSession(role, options)).actor;
+}
+
+/**
+ * Whether this request comes from a sign-in in a support session. Cheaper
+ * than the full guard, for the action runner, which refuses every action
+ * but the staff console's own while one is live.
+ */
+export async function inSupportSession(): Promise<boolean> {
+  const claims = await sessionClaims();
+  if (!claims?.loginId) return false;
+  return (await activeSupportSession(claims.loginId, claims.id)) !== null;
 }

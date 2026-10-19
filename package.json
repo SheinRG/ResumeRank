@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present",
     "eval:scoring": "npm run eval:scoring --workspace backend --",
     "flags": "npm run flags --workspace backend --",
+    "staff": "npm run staff --workspace backend --",
     "test:integration": "npm run test:integration --workspace backend",
     "test:e2e": "npm run test:e2e --workspace frontend",
     "db:generate": "npm run db:generate --workspace backend",

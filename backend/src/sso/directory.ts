@@ -204,26 +204,28 @@ function sameSecret(expected: string, given: string): boolean {
   return timingSafeEqual(digest(expected), digest(given));
 }
 
+function scimError(detail: string): DirectorySyncResponse {
+  return {
+    status: 403,
+    data: { schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"], status: "403", detail },
+  };
+}
+
 /**
- * A company without directory sync gets a 403 its identity provider shows
- * as a provisioning error, rather than changes stored and never applied.
- * Only once the token checks out, so the answer says nothing to a caller
- * who doesn't hold it; anything else is left to the directory service's own
- * 401 and 404.
+ * A company without directory sync, or one ResumeRank has suspended, gets a
+ * 403 its identity provider shows as a provisioning error, rather than
+ * changes stored and never applied. Only once the token checks out, so the
+ * answer says nothing to a caller who doesn't hold it; anything else is left
+ * to the directory service's own 401 and 404.
  */
-async function refusedForEntitlement(request: DirectorySyncRequest): Promise<DirectorySyncResponse | null> {
+async function refusedForCompany(request: DirectorySyncRequest): Promise<DirectorySyncResponse | null> {
   const { directorySyncController } = await ssoControllers();
   const { data: directory } = await directorySyncController.directories.get(request.directoryId);
   if (!directory || !request.apiSecret || !sameSecret(directory.scim.secret, request.apiSecret)) return null;
+  const company = await db.company.findUnique({ where: { id: directory.tenant }, select: { suspendedAt: true } });
+  if (company?.suspendedAt) return scimError("This workspace is suspended. Contact ResumeRank support.");
   if (await companyHasFeature(directory.tenant, "directory-sync")) return null;
-  return {
-    status: 403,
-    data: {
-      schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
-      status: "403",
-      detail: featureUnavailableMessage("directory-sync"),
-    },
-  };
+  return scimError(featureUnavailableMessage("directory-sync"));
 }
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -236,7 +238,7 @@ let queue: Promise<unknown> = Promise.resolve();
  */
 export function handleScimRequest(request: DirectorySyncRequest): Promise<DirectorySyncResponse> {
   const run = queue.then(async () => {
-    const refused = await refusedForEntitlement(request);
+    const refused = await refusedForCompany(request);
     if (refused) return refused;
     const { directorySyncController } = await ssoControllers();
     return directorySyncController.requests.handle(request, applyDirectoryEvent);
