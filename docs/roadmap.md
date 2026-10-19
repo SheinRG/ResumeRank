@@ -158,10 +158,10 @@ Hiring AI is **high-risk under the EU AI Act** (Annex III §4) and covered by **
 
 ## Later / Scale & polish
 
-- [ ] Load testing (k6) for scoring and dashboard paths; nightly baseline.
+- [x] Load testing (k6) for scoring and dashboard paths; nightly baseline. → `load/resumerank.js` drives the public API's heaviest reads, score requests (on the reuse path, so at most one model call per application after a model or prompt change) and the signed-in dashboard, with per-path p95 and error thresholds; `.github/workflows/load.yml` runs it nightly against staging and `load/compare.mjs` fails on a p95 more than 25% over the committed baseline. Inert until the staging load secrets exist; the baseline is recorded from the first staging run (`docs/operations.md`, Load testing).
 - [ ] Internal staff backoffice: tenant search, suspension, audited impersonation, support tooling.
 - [ ] Per-tenant subdomain / custom domain; white-labeling (branded emails, careers page). Only a logo URL exists today (`schema.prisma:91`).
-- [ ] i18n + timezones: `"en-US"` hardcoded in `frontend/src/lib/format.ts:1,7`; no timezone on User/Company.
+- [x] i18n + timezones: `"en-US"` hardcoded in `frontend/src/lib/format.ts:1,7`; no timezone on User/Company. → A locale and time zone per workspace, overridable per person (Settings → Profile, with "use this device's time zone"); every date and number in the app is formatted through them, in the viewer's zone rather than the server's. Interface text stays English: translating it is a separate project and needs a string catalogue first.
 - [ ] Audit-log cold storage / partitioning for long-retention tenants.
 - [x] Reduce email surface (backend ships both `resend` and `nodemailer`). → One transport: everything goes out over SMTP through nodemailer, and the `resend` SDK (with its Svix and React email dependencies) is gone. A bare `RESEND_API_KEY` still works, as shorthand for Resend's SMTP relay with its idempotency header, so existing deployments need no change; explicit `SMTP_*` settings win. Resend's webhook signature is verified with `node:crypto` and the events are parsed with Zod; an event whose id doesn't match a stored message falls back to the recipient.
 

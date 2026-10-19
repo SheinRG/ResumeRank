@@ -6,6 +6,13 @@ All notable changes to ResumeRank are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Date and number format: each workspace has a default language/region and
+  time zone, and each person can choose their own. Dates now show in the
+  reader's time zone instead of the server's.
+- A nightly k6 load test against staging, compared with a committed baseline.
+
 ### Changed
 
 - Email goes out over SMTP only. `RESEND_API_KEY` alone still works (it
