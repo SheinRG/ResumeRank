@@ -4,6 +4,7 @@ import { completeJson } from "../ai/llm";
 import { blockBoundary, detectInjection, untrustedBlock } from "../ai/untrusted";
 import { env } from "../env";
 import { llmScoringResultSchema } from "../validators/scoring";
+import { copiesJob, JOB_COPY_SIGNAL } from "./jd-copy";
 import {
   extractJson,
   reconcileResult,
@@ -37,6 +38,7 @@ Rules you must never break:
 - Judge the resume ONLY against the listed requirements.
 - "evidence" must be a VERBATIM quote copied from the resume (max 300 characters), or null when nothing supports the requirement. Never paraphrase or join separate passages inside evidence. Never invent experience.
 - Verdicts: STRONG = the resume explicitly and sufficiently demonstrates the requirement, and you quote the passage that shows it; a STRONG verdict without a verbatim quote is counted as PARTIAL. PARTIAL = adjacent, weaker, or incomplete evidence (e.g. fewer years than asked, related-but-different technology). MISSING = no meaningful evidence. Absence of evidence is MISSING, not PARTIAL.
+- A skill only named in a list (skills, tools, technologies, keywords), with no role, project or result showing it used, is PARTIAL: claimed, not shown. For STRONG, quote where the resume shows it in use, not where it is listed; a STRONG quoted from a skills list is counted as PARTIAL.
 - "note": one or two sentences explaining the verdict, written for a recruiter deciding a shortlist.
 - "summary": two or three sentences on overall fit, leading with the decision-relevant conclusion, mentioning the most important gap if any.
 
@@ -144,7 +146,8 @@ export interface EvaluationOutcome {
   completionTokens: number | null;
   latencyMs: number;
   rawOutput: string;
-  injectionSignals: string[];
+  /** Injection attempts (`detectInjection`) and `jd-copy`; flags for a recruiter, never score changes. */
+  signals: string[];
 }
 
 export async function requestEvaluation(
@@ -178,6 +181,6 @@ export async function requestEvaluation(
     completionTokens: completion.completionTokens,
     latencyMs: completion.latencyMs,
     rawOutput: completion.rawOutput,
-    injectionSignals: detectInjection(resumeText),
+    signals: [...detectInjection(resumeText), ...(copiesJob(job, resumeText) ? [JOB_COPY_SIGNAL] : [])],
   };
 }

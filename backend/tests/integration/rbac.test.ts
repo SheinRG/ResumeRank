@@ -162,7 +162,7 @@ describe("interviewers rate blind", () => {
   it("get the application without any AI output", async () => {
     const application = await getApplication(interviewer, t.applicationId);
     expect(application).toMatchObject({ aiScore: null, aiSummary: null, scoredAt: null, evaluations: [] });
-    expect(application?.scoring).toEqual({ active: null, lastFailure: null, history: [], injectionSignals: [] });
+    expect(application?.scoring).toEqual({ active: null, lastFailure: null, history: [], signals: [] });
     expect(await getScoringRun(interviewer, t.scoringRunId)).toBeNull();
     expect(await getJobScoringProgress(interviewer, t.jobId)).toBeNull();
 

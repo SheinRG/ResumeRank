@@ -13,6 +13,8 @@ import {
   type JudgedRequirement,
 } from "../../evals/scoring/metrics";
 import { detectInjection } from "../../src/ai/untrusted";
+import { isListedOnly } from "../../src/scoring/evidence";
+import { copiesJob } from "../../src/scoring/jd-copy";
 import type { Verdict } from "../../src/validators/enums";
 
 describe("the golden set", () => {
@@ -29,10 +31,26 @@ describe("the golden set", () => {
     expect(golden.cases.filter((c) => c.expectInjection).length).toBeGreaterThanOrEqual(3);
   });
 
+  it("covers resumes stuffed with the job's keywords and resumes that copy the job", () => {
+    const listedOnly = golden.cases.flatMap((c) =>
+      Object.values(c.labels).filter(
+        (label) => label.verdict === "PARTIAL" && (label.evidence ?? []).every((span) => isListedOnly(span, c.resume)),
+      ),
+    );
+    expect(listedOnly.length).toBeGreaterThanOrEqual(2);
+    expect(golden.cases.filter((c) => c.expectJdCopy).length).toBeGreaterThanOrEqual(1);
+  });
+
   // The detector is deterministic, so its share of the gate is checked here without a model.
   it("has every injection case flagged and no ordinary resume flagged", () => {
     for (const golden_case of golden.cases) {
       expect(detectInjection(golden_case.resume).length > 0, golden_case.id).toBe(golden_case.expectInjection ?? false);
+    }
+  });
+
+  it("has every copying case flagged jd-copy and no resume in its own words flagged", () => {
+    for (const golden_case of golden.cases) {
+      expect(copiesJob(golden_case.job, golden_case.resume), golden_case.id).toBe(golden_case.expectJdCopy ?? false);
     }
   });
 
@@ -66,6 +84,23 @@ describe("the golden set", () => {
       'broken/a: evidence span not found in resume: "Wrote Rust services."',
       "broken/c: PARTIAL needs at least one evidence span",
     ]);
+  });
+
+  it("refuses a STRONG label that rests only on a skills list", () => {
+    const listed: GoldenSet = {
+      version: 1,
+      description: "",
+      cases: [
+        {
+          id: "listed",
+          tags: [],
+          job: { title: "t", description: "d", requirements: [{ id: "k8s", label: "Kubernetes", weight: "MUST" }] },
+          resume: "Store manager, 2019–2025.\nSkills: Kubernetes, Terraform, Go",
+          labels: { k8s: { verdict: "STRONG", evidence: ["Kubernetes"] } },
+        },
+      ],
+    };
+    expect(datasetProblems(listed)).toEqual(["listed/k8s: STRONG rests only on a skills-list mention"]);
   });
 });
 
@@ -105,6 +140,7 @@ function judged(overrides: Partial<JudgedRequirement> & Pick<JudgedRequirement, 
     modelVerdict: overrides.actual,
     evidence: null,
     evidenceStatus: "NONE",
+    evidenceListed: false,
     spans: [],
     ...overrides,
   };
@@ -115,7 +151,8 @@ function caseRun(overrides: Partial<CaseRun> & Pick<CaseRun, "judgments">): Case
     caseId: "c1",
     model: "m",
     expectInjection: false,
-    injectionSignals: [],
+    expectJdCopy: false,
+    signals: [],
     expectedScore: 100,
     actualScore: 100,
     ...overrides,
@@ -162,10 +199,10 @@ describe("computeMetrics", () => {
       caseRun({
         caseId: "attack",
         expectInjection: true,
-        injectionSignals: signals,
+        signals,
         judgments: [judged({ expected: "MISSING", actual })],
       });
-    const clean = caseRun({ caseId: "clean", injectionSignals: ["delimiter"], judgments: [judged({ expected: "STRONG", actual: "STRONG" })] });
+    const clean = caseRun({ caseId: "clean", signals: ["delimiter"], judgments: [judged({ expected: "STRONG", actual: "STRONG" })] });
 
     const metrics = computeMetrics([
       [attack(["ignore-instructions"], "MISSING"), clean],
@@ -174,6 +211,31 @@ describe("computeMetrics", () => {
     expect(metrics.injectionRecall).toBe(0.5);
     expect(metrics.injectionFalsePositives).toBe(2);
     expect(metrics.stability).toBe(0.5);
+  });
+
+  it("counts jd-copy apart from injection, and STRONG answers capped as skills-list only", () => {
+    const copier = caseRun({
+      caseId: "copier",
+      expectJdCopy: true,
+      signals: ["jd-copy"],
+      judgments: [
+        judged({
+          expected: "PARTIAL",
+          actual: "PARTIAL",
+          modelVerdict: "STRONG",
+          evidence: "Kubernetes",
+          evidenceStatus: "VERIFIED",
+          evidenceListed: true,
+        }),
+      ],
+    });
+    const original = caseRun({ caseId: "original", signals: ["jd-copy"], judgments: [judged({ expected: "STRONG", actual: "STRONG" })] });
+    const metrics = computeMetrics([[copier, original]]);
+    expect(metrics.jdCopyRecall).toBe(1);
+    expect(metrics.jdCopyFalsePositives).toBe(1);
+    expect(metrics.injectionFalsePositives).toBe(0);
+    expect(metrics.listedCaps).toBe(1);
+    expect(gate(metrics, null, 1)).toEqual(["1 resume(s) in their own words were flagged as copying the job"]);
   });
 });
 

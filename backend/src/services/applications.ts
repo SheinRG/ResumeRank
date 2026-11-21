@@ -56,6 +56,8 @@ export interface EvaluationItem {
   /** Only verified quotes are sent to the page; an unverified one is reported by status alone. */
   evidence: string | null;
   evidenceStatus: EvidenceStatus;
+  /** The quote appears only in a skills list, which can't carry a STRONG verdict. */
+  evidenceListed: boolean;
   note: string;
   createdAt: Date;
 }
@@ -92,8 +94,8 @@ export interface ApplicationScoring {
   /** The most recent run, when it failed after the current score was produced. */
   lastFailure: { error: string; finishedAt: Date | null } | null;
   history: ScoringHistoryItem[];
-  /** Prompt-injection signals the current score's resume raised. */
-  injectionSignals: string[];
+  /** What the current score's resume raised: injection attempts and wording copied from the job (`jd-copy`). */
+  signals: string[];
 }
 
 export interface ApplicationDetail {
@@ -279,7 +281,7 @@ const HIDDEN_SCORING: ApplicationScoring = {
   active: null,
   lastFailure: null,
   history: [],
-  injectionSignals: [],
+  signals: [],
 };
 
 /**
@@ -375,7 +377,7 @@ export async function getApplication(
           ? { error: mostRecent.error ?? "Scoring failed.", finishedAt: mostRecent.finishedAt }
           : null,
       history: succeeded.map((run) => ({ ...run, current: run.id === latestScoringRunId })),
-      injectionSignals: latestScoringRun?.injectionSignals ?? [],
+      signals: latestScoringRun?.injectionSignals ?? [],
     },
   };
 }

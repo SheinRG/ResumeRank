@@ -13,7 +13,7 @@ import { getResumeFileDownload, listResumeFiles, uploadResumeFile } from "../../
 import type { BlobStore } from "../../src/storage/blob";
 import { candidateCreateSchema } from "../../src/validators/candidate";
 import { memoryBlobStore } from "../memory-blob-store";
-import { docx, RESUME_LINES, textPdf } from "../resume-files";
+import { docx, drawnPdf, RESUME_LINES, textPdf, textRun } from "../resume-files";
 import { createTenant, destroyTenant, RESUME_TEXT, type TenantFixture } from "./fixtures";
 
 let t: TenantFixture;
@@ -26,6 +26,7 @@ const pdf = textPdf(RESUME_LINES);
 const quickParse: ResumeParser = async (_kind, bytes) => ({
   text: `Parsed resume ${bytes.length} bytes. ${RESUME_TEXT}`,
   extraction: "TEXT",
+  hiddenText: "",
 });
 
 async function addInterviewer(): Promise<TenantContext> {
@@ -158,18 +159,34 @@ describe("drainResumeQueue", () => {
     ).toMatchObject({ actorId: t.owner.actorId });
   });
 
+  it("leaves text a reader can't see out of the resume text and records it on the file", async () => {
+    const hidden = "Kubernetes Terraform Kafka Rust";
+    const stuffed = drawnPdf([
+      ...RESUME_LINES.map((text, i) => textRun({ text, y: 740 - i * 16 })),
+      textRun({ text: hidden, y: 500, rgb: [1, 1, 1] }),
+    ]);
+    const file = await upload(stuffed);
+
+    await drainResumeQueue({ store });
+
+    expect(await resumeText()).not.toContain("Kubernetes");
+    expect(await resumeText()).toContain("two million events a day");
+    const [listed] = await listResumeFiles(t.owner, t.candidateId);
+    expect(listed).toMatchObject({ id: file.id, hiddenChars: hidden.length, hiddenText: hidden });
+  });
+
   it("never lets an older upload overwrite a newer one's text", async () => {
     const older = await upload(pdf, "older.pdf");
     const newer = await upload(docx(RESUME_LINES), "newer.docx");
     await db.resumeFile.update({ where: { id: older.id }, data: { createdAt: new Date(Date.now() - 60_000) } });
     // The newer file is read first...
     await db.resumeFile.update({ where: { id: older.id }, data: { nextAttemptAt: new Date(Date.now() + 60_000) } });
-    await drainResumeQueue({ store, parse: async (kind) => ({ text: `${kind} ${RESUME_TEXT}`, extraction: "TEXT" }) });
+    await drainResumeQueue({ store, parse: async (kind) => ({ text: `${kind} ${RESUME_TEXT}`, extraction: "TEXT", hiddenText: "" }) });
     expect(await resumeText()).toBe(`DOCX ${RESUME_TEXT}`);
 
     // ...then the older one finishes and must not bring its text back.
     await db.resumeFile.update({ where: { id: older.id }, data: { nextAttemptAt: new Date() } });
-    await drainResumeQueue({ store, parse: async (kind) => ({ text: `${kind} ${RESUME_TEXT}`, extraction: "TEXT" }) });
+    await drainResumeQueue({ store, parse: async (kind) => ({ text: `${kind} ${RESUME_TEXT}`, extraction: "TEXT", hiddenText: "" }) });
     expect(await resumeText()).toBe(`DOCX ${RESUME_TEXT}`);
     expect((await db.resumeFile.findUniqueOrThrow({ where: { id: older.id } })).status).toBe("PARSED");
     expect((await db.resumeFile.findUniqueOrThrow({ where: { id: newer.id } })).status).toBe("PARSED");

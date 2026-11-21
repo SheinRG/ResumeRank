@@ -1,6 +1,7 @@
 import { DomainError } from "../services/errors";
 import type { LlmScoringResult } from "../validators/scoring";
 import type { EvidenceStatus, RequirementWeight, Verdict } from "../validators/enums";
+import { canonicalForMatch, isListedOnly } from "./evidence";
 
 export class ScoringError extends DomainError {}
 
@@ -18,25 +19,14 @@ export interface ReconciledEvaluation {
   /** As the model cited it; only shown to recruiters when VERIFIED. */
   evidence: string | null;
   evidenceStatus: EvidenceStatus;
+  /** The verified quote appears only in skills lists. */
+  evidenceListed: boolean;
   note: string;
 }
 
 export interface ReconciledResult {
   summary: string;
   evaluations: ReconciledEvaluation[];
-}
-
-/**
- * The form quotes are matched in: NFKC folds ligatures and full-width forms,
- * then only letters and digits survive, so line breaks, hyphenation across a
- * break, bullets, and curly-vs-straight punctuation from PDF extraction can't
- * fail a quote that is really there. Words still have to appear in order.
- */
-export function canonicalForMatch(text: string): string {
-  return text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 export function extractJson(raw: string): unknown {
@@ -57,7 +47,10 @@ export function extractJson(raw: string): unknown {
  * exactly one evaluation per known requirement id. Every quote is checked
  * against the resume, and STRONG — "the resume explicitly demonstrates it" —
  * is only kept when a quote proves it; otherwise it counts as PARTIAL, so a
- * fabricated or missing citation can't carry full weight in the score.
+ * fabricated or missing citation can't carry full weight in the score. A
+ * quote that appears only in a skills list names the skill without showing
+ * it, so it can't carry STRONG either: listing every keyword in the job
+ * description mustn't score like experience.
  */
 export function reconcileResult(
   result: LlmScoringResult,
@@ -89,14 +82,17 @@ export function reconcileResult(
         : resume.includes(quote)
           ? "VERIFIED"
           : "UNVERIFIED";
-    const verdict =
-      evaluation.verdict === "STRONG" && evidenceStatus !== "VERIFIED" ? "PARTIAL" : evaluation.verdict;
+    const evidenceListed =
+      evidenceStatus === "VERIFIED" && evaluation.evidence !== null && isListedOnly(evaluation.evidence, resumeText);
+    const proves = evidenceStatus === "VERIFIED" && !evidenceListed;
+    const verdict = evaluation.verdict === "STRONG" && !proves ? "PARTIAL" : evaluation.verdict;
     return {
       requirementId: r.id,
       verdict,
       modelVerdict: evaluation.verdict,
       evidence: evidenceStatus === "NONE" ? null : evaluation.evidence,
       evidenceStatus,
+      evidenceListed,
       note: evaluation.note,
     };
   });

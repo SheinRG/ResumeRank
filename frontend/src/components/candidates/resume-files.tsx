@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileUp, Loader2, Paperclip, RefreshCw } from "lucide-react";
+import { Download, EyeOff, FileUp, Loader2, Paperclip, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { toast } from "sonner";
@@ -40,6 +40,41 @@ function detail(file: ResumeFileItem): string {
   }
   if (file.status === "FAILED") return file.error ?? "We couldn't read this file.";
   return "The text will replace the resume below once it's read.";
+}
+
+/**
+ * Text in the file that renders as nothing a reader can see. It was left out
+ * of the resume text, so it never reached scoring; templates leave some by
+ * accident, so this informs rather than accuses.
+ */
+function HiddenTextNote({ file }: { file: ResumeFileItem }) {
+  if (file.status !== "PARSED" || file.hiddenChars === 0) return null;
+  const truncated = file.hiddenText !== null && file.hiddenChars > file.hiddenText.length;
+  return (
+    <div
+      role="note"
+      className="flex items-start gap-2 rounded-lg border border-verdict-partial/40 bg-verdict-partial/10 p-3 text-sm"
+    >
+      <EyeOff className="mt-0.5 size-4 shrink-0 text-verdict-partial" aria-hidden="true" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-foreground">
+          {formatNumber(file.hiddenChars)} characters of text that can&apos;t be seen on the page (white, covered or
+          too small to read) were left out of the resume and its score.
+        </p>
+        {file.hiddenText ? (
+          <details className="group">
+            <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+              Show the hidden text
+            </summary>
+            <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+              {file.hiddenText}
+              {truncated ? "…" : ""}
+            </p>
+          </details>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -173,6 +208,7 @@ export function ResumeFiles({
                   >
                     {detail(file)}
                   </span>
+                  <HiddenTextNote file={file} />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <ResumeFileStatusBadge status={file.status} />

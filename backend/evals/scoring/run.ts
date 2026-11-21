@@ -69,6 +69,7 @@ async function runCase(golden: GoldenCase): Promise<CaseRun> {
       modelVerdict: e.modelVerdict,
       evidence: e.evidence,
       evidenceStatus: e.evidenceStatus,
+      evidenceListed: e.evidenceListed,
       spans: label.evidence ?? [],
     };
   });
@@ -78,7 +79,8 @@ async function runCase(golden: GoldenCase): Promise<CaseRun> {
     caseId: golden.id,
     model: outcome.model,
     expectInjection: golden.expectInjection ?? false,
-    injectionSignals: outcome.injectionSignals,
+    expectJdCopy: golden.expectJdCopy ?? false,
+    signals: outcome.signals,
     expectedScore: score((j) => j.expected),
     actualScore: score((j) => j.actual),
     judgments,
@@ -113,6 +115,9 @@ function metricRows(metrics: EvalMetrics, baseline: EvalMetrics | null): string[
     ["Score MAE", metrics.scoreMae.toFixed(1), baseline ? signed(metrics.scoreMae - baseline.scoreMae) : ""],
     ["Injection recall", percent(metrics.injectionRecall), ""],
     ["Injection false positives", String(metrics.injectionFalsePositives), ""],
+    ["JD-copy recall", percent(metrics.jdCopyRecall), ""],
+    ["JD-copy false positives", String(metrics.jdCopyFalsePositives), ""],
+    ["STRONG capped as skills-list only", String(metrics.listedCaps), ""],
     ["Stability across repeats", percent(metrics.stability), ""],
   ];
   return rows.map(([name, value, delta]) => `| ${name} | ${value} | ${delta} |`);

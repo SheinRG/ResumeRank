@@ -1,4 +1,7 @@
-import { ShieldAlert, Sparkles } from "lucide-react";
+import { CopyCheck, ShieldAlert, Sparkles, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { JOB_COPY_SIGNAL } from "@resumerank/core/scoring/jd-copy";
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -99,25 +102,44 @@ const INJECTION_SIGNALS: Record<string, string> = {
   "hidden-text": "contains invisible characters",
 };
 
-/**
- * The resume is fenced off as data and the score is not adjusted, but text
- * written to steer the AI is worth a human look before trusting the result.
- */
-function InjectionWarning({ signals }: { signals: string[] }) {
+function ScoringNote({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
   return (
     <div
       role="note"
       className="flex items-start gap-2 rounded-lg border border-verdict-partial/40 bg-verdict-partial/10 p-3 text-sm"
     >
-      <ShieldAlert className="mt-0.5 size-4 shrink-0 text-verdict-partial" aria-hidden="true" />
+      <Icon className="mt-0.5 size-4 shrink-0 text-verdict-partial" aria-hidden="true" />
       <div className="flex flex-col gap-1">
-        <p className="font-medium text-foreground">This resume may be trying to influence the AI</p>
-        <p className="text-muted-foreground">
-          It {signals.map((signal) => INJECTION_SIGNALS[signal] ?? signal).join("; ")}. Check the
-          quoted evidence against the resume before relying on this score.
-        </p>
+        <p className="font-medium text-foreground">{title}</p>
+        <p className="text-muted-foreground">{children}</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The resume is fenced off as data and the score is not adjusted, but text
+ * written to steer the AI is worth a human look before trusting the result.
+ * Wording lifted from the posting is flagged the same way: it reads like a
+ * perfect match without saying anything about the candidate.
+ */
+function SignalNotes({ signals }: { signals: string[] }) {
+  const injection = signals.filter((signal) => signal !== JOB_COPY_SIGNAL);
+  return (
+    <>
+      {injection.length > 0 ? (
+        <ScoringNote icon={ShieldAlert} title="This resume may be trying to influence the AI">
+          It {injection.map((signal) => INJECTION_SIGNALS[signal] ?? signal).join("; ")}. Check the quoted
+          evidence against the resume before relying on this score.
+        </ScoringNote>
+      ) : null}
+      {signals.includes(JOB_COPY_SIGNAL) ? (
+        <ScoringNote icon={CopyCheck} title="This resume repeats the job description word for word">
+          Check that the quoted evidence describes the candidate&apos;s own work rather than the posting&apos;s
+          wording.
+        </ScoringNote>
+      ) : null}
+    </>
   );
 }
 
@@ -246,9 +268,7 @@ export function ScorePanel({
           {aiSummary ? (
             <p className="max-w-prose text-sm leading-relaxed text-foreground">{aiSummary}</p>
           ) : null}
-          {scoring.injectionSignals.length > 0 ? (
-            <InjectionWarning signals={scoring.injectionSignals} />
-          ) : null}
+          <SignalNotes signals={scoring.signals} />
           {scoring.history.length > 1 ? <ScoreHistory history={scoring.history} /> : null}
         </div>
         {writer ? (

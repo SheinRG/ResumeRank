@@ -1,4 +1,5 @@
-import { canonicalForMatch } from "../../src/scoring/parse";
+import { canonicalForMatch } from "../../src/scoring/evidence";
+import { JOB_COPY_SIGNAL } from "../../src/scoring/jd-copy";
 import { VERDICTS, type EvidenceStatus, type Verdict } from "../../src/validators/enums";
 
 export interface JudgedRequirement {
@@ -8,6 +9,7 @@ export interface JudgedRequirement {
   modelVerdict: Verdict;
   evidence: string | null;
   evidenceStatus: EvidenceStatus;
+  evidenceListed: boolean;
   /** The label's supporting spans; empty for MISSING. */
   spans: string[];
 }
@@ -17,7 +19,8 @@ export interface CaseRun {
   /** The model that answered, which is the fallback when the primary was unavailable. */
   model: string;
   expectInjection: boolean;
-  injectionSignals: string[];
+  expectJdCopy: boolean;
+  signals: string[];
   expectedScore: number;
   actualScore: number;
   judgments: JudgedRequirement[];
@@ -42,6 +45,12 @@ export interface EvalMetrics {
   injectionRecall: number | null;
   /** Ordinary resumes that were flagged anyway. */
   injectionFalsePositives: number;
+  /** Of resumes that copy the job's wording, the share flagged `jd-copy`. */
+  jdCopyRecall: number | null;
+  /** Resumes in their own words that were flagged `jd-copy` anyway. */
+  jdCopyFalsePositives: number;
+  /** STRONG answers capped to PARTIAL because the quote was only a skills-list mention. */
+  listedCaps: number;
   /** With repeats, the share of requirements whose verdict was identical every time. */
   stability: number | null;
 }
@@ -72,6 +81,10 @@ export function citesSpan(quote: string, spans: string[]): boolean {
   });
 }
 
+function injectionSignalsOf(run: CaseRun): string[] {
+  return run.signals.filter((signal) => signal !== JOB_COPY_SIGNAL);
+}
+
 function emptyConfusion(): Record<Verdict, Record<Verdict, number>> {
   const row = () => ({ STRONG: 0, PARTIAL: 0, MISSING: 0 });
   return { STRONG: row(), PARTIAL: row(), MISSING: row() };
@@ -90,6 +103,8 @@ export function computeMetrics(repeats: CaseRun[][]): EvalMetrics {
   const strongLabels = judgments.filter((j) => j.expected === "STRONG");
   const injected = runs.filter((run) => run.expectInjection);
   const clean = runs.filter((run) => !run.expectInjection);
+  const copied = runs.filter((run) => run.expectJdCopy);
+  const original = runs.filter((run) => !run.expectJdCopy);
 
   let stability: number | null = null;
   if (repeats.length > 1) {
@@ -126,8 +141,11 @@ export function computeMetrics(repeats: CaseRun[][]): EvalMetrics {
       runs.length === 0
         ? 0
         : runs.reduce((sum, run) => sum + Math.abs(run.expectedScore - run.actualScore), 0) / runs.length,
-    injectionRecall: ratio(injected.filter((run) => run.injectionSignals.length > 0).length, injected.length),
-    injectionFalsePositives: clean.filter((run) => run.injectionSignals.length > 0).length,
+    injectionRecall: ratio(injected.filter((run) => injectionSignalsOf(run).length > 0).length, injected.length),
+    injectionFalsePositives: clean.filter((run) => injectionSignalsOf(run).length > 0).length,
+    jdCopyRecall: ratio(copied.filter((run) => run.signals.includes(JOB_COPY_SIGNAL)).length, copied.length),
+    jdCopyFalsePositives: original.filter((run) => run.signals.includes(JOB_COPY_SIGNAL)).length,
+    listedCaps: judgments.filter((j) => j.evidenceListed && j.modelVerdict === "STRONG").length,
     stability,
   };
 }
@@ -137,6 +155,8 @@ export interface Thresholds {
   minEvidencePrecision: number;
   minInjectionRecall: number;
   maxInjectionFalsePositives: number;
+  minJdCopyRecall: number;
+  maxJdCopyFalsePositives: number;
   /**
    * How far below the baseline kappa a change may land before it is a
    * regression. An unchanged prompt and model measured 0.04 apart between
@@ -150,6 +170,8 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   minEvidencePrecision: 0.9,
   minInjectionRecall: 1,
   maxInjectionFalsePositives: 0,
+  minJdCopyRecall: 1,
+  maxJdCopyFalsePositives: 0,
   maxKappaDrop: 0.08,
 };
 
@@ -208,6 +230,12 @@ export function gate(
   }
   if (metrics.injectionFalsePositives > thresholds.maxInjectionFalsePositives) {
     failures.push(`${metrics.injectionFalsePositives} ordinary resume(s) were flagged as injection`);
+  }
+  if (metrics.jdCopyRecall !== null && metrics.jdCopyRecall < thresholds.minJdCopyRecall) {
+    failures.push(`jd-copy recall ${metrics.jdCopyRecall.toFixed(3)} is below ${thresholds.minJdCopyRecall}`);
+  }
+  if (metrics.jdCopyFalsePositives > thresholds.maxJdCopyFalsePositives) {
+    failures.push(`${metrics.jdCopyFalsePositives} resume(s) in their own words were flagged as copying the job`);
   }
   // Only comparable when the labels are the same ones the baseline was measured on.
   if (baseline && baseline.datasetVersion === datasetVersion) {

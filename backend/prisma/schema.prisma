@@ -627,6 +627,10 @@ model ResumeFile {
   finishedAt     DateTime?
   extraction     ResumeExtraction?
   extractedChars Int?
+  /// Characters of text in the file a reader can't see (white, covered, too small), left out of the resume text.
+  hiddenChars    Int               @default(0)
+  /// The start of that hidden text, so a recruiter can see what was left out.
+  hiddenText     String?
   /// User-safe failure reason, shown on the candidate page.
   error          String?
   createdAt      DateTime          @default(now())
@@ -687,13 +691,15 @@ model Evaluation {
   requirementId  String?
   criterion      String
   weight         RequirementWeight @default(MUST)
-  /// After the evidence rule: STRONG without a verified quote is capped at PARTIAL.
+  /// After the evidence rule: STRONG without a verified quote from outside a skills list is capped at PARTIAL.
   verdict        Verdict
   /// What the model answered; null on runs scored before the evidence rule.
   modelVerdict   Verdict?
   /// The quote as the model cited it. Only VERIFIED quotes are ever shown.
   evidence       String?
   evidenceStatus EvidenceStatus    @default(NONE)
+  /// The verified quote appears only in a skills or keywords list: named, never shown in use.
+  evidenceListed Boolean           @default(false)
   note           String
   createdAt      DateTime          @default(now())
 

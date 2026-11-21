@@ -81,6 +81,7 @@ function fakeEvaluator(verdict: Verdict = "STRONG"): { evaluate: Evaluator; call
           modelVerdict: verdict,
           evidence: verdict === "MISSING" ? null : "Fake quote.",
           evidenceStatus: verdict === "MISSING" ? ("NONE" as const) : ("VERIFIED" as const),
+          evidenceListed: false,
           note: "Fake note.",
         })),
       },
@@ -90,7 +91,7 @@ function fakeEvaluator(verdict: Verdict = "STRONG"): { evaluate: Evaluator; call
       completionTokens: 20,
       latencyMs: 5,
       rawOutput: "{}",
-      injectionSignals: [],
+      signals: [],
     };
   };
   return { evaluate, calls };
@@ -207,7 +208,7 @@ describe("the worker", () => {
     ).toBe(1);
   });
 
-  it("records evidence checks and injection signals, and never shows an unverified quote", async () => {
+  it("records evidence checks and signals, and never shows an unverified quote", async () => {
     const { applicationId } = await addApplicant(a);
     await requestScoring(a.owner, applicationId);
     const evaluate: Evaluator = async (job) => ({
@@ -215,10 +216,11 @@ describe("the worker", () => {
         summary: "Mixed.",
         evaluations: job.requirements.map((r, index) => ({
           requirementId: r.id,
-          verdict: index === 0 ? "PARTIAL" : "STRONG",
+          verdict: "PARTIAL",
           modelVerdict: "STRONG",
-          evidence: index === 0 ? "Invented quote." : "Real quote.",
+          evidence: index === 0 ? "Invented quote." : "Skills: Real quote.",
           evidenceStatus: index === 0 ? "UNVERIFIED" : "VERIFIED",
+          evidenceListed: index === 1,
           note: "n",
         })),
       },
@@ -228,17 +230,19 @@ describe("the worker", () => {
       completionTokens: 1,
       latencyMs: 1,
       rawOutput: "{}",
-      injectionSignals: ["ignore-instructions"],
+      signals: ["ignore-instructions", "jd-copy"],
     });
 
     await drainScoringQueue({ evaluate, lanes: 1 });
 
     const detail = await getApplication(a.owner, applicationId);
-    expect(detail?.evaluations.map((e) => [e.verdict, e.modelVerdict, e.evidenceStatus, e.evidence])).toEqual([
-      ["PARTIAL", "STRONG", "UNVERIFIED", null],
-      ["STRONG", "STRONG", "VERIFIED", "Real quote."],
+    expect(
+      detail?.evaluations.map((e) => [e.verdict, e.modelVerdict, e.evidenceStatus, e.evidenceListed, e.evidence]),
+    ).toEqual([
+      ["PARTIAL", "STRONG", "UNVERIFIED", false, null],
+      ["PARTIAL", "STRONG", "VERIFIED", true, "Skills: Real quote."],
     ]);
-    expect(detail?.scoring.injectionSignals).toEqual(["ignore-instructions"]);
+    expect(detail?.scoring.signals).toEqual(["ignore-instructions", "jd-copy"]);
     const stored = await db.evaluation.findFirstOrThrow({
       where: { scoringRun: { applicationId }, evidenceStatus: "UNVERIFIED" },
     });

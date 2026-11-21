@@ -66,6 +66,42 @@ export function textPdf(lines: string[]): Uint8Array {
   ]);
 }
 
+export type Rgb = [number, number, number];
+
+export interface TextRun {
+  text: string;
+  x?: number;
+  y: number;
+  size?: number;
+  /** Fill colour, each channel 0–1. */
+  rgb?: Rgb;
+  /** PDF text rendering mode; 3 draws nothing. */
+  mode?: number;
+}
+
+/** Content-stream operators that draw one run of text. */
+export function textRun({ text, x = 50, y, size = 11, rgb = [0, 0, 0], mode = 0 }: TextRun): string {
+  return `BT /F1 ${size} Tf ${rgb.join(" ")} rg ${mode} Tr ${x} ${y} Td (${escapePdfText(text)}) Tj ET`;
+}
+
+/** Content-stream operators that paint a filled rectangle. */
+export function filledRect(x: number, y: number, width: number, height: number, rgb: Rgb): string {
+  return `${rgb.join(" ")} rg ${x} ${y} ${width} ${height} re f`;
+}
+
+/** A one-page PDF drawn by the given operators, in order, with Helvetica as /F1. */
+export function drawnPdf(operators: string[]): Uint8Array {
+  return assemblePdf([
+    Buffer.from("<< /Type /Catalog /Pages 2 0 R >>"),
+    Buffer.from("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+    Buffer.from(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>`,
+    ),
+    stream("", Buffer.from(operators.join("\n"))),
+    Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+  ]);
+}
+
 /** A one-page PDF that is only a picture of the lines, as a scanner produces. */
 export function scannedPdf(lines: string[]): Uint8Array {
   const scale = 2;

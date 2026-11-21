@@ -13,6 +13,8 @@ export const STALE_PARSE_MS = 3 * 60_000;
 /** Claiming stops after this, so a file claimed last (OCR included) still ends inside the routes' 60s. */
 export const DEFAULT_PARSE_BUDGET_MS = 15_000;
 const DEFAULT_LANES = 2;
+/** Enough of the hidden text for a recruiter to see what it was; the count records the rest. */
+export const HIDDEN_TEXT_EXCERPT_LENGTH = 1_000;
 
 const UNAVAILABLE = "We couldn't read this file just now. Upload it again in a few minutes.";
 const MISSING = "The uploaded file is missing from storage. Upload it again.";
@@ -139,6 +141,8 @@ export async function processResumeFile(
         error: null,
         extraction: parsed.extraction,
         extractedChars: parsed.text.length,
+        hiddenChars: parsed.hiddenText.length,
+        hiddenText: parsed.hiddenText === "" ? null : parsed.hiddenText.slice(0, HIDDEN_TEXT_EXCERPT_LENGTH),
       },
     });
     if (count === 0) {
@@ -175,6 +179,7 @@ export async function processResumeFile(
           resumeFileId: file.id,
           extraction: parsed.extraction,
           extractedChars: parsed.text.length,
+          hiddenChars: parsed.hiddenText.length,
           applied,
         },
       },

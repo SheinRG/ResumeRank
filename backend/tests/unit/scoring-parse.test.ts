@@ -109,6 +109,26 @@ describe("reconcileResult", () => {
     expect(out.evaluations[1]).toMatchObject({ verdict: "PARTIAL", modelVerdict: "PARTIAL" });
   });
 
+  it("caps STRONG at PARTIAL when the quote is only a skills-list mention", () => {
+    const stuffed = "Store manager at Shoply, 2019–2025.\nShipped TypeScript strict codebases.\nSkills: React, Kubernetes, Go";
+    const out = reconcileResult(
+      result([
+        { requirementId: "r1", verdict: "STRONG", evidence: "Skills: React, Kubernetes", note: "n" },
+        { requirementId: "r2", verdict: "STRONG", evidence: "Shipped TypeScript strict codebases.", note: "n" },
+      ]),
+      requirements,
+      stuffed,
+    );
+    expect(out.evaluations[0]).toMatchObject({
+      verdict: "PARTIAL",
+      modelVerdict: "STRONG",
+      evidenceStatus: "VERIFIED",
+      evidenceListed: true,
+      evidence: "Skills: React, Kubernetes",
+    });
+    expect(out.evaluations[1]).toMatchObject({ verdict: "STRONG", evidenceListed: false });
+  });
+
   it("treats a quote with no letters or digits as no quote", () => {
     const out = reconcileResult(
       result([

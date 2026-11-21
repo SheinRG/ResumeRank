@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { canonicalForMatch } from "../../src/scoring/parse";
+import { canonicalForMatch, isListedOnly } from "../../src/scoring/evidence";
 import { requirementWeightSchema, verdictSchema } from "../../src/validators/enums";
 
 const labelSchema = z.object({
@@ -17,6 +17,8 @@ const caseSchema = z.object({
   tags: z.array(z.string()),
   /** The resume is written to steer the model; detection should flag it. */
   expectInjection: z.boolean().optional(),
+  /** The resume repeats the job's wording at length; `jd-copy` should flag it. */
+  expectJdCopy: z.boolean().optional(),
   job: z.object({
     title: z.string().min(1),
     description: z.string().min(1),
@@ -76,6 +78,11 @@ export function datasetProblems(set: GoldenSet): string[] {
         if (!resume.includes(canonicalForMatch(span))) {
           problems.push(`${golden.id}/${id}: evidence span not found in resume: "${span}"`);
         }
+      }
+      // The engine caps a skills-list quote at PARTIAL, so a STRONG label
+      // resting only on one could never be matched.
+      if (label.verdict === "STRONG" && spans.length > 0 && spans.every((span) => isListedOnly(span, golden.resume))) {
+        problems.push(`${golden.id}/${id}: STRONG rests only on a skills-list mention`);
       }
     }
   }

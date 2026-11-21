@@ -24,6 +24,11 @@ function evidenceCaveat(evaluation: EvaluationItem): string | null {
       ? "The AI rated this Strong but quoted text that isn't in the resume, so the quote is hidden and the verdict counts as Partial."
       : "The AI quoted text that isn't in the resume, so the quote is hidden.";
   }
+  if (evaluation.evidenceListed) {
+    return capped
+      ? "The AI rated this Strong, but the resume only names it in a skills list without showing it used, so the verdict counts as Partial."
+      : "The resume only names this in a skills list without showing it used.";
+  }
   if (capped) {
     return "The AI rated this Strong without quoting the resume, so the verdict counts as Partial.";
   }

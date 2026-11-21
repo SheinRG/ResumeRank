@@ -237,7 +237,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
         completionTokens: outcome.completionTokens,
         latencyMs: outcome.latencyMs,
         rawOutput: outcome.rawOutput,
-        injectionSignals: outcome.injectionSignals,
+        injectionSignals: outcome.signals,
       },
     });
     if (count === 0) {
@@ -256,6 +256,7 @@ export async function processRun(run: ClaimedRun, evaluate: Evaluator = requestE
           modelVerdict: e.modelVerdict,
           evidence: e.evidence,
           evidenceStatus: e.evidenceStatus,
+          evidenceListed: e.evidenceListed,
           note: e.note,
         };
       }),

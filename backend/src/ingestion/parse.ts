@@ -3,11 +3,12 @@
 import engData from "@tesseract.js-data/eng";
 import mammoth from "mammoth";
 import { createWorker, OEM } from "tesseract.js";
-import { extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
+import { getDocumentProxy, renderPageAsImage } from "unpdf";
 
 import type { ResumeExtraction, ResumeFileKind } from "../generated/prisma/enums";
 import { DomainError } from "../services/errors";
 import { MIN_RESUME_LENGTH } from "../validators/candidate";
+import { readPdfText } from "./pdf-text";
 import { cleanExtractedText } from "./text";
 
 /** OCR reads a page in a few seconds; a resume's first pages are the ones that matter. */
@@ -18,6 +19,8 @@ const OCR_SCALE = 2;
 export interface ParsedResume {
   text: string;
   extraction: ResumeExtraction;
+  /** Text the file holds that a reader can't see, left out of `text`. */
+  hiddenText: string;
 }
 
 export type ResumeParser = (kind: ResumeFileKind, bytes: Uint8Array) => Promise<ParsedResume>;
@@ -64,16 +67,17 @@ async function ocrPdf(pdf: PdfDocument): Promise<string> {
 }
 
 /**
- * A PDF's own text layer when it has one; a scanned PDF (no text, or too
- * little to score) falls back to OCR of its first pages.
+ * The visible part of a PDF's own text layer when it has enough; a scanned
+ * PDF (no text, or too little to score) falls back to OCR of its first pages.
  */
 async function parsePdf(bytes: Uint8Array): Promise<ParsedResume> {
   const pdf = await openPdf(bytes);
   try {
-    const { text } = await extractText(pdf, { mergePages: true });
-    const layer = cleanExtractedText(text);
-    if (layer.length >= MIN_RESUME_LENGTH) return { text: layer, extraction: "TEXT" };
-    return { text: cleanExtractedText(await ocrPdf(pdf)), extraction: "OCR" };
+    const layer = await readPdfText(pdf);
+    const text = cleanExtractedText(layer.text);
+    const hiddenText = cleanExtractedText(layer.hiddenText);
+    if (text.length >= MIN_RESUME_LENGTH) return { text, extraction: "TEXT", hiddenText };
+    return { text: cleanExtractedText(await ocrPdf(pdf)), extraction: "OCR", hiddenText };
   } finally {
     await pdf.loadingTask.destroy();
   }
@@ -82,7 +86,7 @@ async function parsePdf(bytes: Uint8Array): Promise<ParsedResume> {
 async function parseDocx(bytes: Uint8Array): Promise<ParsedResume> {
   try {
     const { value } = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
-    return { text: cleanExtractedText(value), extraction: "TEXT" };
+    return { text: cleanExtractedText(value), extraction: "TEXT", hiddenText: "" };
   } catch {
     throw new UnreadableResumeError(UNREADABLE);
   }

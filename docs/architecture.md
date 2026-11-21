@@ -994,6 +994,16 @@ shown on the application page as a warning. They never change the score. A
 live check with an injected resume produced unchanged verdicts and four
 signals.
 
+**Copied job wording** (`scoring/jd-copy.ts`). A resume written to match a
+posting often lifts its sentences, and the model can read them as the
+candidate's experience. `copiesJob` counts the resume's words that sit in
+runs of eight or more words copied from the job description or a requirement
+label, and at twenty it adds `jd-copy` to the run's signals (the same
+column). Eight words in order is longer than the stock phrases a resume and a
+job share by chance. Like the injection signals it is a note for the
+recruiter, never a score change: tailoring a resume to a job is normal, and
+the evidence rule below already decides what the score counts.
+
 **Evidence** (`scoring/parse.ts`). `reconcileResult` enforces exactly one
 evaluation per known requirement id, then checks every quote against the
 resume. Matching keeps only letters and digits after NFKC normalization, so
@@ -1005,6 +1015,21 @@ explicitly demonstrates it", so a STRONG without a verified quote is stored
 and counted as PARTIAL. Pages only ever receive verified quotes. An
 unverified one is reported by status, with a note explaining a capped
 verdict.
+
+A verified quote can still be a keyword and nothing more: a resume that
+pastes the job's skills into a "Skills:" line holds every word the model
+might quote. The rubric says a skill only named in a list is PARTIAL, and
+`scoring/evidence.ts` enforces it: `listingLines` marks lines labelled like
+"Skills:"/"Tools:"/"Tech stack:", and the list-like lines under such a
+heading until another section or a descriptive line starts, and
+`isListedOnly` is true when every place the quote occurs is on those lines.
+Such an evaluation stores `evidenceListed` and, like an unverified one, can't
+carry STRONG. One occurrence anywhere else (a bullet that shows the skill in
+use) clears it. List items are capped at three words, so a terse
+experience bullet under a skills block ends the block rather than being
+mistaken for a list item: missing a list only loses the backstop, while the
+opposite would cap real evidence. Older evaluations default to `false`
+(`20261122090000_resume_integrity`, expand-only), so stored scores stand.
 
 **Determinism.** Temperature 0 and a fixed seed (both recorded on the run
 and part of the input hash). In a live check, identical inputs gave
@@ -1063,6 +1088,24 @@ read, so files finishing out of order can't bring back an old resume. Those
 readers load native binaries, WebAssembly and language data by path, so they
 are `serverExternalPackages`, with `outputFileTracingIncludes` shipping their
 data with the three routes that parse.
+
+**Hidden text.** A PDF can hold text nobody sees: white on white, under a
+shape, clipped, in the invisible rendering mode, or set at a point size no
+one reads. That is where keyword stuffing hides. `readPdfText`
+(`ingestion/pdf-text.ts`) renders each of the first six pages and keeps a
+piece of the text layer only if its letters leave ink: across the band where
+every letter and digit draws, some colour channel has to vary by at least 24
+of 255, which faint gray text clears and white text doesn't. Text a reader
+can't see is left out of the resume text, so it never reaches scoring, and
+the file records how much (`hiddenChars`) and its first 1,000 characters
+(`hiddenText`), shown on the candidate page. Templates leave hidden text by
+accident too (a white heading meant for a coloured band that isn't there),
+so the note informs rather than accuses. pdf.js already drops text placed off
+the page. If nothing in the whole file renders, the renderer failed (pdf.js
+needs Node 22's `ArrayBuffer.prototype.transferToFixedLength`; on Node 20 it
+renders blank pages), so the layer is kept whole and a warning is logged.
+Word files aren't checked: `mammoth` reads hidden and white runs as ordinary
+text.
 
 **Access.** Everyone who can see the candidate sees their files (a resume
 isn't AI output, so blind interviewers see them too); other jobs' and other

@@ -27,6 +27,9 @@ export interface ResumeFileItem {
   status: ResumeFileStatus;
   extraction: ResumeExtraction | null;
   extractedChars: number | null;
+  /** Characters a reader can't see that were left out of the resume text. */
+  hiddenChars: number;
+  hiddenText: string | null;
   error: string | null;
   createdAt: Date;
   uploadedBy: { name: string | null } | null;
@@ -53,6 +56,8 @@ const ITEM_SELECT = {
   status: true,
   extraction: true,
   extractedChars: true,
+  hiddenChars: true,
+  hiddenText: true,
   error: true,
   createdAt: true,
   uploadedBy: { select: { name: true } },
